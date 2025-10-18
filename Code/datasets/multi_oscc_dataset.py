@@ -1,0 +1,317 @@
+from torch.utils.data import Dataset, DataLoader, sampler
+import numpy as np
+import random
+import os
+import json
+import torch
+import torch.distributed as dist
+from PIL import Image
+from torchvision.transforms import functional as F
+from torchvision.transforms import Compose, RandomVerticalFlip, RandomHorizontalFlip, RandomRotation, RandomAutocontrast, \
+    RandomAdjustSharpness, RandomResizedCrop, Normalize, ToTensor, Resize
+import pandas as pd 
+from typing import List, Dict, Any
+
+
+
+# ==========================================================================================
+# Custom Transforms and Dataset Class
+# ==========================================================================================
+
+MEAN=[175.14728804175988, 110.57123792228117, 176.73598615775617]
+STD=[21.239463551725915, 39.15991384752335, 10.99100631656543]
+MEAN = [m / 255.0 for m in MEAN]
+STD = [s / 255.0 for s in STD]
+
+
+def TrainTransforms():
+    """Returns a composition of transforms for training data augmentation."""
+    return Compose([
+        RandomResizedCrop(size=(512, 512), scale=(0.8, 1.0)),
+        RandomVerticalFlip(p=0.5), 
+        RandomHorizontalFlip(p=0.5),
+        RandomRotation(degrees=(-45, 45)),
+        RandomAutocontrast(p=0.5), 
+        RandomAdjustSharpness(sharpness_factor=3, p=0.5),
+        ToTensor(),
+        Normalize(mean=MEAN, std=STD),
+    ])
+
+def InferTransforms():
+    """Returns a composition of transforms for inference."""
+    return Compose([
+        Resize(size=(512, 512)),
+        ToTensor(),
+        Normalize(mean=MEAN, std=STD),
+    ])
+
+
+
+class MultiOSCCDataset(Dataset):
+    """
+    Updated Dataset class that dynamically loads data based on requested modalities.
+    - It loads pre-processed images from .npy files.
+    - It skips patients who are missing all of the requested modalities.
+    """
+    def __init__(self, mode="train", modalities="all"):
+        super().__init__()
+        assert mode in ["train", "valid", "test"], "mode must be one of 'train', 'valid', or 'test'"
+
+        self.dataset_dir = os.path.join(os.getcwd(), "../Data/Multi-OSCCPI-Dataset")
+        self.npy_dir = os.path.join(self.dataset_dir, "Multi-OSCCPI-Npy-512")
+
+        # --- Member variables ---
+        self.mode = mode
+        self.items = []
+        self.transforms = None
+        self.clinical_df = None
+        self.num_classes = 2
+
+        # --- MODIFIED: Parse and store the list of required modalities ---
+        self.modalities = self._parse_modalities(modalities)
+        print(f"Dataset will be initialized for modalities: {self.modalities}")
+
+        # --- Initialization logic ---
+        self._load_clinical_data()
+        self._load_and_filter_items() # Changed from _load_items
+
+        if mode == "train":
+            self.transforms = TrainTransforms()
+        else:
+            self.transforms = InferTransforms()
+
+        if mode == "train":
+            random.shuffle(self.items)
+
+        print(f"Dataset loaded: mode='{self.mode}'. Final valid item count: {len(self.items)}")
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        item_info = self.items[index]
+        pid = item_info['pid']
+        label = item_info['REC']
+
+        # --- MODIFIED: Dynamically build the output dictionary ---
+        output_dict = {}
+
+        # --- Image modality ---
+        if "image" in self.modalities:
+            npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
+            try:
+                images_array = np.load(npy_path)
+                assert images_array.shape[0] == 6, f"Expected 6 images, got {images_array.shape[0]} for PID {pid}."
+                
+                loaded_images = [Image.fromarray(images_array[i]) for i in range(images_array.shape[0])]
+                
+                if self.transforms:
+                    transformed_images = [self.transforms(img) for img in loaded_images]
+                else:
+                    transformed_images = loaded_images
+                
+                output_dict["images"] = transformed_images
+
+            except (FileNotFoundError, AssertionError) as e:
+                # This case should be rare due to the pre-filtering in _load_and_filter_items
+                print(f"Warning: NPY file missing or invalid for {pid} at getitem: {e}")
+                pass # Skip adding the 'images' key
+
+        # --- Text modalities ---
+        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
+            if self.clinical_df is not None and pid in self.clinical_df.index:
+                patient_series = self.clinical_df.loc[pid]
+                strong_text, weak_text = self._generate_clinical_text(patient_series)
+                if "strong_related_text" in self.modalities:
+                    output_dict["strong_related_text"] = strong_text
+                if "weak_related_text" in self.modalities:
+                    output_dict["weak_related_text"] = weak_text
+            else:
+                # This case should also be rare
+                if "strong_related_text" in self.modalities:
+                    output_dict["strong_related_text"] = None
+                if "weak_related_text" in self.modalities:
+                    output_dict["weak_related_text"] = None
+
+        # --- Labels (always included) ---
+        one_hot_label = torch.zeros(self.num_classes, dtype=torch.float32) # Use float for BCEWithLogitsLoss
+        one_hot_label[label] = 1.0
+
+        output_dict["pid"] = pid
+        output_dict["labels"] = one_hot_label
+        
+        # --- If no modalities were successfully loaded, skip this item ---
+        count_not_none = sum(1 for v in output_dict.values() if v is not None)
+        if count_not_none <= 1:
+            return self.__getitem__((index + 1) % len(self))
+
+        return output_dict
+
+    def __len__(self):
+        return len(self.items)
+
+    def _parse_modalities(self, modalities_str: str) -> List[str]:
+        """Parses the modalities string into a list of valid modality keys."""
+        if modalities_str == "all":
+            return ["image", "strong_related_text", "weak_related_text"]
+        
+        # We use 'image' internally for the data key, not 'images'
+        valid_set = {"image", "strong_related_text", "weak_related_text"}
+        # Allow for both '-' and ',' as separators
+        parsed = [m.strip() for m in modalities_str.replace('-', ',').split(',')]
+        
+        for m in parsed:
+            if m not in valid_set:
+                raise ValueError(f"Invalid modality '{m}' specified. Must be one of {valid_set}")
+        return parsed
+
+    def _load_clinical_data(self):
+        """Loads the clinical data CSV into a pandas DataFrame."""
+        clinical_data_path = os.path.join(self.dataset_dir, "clinical_data.csv")
+        try:
+            self.clinical_df = pd.read_csv(clinical_data_path)
+            if 'PID' in self.clinical_df.columns:
+                self.clinical_df.set_index('PID', inplace=True)
+            print("Successfully loaded clinical data.")
+        except FileNotFoundError:
+            print(f"Warning: Clinical data file not found at {clinical_data_path}. Text modalities will be unavailable.")
+            self.clinical_df = None # Ensure it's None if file not found
+
+    def _get_labels(self):
+        """Returns a list of all labels in the dataset."""
+        return [item['REC'] for item in self.items]
+    
+    def _check_modality_availability(self, pid: str) -> bool:
+        """
+        Checks if at least one of the requested modalities is available for a given patient.
+        """
+        has_image = False
+        if "image" in self.modalities:
+            npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
+            has_image = os.path.exists(npy_path)
+
+        has_text = False
+        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
+            if self.clinical_df is not None and pid in self.clinical_df.index:
+                has_text = True
+        
+        # The patient is valid if any of the requested modalities are present
+        return has_image or has_text
+
+    def _load_and_filter_items(self):
+        """Loads dataset items and filters them based on modality availability."""
+        metadata_path = os.path.join(self.dataset_dir, "all_metadata.json")
+        split_path = os.path.join(self.dataset_dir, "split_OOD.json")
+        print("Load Split File:", split_path)
+
+        with open(metadata_path, 'r') as f:
+            all_patients_info = {item['pid']: item for item in json.load(f)['datainfo']}
+
+        with open(split_path, 'r') as f:
+            split_data = json.load(f)
+
+        target_pids = set(split_data[self.mode])
+        
+        initial_items = [
+            all_patients_info[pid] for pid in target_pids
+            if pid in all_patients_info
+        ]
+
+        if len(initial_items) != len(target_pids):
+            print(f"Warning: Some PIDs from split file not found in metadata. Found {len(initial_items)}/{len(target_pids)}.")
+
+        # --- MODIFIED: Filter items based on modality availability ---
+        skipped_count = 0
+        for item in initial_items:
+            pid = item['pid']
+            if self._check_modality_availability(pid):
+                self.items.append(item)
+            else:
+                skipped_count += 1
+        
+        if skipped_count > 0:
+            print(f"Skipped {skipped_count} patients because they were missing all requested modalities: {self.modalities}")
+
+    def _generate_clinical_text(self, patient_series):
+        """Generates natural language descriptions from clinical data. (No changes needed here)"""
+        # This function remains unchanged from your original code.
+        strong_sentences, weak_sentences = [], []
+        strong_cols = [
+            "TumorT", "TumorN", "TumorM", "Pathology", "TumorDifferentiation(1high/2med/3low)",
+            "CancerThrombus(0/1)", "SurroundingTissueInvasion(0/1)", "SurgicalMargin(0/1)", "LNM(0/1)", "Ki-67",
+            "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", "PD_L1", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
+            "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)"
+        ]
+        weak_cols = [
+            "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)", "AlcoholHistory(0no/1yes)",
+            "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", "SurgicalMethod", "TumorLocation",
+            "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
+            "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
+            "Metastasis(0no/1yes)", "Radiotherapy(0no/1yes)", "Chemotherapy(0no/1yes)"
+        ]
+
+        def add_sentence(text_list, column_name, value):
+            if pd.isna(value) or str(value).strip() in ['/', '']: return
+            if isinstance(value, float) and value.is_integer(): value = int(value)
+            sentence = ""
+            if column_name == "TumorT": sentence = f"The primary tumor stage (T stage) is {value}."
+            elif column_name == "TumorN": sentence = f"The regional lymph node stage (N stage) is {value}."
+            elif column_name == "TumorM": sentence = f"The distant metastasis stage (M stage) is {value}."
+            elif column_name == "TumorDifferentiation(1high/2med/3low)":
+                diff_map = {1: "well-differentiated", 2: "moderately-differentiated", 3: "poorly-differentiated"}
+                sentence = f"The tumor differentiation is {diff_map.get(value, 'not specified')}."
+            elif "(0/1)" in column_name or "(+)" in column_name:
+                status = "present" if value == 1 else "absent"
+                feature_name = column_name.replace("(0/1)", "").replace("(+)", "").replace("_", " ")
+                sentence = f"{feature_name} is {status}."
+            elif "(0no/1yes)" in column_name:
+                status = "yes" if value == 1 else "no"
+                feature_name = column_name.replace("(0no/1yes)", "").replace("History", " history")
+                sentence = f"The patient has a record of {feature_name}: {status}."
+            elif column_name == "Age(Y)": sentence = f"The patient's age is {value} years."
+            elif column_name == "Gender(0male/1female)": sentence = f"The patient is {'female' if value == 1 else 'male'}."
+            elif column_name in ["Pathology", "SurgicalMethod", "TumorLocation", "Ki-67", "PD_L1"]:
+                sentence = f"The {column_name.lower()} is recorded as: {value}."
+            if sentence: text_list.append(sentence)
+
+        for col in strong_cols:
+            if col in patient_series: add_sentence(strong_sentences, col, patient_series[col])
+        for col in weak_cols:
+            if col in patient_series: add_sentence(weak_sentences, col, patient_series[col])
+
+        strong_text = "Pathological findings include: " + " ".join(strong_sentences) if strong_sentences else "No detailed pathological information available."
+        weak_text = "Clinical and demographic profile: " + " ".join(weak_sentences) if weak_sentences else "No detailed clinical information available."
+
+        return strong_text, weak_text
+
+
+
+# ==========================================================================================
+# Custom Collate Function
+# ==========================================================================================
+def mutli_oscc_custom_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Custom collate function to dynamically handle batches of dictionaries 
+    containing various modalities.
+    """
+    if not batch:
+        return {}
+
+    # --- MODIFIED: Dynamically collate all keys present in the batch ---
+    collated_batch = {}
+    
+    # Get all keys from the first item (assuming all items have the same structure)
+    # Filter out items that might be None from failed loads
+    valid_batch = [item for item in batch if item]
+    if not valid_batch:
+        return {}
+    
+    first_item_keys = valid_batch[0].keys()
+
+    for key in first_item_keys:
+        collated_batch[key] = [item[key] for item in valid_batch if key in item]
+        # if key == 'labels':
+        #     # Labels are tensors, so they should be stacked
+        #     collated_batch['labels'] = torch.stack([item['labels'] for item in valid_batch])
+        # else:
+        #     # Other modalities (images, text) are kept as lists
+            
+    return collated_batch
+
