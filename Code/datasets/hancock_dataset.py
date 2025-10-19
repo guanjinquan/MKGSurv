@@ -202,7 +202,7 @@ class HANCOCKDataset(Dataset):
         if patient_id not in self.blood_data_map or self.clinical_df is None or self.blood_ref_df is None:
             return "No blood data available."
 
-        patient_sex = self.clinical_df.loc[patient_id].get('sex', 'male')
+        patient_sex = self.clinical_df.loc[patient_id].get('sex', 'unknown')
         patient_blood_records = self.blood_data_map[patient_id]
 
         summary_lines = []
@@ -232,22 +232,21 @@ class HANCOCKDataset(Dataset):
         output_dict = {"pid": patient_id}
 
         # --- Image Modality ---
-        # --- Image Modality ---
         if "image" in self.modalities:
             wsi_embeddings = self.pat_to_wsi_embeddings.get(patient_id)
             if wsi_embeddings:
                 wsi_tensor = torch.cat(wsi_embeddings, dim=0) if len(wsi_embeddings) > 1 else wsi_embeddings[0]
 
                 # --- DATA AUGMENTATION ---
-                # For the training set, with 50% probability, drop ~20% of image tokens.
+                # For the training set, with 50% probability, drop ~x% of image tokens.
                 if self.mode == 'train' and torch.rand(1) < 0.5:
                     num_tokens = wsi_tensor.shape[0]
                     if num_tokens > 1:
-                        # Number of tokens to keep (approx. 80%)
-                        num_to_keep = int(num_tokens * 0.8)
-                        # Create a random permutation of indices and select a subset to keep
-                        indices = torch.randperm(num_tokens)
-                        keep_indices = indices[:num_to_keep]
+                        # Number of tokens to drop: random between 10% to 50%
+                        drop_ratio = random.uniform(0.1, 0.5)
+                        num_to_keep = int(num_tokens * drop_ratio)
+                        # Create a random indices to keep (in sorted order)
+                        keep_indices = torch.randperm(num_tokens)[:num_to_keep].sort().values
                         # Update the tensor
                         wsi_tensor = wsi_tensor[keep_indices]
 

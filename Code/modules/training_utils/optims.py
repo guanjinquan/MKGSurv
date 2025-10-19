@@ -97,6 +97,7 @@ def GetOptimizer(args, model):
         raise ValueError("optimizer not supported")
 
     # 再次打印 optimizer 内实际 param 大小（有助于确认 optimizer 中包含哪些参数）
+    print("Num of param groups:", len(optimizer.param_groups)) # self.optimizer.param_groups
     opt_param_count = 0
     opt_bytes = 0
     for g in optimizer.param_groups:

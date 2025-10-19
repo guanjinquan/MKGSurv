@@ -12,10 +12,10 @@ export CUDA_VISIBLE_DEVICES=${GPU_ID}
 RUN_ID="hancock_run_002_bigger_lrx5"
 
 # --- Training Hyperparameters ---
-BATCH_SIZE=4          # Number of samples per batch.
-ACC_STEP=4           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-6               # Learning rate for the model head.
-BACKBONE_LR=2e-6        # Learning rate for the model backbone.
+BATCH_SIZE=2          # Number of samples per batch.
+ACC_STEP=8           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+LR=1e-6               # Learning rate for the model head.
+BACKBONE_LR=5e-7        # Learning rate for the model backbone.
 NUM_EPOCHS=200        # Total number of training epochs.
 
 

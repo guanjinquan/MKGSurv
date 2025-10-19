@@ -149,6 +149,19 @@ class MultiOSCCRecPred(nn.Module):
         self.weight_check_threshold = 1e-6
         self.weight_check_steps = 3
 
+    def get_backbone_params(self):
+        backbone_params = []
+        backbone_params.extend(list(self.vit.parameters()))
+        backbone_params.extend(list(self.bert.parameters()))
+        return backbone_params
+    
+    def get_others_params(self):
+        backbone_ids = {id(p) for p in self.get_backbone_params()}
+        all_params = list(self.parameters())
+        others_params = [p for p in all_params if id(p) not in backbone_ids]
+        return others_params
+    
+
     # -------------------------
     # Text chunking & encoding
     # -------------------------
