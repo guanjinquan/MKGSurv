@@ -10,14 +10,14 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="run_006"
+RUN_ID="run_006_withalign"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=16          # Number of samples per batch.
-ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-6               # Learning rate for the model head.
-BACKBONE_LR=1e-6        # Learning rate for the model backbone.
-NUM_EPOCHS=200        # Total number of training epochs.
+ACC_STEP=1             # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+LR=1e-6                # Learning rate for the model head.
+BACKBONE_LR=5e-7       # Learning rate for the model backbone.
+NUM_EPOCHS=200         # Total number of training epochs.
 
 
 # --- Execution ---
@@ -39,7 +39,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
     --modalities "all" \
-    --with_multimodal_align 
+    --with_multimodal_align \
+    --continue_training \
+    --load_pth_path "/home/Guanjq/NewWork/MedAlignFusion/Checkpoints/multi_oscc/run_006_withalign+msa-oom/Final_Trainer.pkl"
 
 
 echo "Training run ${RUN_ID} finished."

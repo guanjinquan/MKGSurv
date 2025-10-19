@@ -31,9 +31,14 @@ class Tester:
         
         # --- Model Initialization and Loading ---
         self.model = GetModel(self.args).to(self.device)
+
+        if self.args.load_pth_path is None:
+            run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type]
+            self.args.load_pth_path = os.path.join(self.args.ckpt_path, *run_path, "valid_Best.pth") 
+        else:
+            # Load the trained model checkpoint
+            assert os.path.exists(self.args.load_pth_path), f"Checkpoint not found at {self.args.load_pth_path}"
         
-        # Load the trained model checkpoint
-        assert os.path.exists(self.args.load_pth_path), f"Checkpoint not found at {self.args.load_pth_path}"
         print(f"Loading model from {self.args.load_pth_path}...", flush=True)
         
         # Load state dict and handle 'module.' prefix if trained with DDP

@@ -128,7 +128,8 @@ class ModelInterface(nn.Module):
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
         total_loss = multimodal_task_loss + 0.1 * total_fusion_loss
-        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss}
+        # all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss}
+        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         
         return {"logits": final_logits, "losses": all_losses}
@@ -201,7 +202,8 @@ class ModelInterfaceWithAlign(ModelInterface):
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
         total_loss = multimodal_task_loss + total_align_loss + 0.1 * total_fusion_loss
-        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss}
+        # all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss}
+        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         all_losses.update({f"align_{k}": v for k, v in align_losses.items() if 'total' not in k})
         

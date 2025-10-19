@@ -15,8 +15,8 @@ RUN_ID="run_005"
 # --- Training Hyperparameters ---
 BATCH_SIZE=1          # Number of samples per batch.
 ACC_STEP=16           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-6               # Learning rate for the model head.
-BACKBONE_LR=1e-6        # Learning rate for the model backbone.
+LR=1e-6               # Learning rate for the model head.
+BACKBONE_LR=5e-7        # Learning rate for the model backbone.
 NUM_EPOCHS=200        # Total number of training epochs.
 
 

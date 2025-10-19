@@ -73,7 +73,7 @@ class Trainer:
             
             # 需要确保所有进程都加载了相同的状态
             map_location = {'cuda:0': f'cuda:{self.local_rank}'}
-            ckp_trainer = load_trainer(self.args.load_pth_path, map_location=map_location)
+            ckp_trainer = load_trainer(self.args.load_pth_path)
             self.epoch = ckp_trainer.epoch
             self.optimizer.load_state_dict(ckp_trainer.optimizer.state_dict())
             self.scheduler.load_state_dict(ckp_trainer.scheduler.state_dict())
@@ -89,7 +89,7 @@ class Trainer:
         elif self.args.finetune:
             if self.local_rank == 0:
                 print(f"Fine-tune from {self.args.load_pth_path}!!!", flush=True)
-            cp = load_model(self.args.load_pth_path, map_location=self.device)
+            cp = load_model(self.args.load_pth_path)
             pretrain = cp['model']
             
             model_to_load = self.model.module if self.args.use_ddp else self.model
