@@ -16,6 +16,30 @@ from timm.models.vision_transformer import VisionTransformer
 # text / transformers
 from transformers import AutoTokenizer, AutoModel
 
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+import torch
+from torch import nn
+import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModel
+from typing import Dict, Any, List, Tuple, Optional
+import numpy as np
+from modules.common_modules.surv_loss import NLLSurvLoss
+from modules.training_utils.metrics import survival_metrics
+
+import math
+from collections import deque
+from typing import List, Optional, Tuple, Dict
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms as T
+from PIL import Image
+from transformers import AutoTokenizer, AutoModel
+
+
 
 # ---------------------------
 # small vit loader (from your code, adapted)
@@ -65,20 +89,8 @@ def get_vit_small_pathology(pretrained: bool = True, progress: bool = True, key:
 
 
 
-import math
-from collections import deque
-from typing import List, Optional, Tuple, Dict
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.transforms as T
-from PIL import Image
-from transformers import AutoTokenizer, AutoModel
-from modules.training_utils.metrics import classification_metrics
-
-
-class MultiOSCCRecPred(nn.Module):
+class OSCCSurvivalPred(nn.Module):
     """
     Multimodal model using ClinicalBERT (text) + vit_small_patho (image).
     - All modality embeddings are projected to embed_dim (default 512).
@@ -88,7 +100,7 @@ class MultiOSCCRecPred(nn.Module):
     - decode() accepts pooled embeddings (B, embed_dim) and labels to compute logits & loss.
     """
 
-    METRICS_FN = staticmethod(classification_metrics)
+    METRICS_FN = staticmethod(survival_metrics)
 
     def __init__(
         self,
@@ -98,12 +110,11 @@ class MultiOSCCRecPred(nn.Module):
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
 
         self.embed_dim = 512
-        self.out_dim = 2
 
         # 保留原始输入，用于解析
         self._raw_modalities = modalities
         valid_modalities = [
-            "all", "images", "strong_related_text", "weak_related_text",  # 统一images
+            "all", "images", "strong_related_text", "weak_related_text",
             "images,strong_related_text", "images,weak_related_text", "strong_related_text,weak_related_text"
         ]
         cleaned_modalities = ",".join(modalities.split('-'))
@@ -133,15 +144,10 @@ class MultiOSCCRecPred(nn.Module):
             self.bert_proj = nn.Identity()
         self.bert.to(self.device)
 
-        # ----- Classifier head on pooled embedding (512 -> 256 -> out_dim) -----
-        self.classifier = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.LayerNorm(self.embed_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(self.embed_dim // 2, self.out_dim),
-        )
-        self.loss_fn = nn.BCEWithLogitsLoss()
+
+        # ----- Prediction Head (for Decode step) -----
+        self.prediction_head = nn.Linear(self.embed_dim, 10) # Predicts risk for 10 time intervals
+        self.loss_fn = NLLSurvLoss()
 
         # optional: small history for weight norms (if desired)
         self._weight_norm_history = deque()
@@ -287,7 +293,6 @@ class MultiOSCCRecPred(nn.Module):
         all_embeddings = []  #[image_features, strong_text_features, weak_text_features]
         all_masks = [] # [image_mask, strong_text_mask, weak_text_mask]
 
-
         # ----- Image branch -----
         if 'images' in batch and batch['images']:
             list_of_image_lists = batch.get('images', [])
@@ -307,7 +312,6 @@ class MultiOSCCRecPred(nn.Module):
 
                 all_embeddings.append(image_features)
                 all_masks.append(image_mask)
-
 
         # ----- Strong text branch -----
         if 'strong_related_text' in batch and batch['strong_related_text']:
@@ -330,88 +334,74 @@ class MultiOSCCRecPred(nn.Module):
         # Check number of present modalities
         assert len(all_embeddings) <= self.max_modalities_num, f"Number of present modalities exceeds the maximum allowed: {self.max_modalities_num}"
 
+        print("Modalities present:", len(all_embeddings))
+
         return {
             "embeddings": all_embeddings,
             "masks": all_masks,
             "align_pairs": strong_related_pairs,
         }
-
-    # -------------------------
-    # decode & metrics (compatible)
-    # -------------------------
+    
     def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
-        pooled_embeddings: (B, embed_dim)
-        pooled_mask: (B,) boolean or None
-        batch: batch of data with labels
-        returns {'logits': (B, out_dim), 'loss': scalar_tensor}
+        Applies masking to the decoding process, calculating logits and loss only for valid (unmasked) data.
+
+        Args:
+            pooled_embeddings: Tensor of shape (B, embed_dim) containing patient embeddings.
+            pooled_mask: Optional boolean tensor of shape (B,) where True indicates a valid patient.
+                         If None, all patients are considered valid.
+            batch: A list of dictionary containing labels, including 'label_Y' and 'label_c'.
+
+        Returns:
+            A dictionary containing:
+            - 'logits': Tensor of shape (B, out_dim) with predictions. Logits for masked-out
+                        patients will be zero.
+            - 'loss': A scalar tensor representing the loss, calculated only on the valid data.
         """
         batch_size = pooled_embeddings.shape[0]
         device = pooled_embeddings.device
 
-        labels = torch.stack(batch['labels'], dim=0).to(device).to(torch.float32)
-        if not isinstance(labels, torch.Tensor):
-            labels = torch.tensor(labels, device=device)
-        labels = labels.to(device)
-
-        logits = torch.zeros(batch_size, self.out_dim, device=device)
+        # Assuming the prediction head outputs a single score (out_dim = 1)
+        out_dim = self.prediction_head.out_features
+        logits = torch.zeros(batch_size, out_dim, device=device)
         loss = torch.tensor(0.0, device=device)
 
+        # 1. Create a boolean mask for valid (present) patients.
+        # If pooled_mask is None, we assume all data in the batch is valid.
         patient_mask = pooled_mask.bool().to(device) if pooled_mask is not None else torch.ones(batch_size, dtype=torch.bool, device=device)
+
+        # 2. If no patients are valid in this batch, return zeros immediately.
         if not patient_mask.any():
             return {"logits": logits, "loss": loss}
 
+        # 3. Filter the embeddings and labels to only include the valid data.
         valid_embeddings = pooled_embeddings[patient_mask]
-        valid_labels = labels[patient_mask]
 
-        valid_logits = self.classifier(valid_embeddings)
+        label_Y_list = [batch['labels'][i]['label_Y'] for i in range(batch_size)]
+        label_c_list = [batch['labels'][i]['label_c'] for i in range(batch_size)]
 
-        if valid_labels.ndim == 1:
-            target = F.one_hot(valid_labels, num_classes=self.out_dim).float()
-        else:
-            target = valid_labels.float()
-        loss = self.loss_fn(valid_logits, target)
+        Y_full = torch.tensor(label_Y_list).to(device).to(torch.long)
+        c_full = torch.tensor(label_c_list).to(device).to(torch.long)
+
+        valid_Y = Y_full[patient_mask]
+        valid_c = c_full[patient_mask]
+
+        # 4. Perform prediction and loss calculation only on the valid subset.
+        valid_logits = self.prediction_head(valid_embeddings)
+        loss = self.loss_fn(valid_logits, None, valid_Y, valid_c)
+
+        # 5. Place the calculated logits for the valid data back into the original tensor.
+        # The positions for masked-out data remain zero.
         logits[patient_mask] = valid_logits
+
         return {"logits": logits, "loss": loss}
 
+    def get_backbone_params(self) -> List[nn.Parameter]:
+        parms_in_clinical_bert = [p for p in self.bert.parameters()]
+        return parms_in_clinical_bert
+    
+    def get_others_params(self) -> List[nn.Parameter]:
+        backbone_params = set(self.get_backbone_params())
+        parms_in_others = [p for p in self.parameters() if p not in backbone_params]
+        return parms_in_others
 
-
-    # -------------------------
-    # utility: compute L2 norm of backbone weights (optional)
-    # -------------------------
-    def _compute_weight_norm(self, backbone_only: bool = True) -> float:
-        raw_model = self
-        params = []
-        if backbone_only:
-            params.extend(list(self.vit.parameters()))
-            params.extend(list(self.bert.parameters()))
-        else:
-            params = list(self.parameters())
-        total_sq = 0.0
-        for p in params:
-            if p is None:
-                continue
-            t = p.detach().cpu().float()
-            if t.numel() == 0:
-                continue
-            total_sq += float(torch.sum(t * t).item())
-        return math.sqrt(total_sq)
-
-    def _auto_weight_check(self, threshold: Optional[float] = None, steps: Optional[int] = None, backbone_only: bool = True) -> Dict:
-        if threshold is None:
-            threshold = self.weight_check_threshold
-        if steps is None:
-            steps = self.weight_check_steps
-        cur_norm = float(self._compute_weight_norm(backbone_only=backbone_only))
-        self._weight_norm_history.append(cur_norm)
-        idx = len(self._weight_norm_history) - 1
-        if len(self._weight_norm_history) <= steps:
-            return {"status": "counting", "idx": idx, "norm": cur_norm}
-        pre_norm = float(self._weight_norm_history[-(steps + 1)])
-        delta = abs(cur_norm - pre_norm)
-        changed = delta > float(threshold)
-        record = {"idx_now": idx, "idx_prev": idx - steps, "pre_norm": pre_norm, "post_norm": cur_norm, "delta": delta, "threshold": float(threshold), "steps": int(steps), "changed": bool(changed)}
-        if changed:
-            self.weight_change_records.append(record)
-            print(f"[WEIGHT-CHECK][WARN] Δ={delta:.4e} > {threshold:.1e}")
-        return {"status": "checked", **record}

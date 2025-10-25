@@ -245,7 +245,7 @@ class I2MoEFusionModule(nn.Module):
         redundancy_positives = [redundancy_expert_outputs[i + 1] for i in range(self.max_modalities) if presence_mask[i]]
         interaction_losses["redundancy"] = self._redundancy_loss(redundancy_anchor, redundancy_positives)
         
-        interaction_losses['total'] = sum(l for l in interaction_losses.values() if isinstance(l, torch.Tensor))
+        interaction_losses['total_loss'] = sum(l for l in interaction_losses.values() if isinstance(l, torch.Tensor))
 
         # --- Re-weighting and Fusion ---
         all_primary_embeddings = torch.stack([output[0] for output in expert_outputs], dim=1)

@@ -47,7 +47,7 @@ def InferTransforms():
 
 
 
-class MultiOSCCDataset(Dataset):
+class OSCCSurvInHouseDataset(Dataset):
     """
     Updated Dataset class that dynamically loads data based on requested modalities.
     - It loads pre-processed images from .npy files.
@@ -65,15 +65,19 @@ class MultiOSCCDataset(Dataset):
         self.items = []
         self.transforms = None
         self.clinical_df = None
-        self.num_classes = 2
 
         # --- MODIFIED: Parse and store the list of required modalities ---
         self.modalities = self._parse_modalities(modalities)
-        print(f"Dataset will be initialized for modalities: {self.modalities}")
+        print(f"Dataset will be initialized for modalities!!: {self.modalities}")
 
         # --- Initialization logic ---
         self._load_clinical_data()
         self._load_and_filter_items() # Changed from _load_items
+
+        # --- Survival Bins ---
+        self.five_years_in_days = 5 * 365.0
+        self.num_time_bins = 10
+        self.time_bins = np.linspace(0, self.five_years_in_days, self.num_time_bins + 1)
 
         if mode == "train":
             self.transforms = TrainTransforms()
@@ -86,19 +90,61 @@ class MultiOSCCDataset(Dataset):
         print(f"Dataset loaded: mode='{self.mode}'. Final valid item count: {len(self.items)}")
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
+        """
+        Retrieves a single patient's data, including survival labels `label_Y` and `label_c`.
+        """
         item_info = self.items[index]
-        pid = item_info['pid']
-        label = item_info['REC']
+        pid_int = int(item_info['pid'])  # Clinical_DF.inedx 是 Int64, 因此转成int访问
+        output_dict = {"pid": pid_int}
 
-        # --- MODIFIED: Dynamically build the output dictionary ---
-        output_dict = {}
+        # --- Survival Labels (Y and c) ---
+        has_recurrence = item_info.get('recurrence') == 'yes'
+        time_to_recurrence = item_info.get('days_to_recurrence')
+        time_to_last_info = item_info.get('days_to_last_information')
 
+        event_time = -1.0
+        censorship = 1 # c = 1 means censored, c = 0 means event occurred.
+
+        if has_recurrence and pd.notna(time_to_recurrence):
+            # The patient had a recurrence event.
+            if time_to_recurrence < self.five_years_in_days:
+                # Event occurred WITHIN the 5-year study period.
+                censorship = 0
+                event_time = time_to_recurrence
+            else:
+                # Event occurred AFTER 5 years. For a 5-year analysis, this is censored.
+                censorship = 1
+                event_time = self.five_years_in_days
+        elif pd.notna(time_to_last_info):
+            # No recurrence event, use last follow-up time. Always censored.
+            censorship = 1
+            # We observe them until their last follow-up or the end of the study, whichever comes first.
+            event_time = min(time_to_last_info, self.five_years_in_days)
+        
+        # Discretize the event time into bins (0 to 9)
+        # Y is the discrete time interval index
+        time_bin = -1
+        if event_time >= 0:
+            # np.digitize finds which bin the value falls into.
+            # We subtract 1 to get a 0-based index.
+            time_bin = np.digitize(event_time, self.time_bins) - 1
+            # Ensure the index is within the valid range [0, num_bins-1]
+            time_bin = min(time_bin, self.num_time_bins - 1)
+
+        # --- Labels (always included) ---
+        output_dict['labels'] = {
+            'label_Y': int(time_bin),
+            'label_c': censorship,
+        }
+
+
+        # -- Dynamically build the output dictionary ---
         # --- Image modality ---
-        if "image" in self.modalities:
-            npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
+        if "images" in self.modalities:
+            npy_path = os.path.join(self.npy_dir, f"{pid_int}.npy")
             try:
                 images_array = np.load(npy_path)
-                assert images_array.shape[0] == 6, f"Expected 6 images, got {images_array.shape[0]} for PID {pid}."
+                assert images_array.shape[0] == 6, f"Expected 6 images, got {images_array.shape[0]} for PID {pid_int}."
                 
                 loaded_images = [Image.fromarray(images_array[i]) for i in range(images_array.shape[0])]
                 
@@ -111,14 +157,18 @@ class MultiOSCCDataset(Dataset):
 
             except (FileNotFoundError, AssertionError) as e:
                 # This case should be rare due to the pre-filtering in _load_and_filter_items
-                print(f"Warning: NPY file missing or invalid for {pid} at getitem: {e}")
+                print(f"Warning: NPY file missing or invalid for {pid_int} at getitem: {e}")
                 pass # Skip adding the 'images' key
 
         # --- Text modalities ---
         if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
-            if self.clinical_df is not None and pid in self.clinical_df.index:
-                patient_series = self.clinical_df.loc[pid]
+
+            # assert pid_int in self.clinical_df.index, f"Clinical data missing for PID {pid_int}, Index = {self.clinical_df.index[:100]}"
+
+            if self.clinical_df is not None and pid_int in self.clinical_df.index:
+                patient_series = self.clinical_df.loc[pid_int]  # ALL Value in clinical df is STRING
                 strong_text, weak_text = self._generate_clinical_text(patient_series)
+                # print("Text = ", strong_text, weak_text)
                 if "strong_related_text" in self.modalities:
                     output_dict["strong_related_text"] = strong_text
                 if "weak_related_text" in self.modalities:
@@ -130,16 +180,14 @@ class MultiOSCCDataset(Dataset):
                 if "weak_related_text" in self.modalities:
                     output_dict["weak_related_text"] = None
 
-        # --- Labels (always included) ---
-        one_hot_label = torch.zeros(self.num_classes, dtype=torch.float32) # Use float for BCEWithLogitsLoss
-        one_hot_label[label] = 1.0
 
-        output_dict["pid"] = pid
-        output_dict["labels"] = one_hot_label
-        
-        # --- If no modalities were successfully loaded, skip this item ---
-        count_not_none = sum(1 for v in output_dict.values() if v is not None)
-        if count_not_none <= 1:
+        # --- Data Integrity Check ---
+        # If no requested modalities were found for this patient, get the next one.
+        modalities_found = sum(1 for m in self.modalities if output_dict.get(m) is not None and (isinstance(output_dict.get(m), str) and output_dict.get(m).strip() != "" or not isinstance(output_dict.get(m), str)))
+        # print(f"Modalities found for PID {pid_int}: {modalities_found}, modalities requested: {self.modalities}, keys in output_dict: {output_dict.keys()}")
+        # print("Strong related text: ", output_dict.get("strong_related_text"))
+        # print("Weak related text: ", output_dict.get("weak_related_text"))
+        if modalities_found == 0:
             return self.__getitem__((index + 1) % len(self))
 
         return output_dict
@@ -150,10 +198,9 @@ class MultiOSCCDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the modalities string into a list of valid modality keys."""
         if modalities_str == "all":
-            return ["image", "strong_related_text", "weak_related_text"]
-        
-        # We use 'image' internally for the data key, not 'images'
-        valid_set = {"image", "strong_related_text", "weak_related_text"}
+            return ["images", "strong_related_text", "weak_related_text"]
+    
+        valid_set = {"images", "strong_related_text", "weak_related_text"}
         # Allow for both '-' and ',' as separators
         parsed = [m.strip() for m in modalities_str.replace('-', ',').split(',')]
         
@@ -175,59 +222,65 @@ class MultiOSCCDataset(Dataset):
             self.clinical_df = None # Ensure it's None if file not found
 
     def _get_labels(self):
-        """Returns a list of all labels in the dataset."""
-        return [item['REC'] for item in self.items]
-    
-    def _check_modality_availability(self, pid: str) -> bool:
         """
-        Checks if at least one of the requested modalities is available for a given patient.
+        Returns a list of all labels (time bins) in the dataset.
+        This is used by the SurvivalBalancedBatchSampler.
         """
-        has_image = False
-        if "image" in self.modalities:
-            npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
-            has_image = os.path.exists(npy_path)
+        labels_y = []
+        for index in range(len(self.items)):
+            label_info = self.items[index]
+            
+            has_recurrence = label_info.get('recurrence') == 'yes'
+            time_to_recurrence = label_info.get('days_to_recurrence')
+            time_to_last_info = label_info.get('days_to_last_information')
 
-        has_text = False
-        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
-            if self.clinical_df is not None and pid in self.clinical_df.index:
-                has_text = True
-        
-        # The patient is valid if any of the requested modalities are present
-        return has_image or has_text
+            event_time = -1.0
+            
+            if has_recurrence and pd.notna(time_to_recurrence):
+                if time_to_recurrence < self.five_years_in_days:
+                    event_time = time_to_recurrence
+                else:
+                    event_time = self.five_years_in_days
+            elif pd.notna(time_to_last_info):
+                event_time = min(time_to_last_info, self.five_years_in_days)
+            
+            time_bin = -1
+            if event_time >= 0:
+                time_bin = np.digitize(event_time, self.time_bins) - 1
+                time_bin = min(time_bin, self.num_time_bins - 1)
+            
+            labels_y.append(int(time_bin))
+            
+        return labels_y
+    
 
     def _load_and_filter_items(self):
         """Loads dataset items and filters them based on modality availability."""
-        metadata_path = os.path.join(self.dataset_dir, "all_metadata.json")
-        split_path = os.path.join(self.dataset_dir, "split_OOD.json")
+        metadata_path = os.path.join(self.dataset_dir, "oscc_recurrence_survival_data.json")
+        split_path = os.path.join(self.dataset_dir, "split_seed=2024.json")
         print("Load Split File:", split_path)
 
         with open(metadata_path, 'r') as f:
-            all_patients_info = {item['pid']: item for item in json.load(f)['datainfo']}
+            all_patients_info = {str(item['pid']): item for item in json.load(f)}  # ALL PID use String type
+        print(len(all_patients_info))
 
         with open(split_path, 'r') as f:
             split_data = json.load(f)
 
-        target_pids = set(split_data[self.mode])
+        target_pids = set([str(pid) for pid in split_data[self.mode]])
+        # self.patient_ids = list(target_pids)
         
         initial_items = [
             all_patients_info[pid] for pid in target_pids
             if pid in all_patients_info
         ]
 
-        if len(initial_items) != len(target_pids):
-            print(f"Warning: Some PIDs from split file not found in metadata. Found {len(initial_items)}/{len(target_pids)}.")
+        # Make sure the patient_ids are same order with self.items
+        self.items = initial_items #[item for pid in self.patient_ids for item in initial_items if int(item['pid']) == str(pid)]
 
-        # --- MODIFIED: Filter items based on modality availability ---
-        skipped_count = 0
-        for item in initial_items:
-            pid = item['pid']
-            if self._check_modality_availability(pid):
-                self.items.append(item)
-            else:
-                skipped_count += 1
-        
-        if skipped_count > 0:
-            print(f"Skipped {skipped_count} patients because they were missing all requested modalities: {self.modalities}")
+        print("Load data successfully")
+        if len(self.items) != len(target_pids):
+            print(f"Warning: Some PIDs from split file not found in metadata. Found {len(self.items)}/{len(target_pids)}.")
 
     def _generate_clinical_text(self, patient_series):
         """Generates natural language descriptions from clinical data. (No changes needed here)"""
@@ -280,6 +333,5 @@ class MultiOSCCDataset(Dataset):
         weak_text = "Clinical and demographic profile: " + " ".join(weak_sentences) if weak_sentences else "No detailed clinical information available."
 
         return strong_text, weak_text
-
 
 

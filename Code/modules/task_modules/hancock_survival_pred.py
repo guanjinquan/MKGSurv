@@ -105,7 +105,7 @@ class HANCOCKSurvivalPred(nn.Module):
 
         # --- Modality Setup ---
         if modalities == 'all':
-            self.active_modalities = ["image", "strong_related_text", "weak_related_text"]
+            self.active_modalities = ["images", "strong_related_text", "weak_related_text"]
         else:
             self.active_modalities = sorted([m.strip() for m in modalities.split(',')])
         
@@ -113,7 +113,7 @@ class HANCOCKSurvivalPred(nn.Module):
         print(f"Model initialized for modalities: {self.active_modalities}")
 
         # ----- WSI Branch (AggregatingTransMIL) -----
-        if 'image' in self.active_modalities:
+        if 'images' in self.active_modalities:
             self.wsi_mil = AggregatingTransMIL(
                 input_dim=1024,
                 embed_dim=self.embed_dim,
@@ -192,8 +192,8 @@ class HANCOCKSurvivalPred(nn.Module):
         present_modalities = []
 
         # --- 1. WSI Branch ---
-        if 'image' in batch and batch['image']:
-            wsi_tensors = batch['image']
+        if 'images' in batch and batch['images']:
+            wsi_tensors = batch['images']
             valid_tensors = [t for t in wsi_tensors if t is not None]
             
             if valid_tensors:

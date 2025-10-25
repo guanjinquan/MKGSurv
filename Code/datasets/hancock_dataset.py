@@ -105,9 +105,9 @@ class HANCOCKDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the comma-separated modalities string into a list."""
         if modalities_str == "all":
-            return ["image", "strong_related_text", "weak_related_text"]
+            return ["images", "strong_related_text", "weak_related_text"]
 
-        valid_modalities = {"image", "strong_related_text", "weak_related_text"}
+        valid_modalities = {"images", "strong_related_text", "weak_related_text"}
         modalities = [m.strip() for m in modalities_str.split(',')]
 
         for m in modalities:
@@ -166,7 +166,7 @@ class HANCOCKDataset(Dataset):
                     self.blood_data_map[patient_id] = group.to_dict('records')
 
         # 3. Conditionally load WSI embeddings for the image modality
-        if "image" in self.modalities:
+        if "images" in self.modalities:
             if os.path.exists(self.wsi_encodings_dir):
                 for root, _, file in os.walk(self.wsi_encodings_dir):
                     for fname in file:
@@ -232,7 +232,7 @@ class HANCOCKDataset(Dataset):
         output_dict = {"pid": patient_id}
 
         # --- Image Modality ---
-        if "image" in self.modalities:
+        if "images" in self.modalities:
             wsi_embeddings = self.pat_to_wsi_embeddings.get(patient_id)
             if wsi_embeddings:
                 wsi_tensor = torch.cat(wsi_embeddings, dim=0) if len(wsi_embeddings) > 1 else wsi_embeddings[0]
@@ -250,9 +250,9 @@ class HANCOCKDataset(Dataset):
                         # Update the tensor
                         wsi_tensor = wsi_tensor[keep_indices]
 
-                output_dict["image"] = wsi_tensor
+                output_dict["images"] = wsi_tensor
             else:
-                output_dict["image"] = None
+                output_dict["images"] = None
 
         # --- Text Modalities ---
         if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
@@ -338,34 +338,6 @@ class HANCOCKDataset(Dataset):
         return output_dict
 
 
-
-def hancock_custom_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Custom collate function to handle batches of dictionaries with various data types.
-    It stacks labels into tensors but keeps modalities with variable sizes (like WSI embeddings)
-    or text data as lists.
-    """
-    if not batch:
-        return {}
-    
-    # Filter out any None items that might have resulted from errors in __getitem__
-    batch = [item for item in batch if item is not None]
-    if not batch:
-        return {}
-
-    keys = batch[0].keys()
-    collated_batch = {}
-
-    for key in keys:
-        collated_batch[key] = [item[key] for item in batch]
-        # # For labels, convert the list of scalars to a stacked tensor
-        # if key in ['label_Y', 'label_c']:
-        #     collated_batch[key] = torch.tensor([item[key] for item in batch], dtype=torch.long)
-        # # For other data (patient_id, image, text), keep them as a list.
-        # # This handles variable-sized tensors, strings, and None values gracefully.
-        # else:
-            
-    return collated_batch
 
 
 

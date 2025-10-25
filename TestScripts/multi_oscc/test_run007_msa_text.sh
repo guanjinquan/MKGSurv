@@ -1,3 +1,4 @@
+
 #!/bin/bash
 export HF_ENDPOINT="https://hf-mirror.com"
 # --- Script Configuration ---
@@ -5,18 +6,18 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=0
+GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="run_001"
+RUN_ID="run_007_only_text"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
-ACC_STEP=4           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=1e-6               # Learning rate for the model head.
-BACKBONE_LR=5e-7        # Learning rate for the model backbone.
-NUM_EPOCHS=200        # Total number of training epochs.
+ACC_STEP=4             # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+LR=1e-6                # Learning rate for the model head.
+BACKBONE_LR=5e-7       # Learning rate for the model backbone.
+NUM_EPOCHS=200         # Total number of training epochs.
 
 
 # --- Execution ---
@@ -28,7 +29,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --runs_id ${RUN_ID} \
     --model_task "multi_oscc" \
     --dataset "multi_oscc" \
-    --fusion_type "healnet" \
+    --fusion_type "msa" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
@@ -37,7 +38,6 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
-
+    --modalities "strong_related_text,weak_related_text" 
 
 echo "Training run ${RUN_ID} finished."

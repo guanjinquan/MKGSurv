@@ -47,7 +47,7 @@ def InferTransforms():
 
 
 
-class MultiOSCCDataset(Dataset):
+class MultiOSCCITDataset(Dataset):
     """
     Updated Dataset class that dynamically loads data based on requested modalities.
     - It loads pre-processed images from .npy files.
@@ -115,20 +115,13 @@ class MultiOSCCDataset(Dataset):
                 pass # Skip adding the 'images' key
 
         # --- Text modalities ---
-        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
+        if "text" in self.modalities:
             if self.clinical_df is not None and pid in self.clinical_df.index:
                 patient_series = self.clinical_df.loc[pid]
                 strong_text, weak_text = self._generate_clinical_text(patient_series)
-                if "strong_related_text" in self.modalities:
-                    output_dict["strong_related_text"] = strong_text
-                if "weak_related_text" in self.modalities:
-                    output_dict["weak_related_text"] = weak_text
+                output_dict["text"] = strong_text + " " + weak_text
             else:
-                # This case should also be rare
-                if "strong_related_text" in self.modalities:
-                    output_dict["strong_related_text"] = None
-                if "weak_related_text" in self.modalities:
-                    output_dict["weak_related_text"] = None
+                output_dict["text"] = None
 
         # --- Labels (always included) ---
         one_hot_label = torch.zeros(self.num_classes, dtype=torch.float32) # Use float for BCEWithLogitsLoss
@@ -150,10 +143,10 @@ class MultiOSCCDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the modalities string into a list of valid modality keys."""
         if modalities_str == "all":
-            return ["image", "strong_related_text", "weak_related_text"]
+            return ["image", "text"]
         
         # We use 'image' internally for the data key, not 'images'
-        valid_set = {"image", "strong_related_text", "weak_related_text"}
+        valid_set = {"image", "text"}
         # Allow for both '-' and ',' as separators
         parsed = [m.strip() for m in modalities_str.replace('-', ',').split(',')]
         
@@ -188,7 +181,7 @@ class MultiOSCCDataset(Dataset):
             has_image = os.path.exists(npy_path)
 
         has_text = False
-        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
+        if "text" in self.modalities:
             if self.clinical_df is not None and pid in self.clinical_df.index:
                 has_text = True
         

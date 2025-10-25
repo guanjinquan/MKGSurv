@@ -78,7 +78,7 @@ from transformers import AutoTokenizer, AutoModel
 from modules.training_utils.metrics import classification_metrics
 
 
-class MultiOSCCRecPred(nn.Module):
+class MultiOSCCRecPred_IT(nn.Module):
     """
     Multimodal model using ClinicalBERT (text) + vit_small_patho (image).
     - All modality embeddings are projected to embed_dim (default 512).
@@ -103,7 +103,7 @@ class MultiOSCCRecPred(nn.Module):
         # 保留原始输入，用于解析
         self._raw_modalities = modalities
         valid_modalities = [
-            "all", "images", "strong_related_text", "weak_related_text",  # 统一images
+            "all", "images", "strong_related_text", "weak_related_text",
             "images,strong_related_text", "images,weak_related_text", "strong_related_text,weak_related_text"
         ]
         cleaned_modalities = ",".join(modalities.split('-'))
@@ -287,7 +287,6 @@ class MultiOSCCRecPred(nn.Module):
         all_embeddings = []  #[image_features, strong_text_features, weak_text_features]
         all_masks = [] # [image_mask, strong_text_mask, weak_text_mask]
 
-
         # ----- Image branch -----
         if 'images' in batch and batch['images']:
             list_of_image_lists = batch.get('images', [])
@@ -308,24 +307,11 @@ class MultiOSCCRecPred(nn.Module):
                 all_embeddings.append(image_features)
                 all_masks.append(image_mask)
 
-
-        # ----- Strong text branch -----
-        if 'strong_related_text' in batch and batch['strong_related_text']:
-            strong_text_features, strong_text_mask = self._encode_text(batch['strong_related_text'])
+        # ----- Text branch -----
+        if 'text' in batch and batch['text']:
+            strong_text_features, strong_text_mask = self._encode_text(batch['text'])
             all_embeddings.append(strong_text_features)
             all_masks.append(strong_text_mask)
-
-        # ----- Weak text branch -----
-        if 'weak_related_text' in batch and batch['weak_related_text']:
-            weak_text_features, weak_text_mask = self._encode_text(batch['weak_related_text'])
-            all_embeddings.append(weak_text_features)
-            all_masks.append(weak_text_mask)
-
-        # Define which modalities are strongly related (e.g., for cross-attention)
-        # Index 0: image, Index 1: strong_related_text
-        strong_related_pairs = []
-        if image_features is not None and strong_text_features is not None:
-            strong_related_pairs.append((0, 1))
 
         # Check number of present modalities
         assert len(all_embeddings) <= self.max_modalities_num, f"Number of present modalities exceeds the maximum allowed: {self.max_modalities_num}"
@@ -333,7 +319,7 @@ class MultiOSCCRecPred(nn.Module):
         return {
             "embeddings": all_embeddings,
             "masks": all_masks,
-            "align_pairs": strong_related_pairs,
+            "align_pairs": [],
         }
 
     # -------------------------
