@@ -90,7 +90,7 @@ def get_vit_small_pathology(pretrained: bool = True, progress: bool = True, key:
 
 
 
-class OSCCSurvivalPred(nn.Module):
+class OSCCSurvivalPred_IT(nn.Module):
     """
     Multimodal model using ClinicalBERT (text) + vit_small_patho (image).
     - All modality embeddings are projected to embed_dim (default 512).
@@ -114,13 +114,12 @@ class OSCCSurvivalPred(nn.Module):
         # 保留原始输入，用于解析
         self._raw_modalities = modalities
         valid_modalities = [
-            "all", "images", "strong_related_text", "weak_related_text",
-            "images,strong_related_text", "images,weak_related_text", "strong_related_text,weak_related_text"
+            "all", "images", "text",
         ]
         cleaned_modalities = ",".join(modalities.split('-'))
         assert cleaned_modalities in valid_modalities, f"Invalid modalities specified: {modalities}"
         self.modalities = cleaned_modalities
-        self.max_modalities_num = 3 if self.modalities == 'all' else len(cleaned_modalities.split(','))
+        self.max_modalities_num = 2 if self.modalities == 'all' else len(cleaned_modalities.split(','))
 
         # ----- Vision backbone (vit small) -----
         vit_model, vit_emb = get_vit_small_pathology(pretrained=True, progress=True, key="DINO_p16")
@@ -284,10 +283,7 @@ class OSCCSurvivalPred(nn.Module):
         """
         batch_size = len(batch.get('labels', []))
         if batch_size == 0:
-            return {"embeddings": [None, None, None], "masks": [None, None, None], "align_pairs": []}
-
-        image_features, strong_text_features, weak_text_features = None, None, None
-        image_mask, strong_text_mask, weak_text_mask = None, None, None
+            return {"embeddings": [None, None], "masks": [None, None], "align_pairs": []}
 
         # --- Process modalities only if their key exists in the batch ---
         all_embeddings = []  #[image_features, strong_text_features, weak_text_features]
@@ -313,23 +309,13 @@ class OSCCSurvivalPred(nn.Module):
                 all_embeddings.append(image_features)
                 all_masks.append(image_mask)
 
-        # ----- Strong text branch -----
-        if 'strong_related_text' in batch and batch['strong_related_text']:
-            strong_text_features, strong_text_mask = self._encode_text(batch['strong_related_text'])
-            all_embeddings.append(strong_text_features)
-            all_masks.append(strong_text_mask)
-
         # ----- Weak text branch -----
-        if 'weak_related_text' in batch and batch['weak_related_text']:
-            weak_text_features, weak_text_mask = self._encode_text(batch['weak_related_text'])
-            all_embeddings.append(weak_text_features)
-            all_masks.append(weak_text_mask)
+        if 'text' in batch and batch['text']:
+            text_features, text_mask = self._encode_text(batch['text'])
+            all_embeddings.append(text_features)
+            all_masks.append(text_mask)
 
-        # Define which modalities are strongly related (e.g., for cross-attention)
-        # Index 0: image, Index 1: strong_related_text
         strong_related_pairs = []
-        if image_features is not None and strong_text_features is not None:
-            strong_related_pairs.append((0, 1))
 
         # Check number of present modalities
         assert len(all_embeddings) <= self.max_modalities_num, f"Number of present modalities exceeds the maximum allowed: {self.max_modalities_num}"

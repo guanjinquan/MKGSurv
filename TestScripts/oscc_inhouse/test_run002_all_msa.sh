@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="inhouse_run003"
+RUN_ID="inhouse_run002"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.

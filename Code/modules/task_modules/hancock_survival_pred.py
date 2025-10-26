@@ -130,7 +130,7 @@ class HANCOCKSurvivalPred(nn.Module):
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 10) # Predicts risk for 10 time intervals
-        self.loss_fn = NLLSurvLoss()
+        self.loss_fn = NLLSurvLoss(reduction='none')
 
     def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
         """Splits a list of token ids into chunks."""
@@ -266,6 +266,7 @@ class HANCOCKSurvivalPred(nn.Module):
         # Assuming the prediction head outputs a single score (out_dim = 1)
         out_dim = self.prediction_head.out_features
         logits = torch.zeros(batch_size, out_dim, device=device)
+        loss_tensor = torch.zeros((batch_size, 1), device=device)
         loss = torch.tensor(0.0, device=device)
 
         # 1. Create a boolean mask for valid (present) patients.
@@ -274,7 +275,7 @@ class HANCOCKSurvivalPred(nn.Module):
 
         # 2. If no patients are valid in this batch, return zeros immediately.
         if not patient_mask.any():
-            return {"logits": logits, "loss": loss}
+            return {"logits": logits, "loss": loss, 'loss_tensor': loss_tensor}
 
         # 3. Filter the embeddings and labels to only include the valid data.
         valid_embeddings = pooled_embeddings[patient_mask]
@@ -290,13 +291,14 @@ class HANCOCKSurvivalPred(nn.Module):
 
         # 4. Perform prediction and loss calculation only on the valid subset.
         valid_logits = self.prediction_head(valid_embeddings)
-        loss = self.loss_fn(valid_logits, None, valid_Y, valid_c)
+        loss_tensor = self.loss_fn(valid_logits, None, valid_Y, valid_c)
+        loss = loss_tensor.mean()
 
         # 5. Place the calculated logits for the valid data back into the original tensor.
         # The positions for masked-out data remain zero.
         logits[patient_mask] = valid_logits
 
-        return {"logits": logits, "loss": loss}
+        return {"logits": logits, "loss": loss, "loss_tensor": loss_tensor}
 
     def get_backbone_params(self) -> List[nn.Parameter]:
         parms_in_clinical_bert = [p for p in self.bert.parameters()]

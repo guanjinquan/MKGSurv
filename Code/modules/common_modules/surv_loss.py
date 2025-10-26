@@ -12,7 +12,7 @@ from sklearn.metrics import roc_auc_score
 import os
 
 
-def nll_loss(logits, S, Y, c, alpha=0.4, eps=1e-7):
+def nll_loss(logits, S, Y, c, alpha=0.4, eps=1e-7, reduction='none'):
     batch_size = len(Y)
 
     assert isinstance(logits, torch.Tensor), f"Logits must be a torch Tensor, but got {type(logits)}"
@@ -32,16 +32,24 @@ def nll_loss(logits, S, Y, c, alpha=0.4, eps=1e-7):
     censored_loss = - c * torch.log(torch.gather(S_padded, 1, Y+1).clamp(min=eps))
     neg_l = censored_loss + uncensored_loss
     loss = (1-alpha) * neg_l + alpha * uncensored_loss  # keep higher weight on uncensored loss
-    loss = loss.mean()
+
+    if reduction == 'mean':
+        loss = loss.mean()
+    elif reduction == 'none':
+        loss = loss
+    elif reduction == 'sum':
+        loss = loss.sum()
+    
     return loss
 
 
 class NLLSurvLoss(object):
-    def __init__(self, alpha=0.15):
+    def __init__(self, alpha=0.15, reduction='none'):
         self.alpha = alpha
+        self.reduction = reduction
 
     def __call__(self, hazards, S, Y, c, alpha=None):
         if alpha is None:
-            return nll_loss(hazards, S, Y, c, alpha=self.alpha)
+            return nll_loss(hazards, S, Y, c, alpha=self.alpha, reduction=self.reduction)
         else:
-            return nll_loss(hazards, S, Y, c, alpha=alpha)
+            return nll_loss(hazards, S, Y, c, alpha=alpha, reduction=self.reduction)

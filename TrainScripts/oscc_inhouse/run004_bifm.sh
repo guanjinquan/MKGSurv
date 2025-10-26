@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="inhouse_run003"
+RUN_ID="inhouse_run004"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
@@ -26,9 +26,9 @@ echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "oscc_inhouse" \
-    --dataset "oscc_inhouse" \
-    --fusion_type "msa" \
+    --model_task "oscc_inhouse_it" \
+    --dataset "oscc_inhouse_it" \
+    --fusion_type "mibf_fusion" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \

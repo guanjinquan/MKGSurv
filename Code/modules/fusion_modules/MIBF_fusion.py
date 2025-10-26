@@ -132,8 +132,8 @@ def _masked_mean_pool(tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     pooled = summed_tokens / valid_token_count
     return pooled # (B, dim)
 
-# --- Main Fusion Class ---
 
+# --- Main Fusion Class ---
 class MIBF_fusion(nn.Module):
     
     def __init__(self, embed_dim: int, max_modalities: int, attn_heads: int = 8) -> None:
@@ -152,6 +152,7 @@ class MIBF_fusion(nn.Module):
         
         self.attn_heads = attn_heads
         self.max_modalities = max_modalities
+        print("Modalities Number: ", self.max_modalities)
         self.embed_dim = embed_dim
 
 
@@ -260,19 +261,24 @@ class MIBF_fusion(nn.Module):
         
         # Concatenate to create the final multimodal feature vector
         # This is the [Fi2t, Ft2i] input to the final MLP in Fig. 3
-        fused_embedding = torch.cat([fused_image_pooled, fused_text_pooled], dim=1)
-        fused_embedding = self.concat_fusion(fused_embedding)
+        fused_embedding_concat = torch.cat([fused_image_pooled, fused_text_pooled], dim=1)
+        fused_embedding = self.concat_fusion(fused_embedding_concat)
+
+        # Get the conflict score tensor (B,) to pass as weights
+        # Add a fallback to ones() for safety, though js_list should not be empty
+        final_conflict_score = js_list[0].reshape(-1, 1) if len(js_list) > 0 else torch.ones((image_tokens.shape[0], 1), dtype=torch.float32, device=device)
 
         # 4. Prepare output dictionary
         if batch is not None and len(deep_supervision_losses) > 0:
             # Aggregate the IoP and ToP losses
-            loss_dict["deep_supervision_loss"] = torch.mean(torch.stack(deep_supervision_losses))
+            loss_dict["total_loss"] = torch.mean(torch.stack(deep_supervision_losses))
 
         if len(js_list) > 0:
             # Log the average JS divergence
             loss_dict[f"js_divergence"] = torch.mean(js_list[0])
 
         return {
-            "fused_embedding": fused_embedding, # (B, 2 * embed_dim)
-            "loss_dict": loss_dict
+            "fused_embedding": fused_embedding, # (B, embed_dim) after concat_fusion
+            "loss_dict": loss_dict,
+            "weights": final_conflict_score  # (B,) tensor with JS scores
         }

@@ -141,7 +141,7 @@ class MultiOSCCRecPred(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim),
         )
-        self.loss_fn = nn.BCEWithLogitsLoss()
+        self.loss_fn = nn.BCEWithLogitsLoss(reduction='none')
 
         # optional: small history for weight norms (if desired)
         self._weight_norm_history = deque()
@@ -354,12 +354,14 @@ class MultiOSCCRecPred(nn.Module):
             labels = torch.tensor(labels, device=device)
         labels = labels.to(device)
 
+
         logits = torch.zeros(batch_size, self.out_dim, device=device)
+        loss_tensor = torch.zeros((batch_size, 1), device=device)
         loss = torch.tensor(0.0, device=device)
 
         patient_mask = pooled_mask.bool().to(device) if pooled_mask is not None else torch.ones(batch_size, dtype=torch.bool, device=device)
         if not patient_mask.any():
-            return {"logits": logits, "loss": loss}
+            return {"logits": logits, "loss": loss, 'loss_tensor': loss_tensor}
 
         valid_embeddings = pooled_embeddings[patient_mask]
         valid_labels = labels[patient_mask]

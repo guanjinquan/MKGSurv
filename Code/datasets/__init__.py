@@ -6,6 +6,7 @@ from datasets.hancock_dataset import HANCOCKDataset
 from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset
 from datasets.multi_oscc_split_text_dataset import MultiOSCCSplitDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
+from datasets.oscc_surv_inhouse_IT_dataset import OSCCSurvInHouseITDataset
 from datasets.dataset_sampler import BalancedBatchSampler, DistributedBalancedBatchSampler
 import torch
 from torch.utils.data import DataLoader
@@ -75,5 +76,7 @@ def GetDataset(mode, args):
         return MultiOSCCSplitDataset(mode=mode, modalities=args.modalities)
     elif dataset == "oscc_inhouse":
         return OSCCSurvInHouseDataset(mode=mode, modalities=args.modalities)
+    elif dataset == "oscc_inhouse_it":
+        return OSCCSurvInHouseITDataset(mode=mode, modalities=args.modalities)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

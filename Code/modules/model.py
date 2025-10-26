@@ -15,6 +15,7 @@ from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
 from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
+from modules.task_modules.oscc_inhouse_survival_pred_it import OSCCSurvivalPred_IT
 
 
 # --- Fusion Modules
@@ -40,8 +41,8 @@ def GetModel(args):
             fusion_type=args.fusion_type
         )
     
-    if args.fusion_type == "MIBF_fusion":
-        return ModelInterfaceWithDeepSupervision(
+    if args.fusion_type == "mibf_fusion":
+        return ModelInterfaceWithDeepSupervisionWeightedLoss(
             model_task=args.model_task, 
             modalities=args.modalities, 
             fusion_type=args.fusion_type
@@ -78,6 +79,7 @@ class ModelInterface(nn.Module):
             "multi_oscc_it",
             "multi_oscc_split",
             "oscc_inhouse",
+            "oscc_inhouse_it",
         ], f"Unknown model task: {model_task}"
 
         self.modalities = modalities
@@ -97,6 +99,8 @@ class ModelInterface(nn.Module):
             self.task_head = MultiOSCCRecPred_Split(modalities=modalities)
         elif model_task == "oscc_inhouse":
             self.task_head = OSCCSurvivalPred(modalities=modalities)
+        elif model_task == "oscc_inhouse_it":
+            self.task_head = OSCCSurvivalPred_IT(modalities=modalities)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 
@@ -115,7 +119,7 @@ class ModelInterface(nn.Module):
             self.fusion_module = SimpleFusion(embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
         elif self.fusion_type == "kl_gated":
             self.fusion_module = KLGatedFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == "MIBF_fusion":
+        elif self.fusion_type == "mibf_fusion":
             self.fusion_module = MIBF_fusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
@@ -288,6 +292,61 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
 
         final_output = self.task_head.decode(fused_embedding, patient_wise_mask, data_dicts)
         multimodal_task_loss = final_output['loss']
+        final_logits = final_output['logits']
+
+        # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
+        total_loss = multimodal_task_loss + 0.5 * total_fusion_loss
+        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss,  'task_loss': multimodal_task_loss}  # For detailed logging
+        all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
+        
+        return {"logits": final_logits, "losses": all_losses}
+    
+
+
+class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
+    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
+        super(ModelInterfaceWithDeepSupervisionWeightedLoss, self).__init__(model_task, modalities, fusion_type)
+
+    def forward(self, batch_size, data_dicts: List[Dict]):
+        device = next(self.parameters()).device
+
+        # --- Step 1: Unimodal Encoding ---
+        encodings = self.task_head.encode(data_dicts)
+        all_embeddings, all_masks, _ = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
+        assert len(all_embeddings) == 2, "KLfusion requires two modalities"
+
+        # Check the data type of tensor
+        all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
+        all_masks = [m.to(torch.bool) if m is not None else None for m in all_masks]
+        
+        # Filter out None embeddings and corresponding masks for fusion
+        present_embeddings = [e for e in all_embeddings if e is not None]
+        present_masks = [m for e, m in zip(all_embeddings, all_masks) if e is not None]
+        num_present = len(present_embeddings)
+        assert num_present > 0, "No embeddings present for fusion and final prediction"
+
+        # --- Step 2: Multimodal Fusion ---
+        assert num_present > 1 or self.fusion_type == 'msa', "At least two modalities are required for fusion or use MSA fusion which can handle single modality."
+        fusion_output = self.fusion_module(embeddings=all_embeddings, masks=all_masks, task_head=self.task_head, batch=data_dicts)
+        fused_embedding = fusion_output["fused_embedding"]
+        task_loss_weights = fusion_output.get('weights', torch.ones(batch_size, device=device))
+        fusion_losses_dict = fusion_output.get("loss_dict") or {}
+        total_fusion_loss = fusion_losses_dict.get('total_loss', torch.tensor(0.0, device=device))
+        
+        # --- Step 3: Multimodal Task Prediction ---
+        assert fused_embedding.dim() == 2, f"Fused embedding must be a 2D tensor, shaping in (batch_size, embed_dim), but got {fused_embedding.shape}"
+
+        # Create patient-wise mask: if any modality is present for a patient, mark as True
+        present_masks = [m.to(device).bool() for m in present_masks if m is not None]
+        if len(present_masks) == 0:
+            patient_wise_mask = torch.zeros(batch_size, device=device, dtype=torch.bool)
+        else:
+            #  mask.any(dim=1) -> (batch,), stack -> (num_mods, batch), any(dim=0) -> (batch,)
+            patient_wise_mask = torch.stack([m.any(dim=1) for m in present_masks], dim=0).any(dim=0)
+
+        final_output = self.task_head.decode(fused_embedding, patient_wise_mask, data_dicts)
+        assert final_output['loss_tensor'].shape == task_loss_weights.shape, f"Expect final_output['loss_tensor'].shape == task_loss_weights.shape, but got final_output['loss_tensor'] = {final_output['loss_tensor'].shape}, and  task_loss_weights = {task_loss_weights.shape}."
+        multimodal_task_loss = torch.mul(final_output['loss_tensor'], task_loss_weights).mean()
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---

@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="inhouse_run003"
+RUN_ID="inhouse_run003_only_text"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
@@ -37,7 +37,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "strong_related_text,weak_related_text" 
 
 
 echo "Training run ${RUN_ID} finished."

@@ -5,11 +5,11 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=2
+GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="inhouse_run003"
+RUN_ID="run_004"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
@@ -26,8 +26,8 @@ echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "oscc_inhouse" \
-    --dataset "oscc_inhouse" \
+    --model_task "multi_oscc_split" \
+    --dataset "multi_oscc_split" \
     --fusion_type "msa" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
@@ -37,8 +37,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "text_1,text_2,text_3,text_5" 
 
 
 echo "Training run ${RUN_ID} finished."
-
