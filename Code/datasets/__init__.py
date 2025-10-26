@@ -3,7 +3,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from datasets.multi_oscc_dataset import MultiOSCCDataset
 from datasets.hancock_dataset import HANCOCKDataset
-from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset as MultiOSCCITDataset
+from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset
+from datasets.multi_oscc_split_text_dataset import MultiOSCCSplitDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
 from datasets.dataset_sampler import BalancedBatchSampler, DistributedBalancedBatchSampler
 import torch
@@ -70,6 +71,8 @@ def GetDataset(mode, args):
         return HANCOCKDataset(mode=mode, modalities=args.modalities)
     elif dataset == "multi_oscc_it":
         return MultiOSCCITDataset(mode=mode, modalities=args.modalities)
+    elif dataset == "multi_oscc_split":
+        return MultiOSCCSplitDataset(mode=mode, modalities=args.modalities)
     elif dataset == "oscc_inhouse":
         return OSCCSurvInHouseDataset(mode=mode, modalities=args.modalities)
     else:

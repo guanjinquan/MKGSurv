@@ -94,7 +94,7 @@ class MultiOSCCDataset(Dataset):
         output_dict = {}
 
         # --- Image modality ---
-        if "image" in self.modalities:
+        if "images" in self.modalities:
             npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
             try:
                 images_array = np.load(npy_path)
@@ -150,10 +150,10 @@ class MultiOSCCDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the modalities string into a list of valid modality keys."""
         if modalities_str == "all":
-            return ["image", "strong_related_text", "weak_related_text"]
+            return ["images", "strong_related_text", "weak_related_text"]
         
         # We use 'image' internally for the data key, not 'images'
-        valid_set = {"image", "strong_related_text", "weak_related_text"}
+        valid_set = {"images", "strong_related_text", "weak_related_text"}
         # Allow for both '-' and ',' as separators
         parsed = [m.strip() for m in modalities_str.replace('-', ',').split(',')]
         
@@ -183,7 +183,7 @@ class MultiOSCCDataset(Dataset):
         Checks if at least one of the requested modalities is available for a given patient.
         """
         has_image = False
-        if "image" in self.modalities:
+        if "images" in self.modalities:
             npy_path = os.path.join(self.npy_dir, f"{pid}.npy")
             has_image = os.path.exists(npy_path)
 

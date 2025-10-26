@@ -13,6 +13,7 @@ import torch
 from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
 from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
+from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
 
 
@@ -22,6 +23,7 @@ from modules.fusion_modules.hier_align_fusion import HierAlignFusionModule
 from modules.fusion_modules.simple_fusion import SimpleFusion
 from modules.fusion_modules.healnet_fusion import HealNetFusionModule
 from modules.fusion_modules.KL_gated_fusion import KLGatedFusion
+from modules.fusion_modules.MIBF_fusion import MIBF_fusion
 
 # --- Common Modules ---
 from modules.common_modules.align_utils import AlignmentModule
@@ -37,6 +39,14 @@ def GetModel(args):
             modalities=args.modalities, 
             fusion_type=args.fusion_type
         )
+    
+    if args.fusion_type == "MIBF_fusion":
+        return ModelInterfaceWithDeepSupervision(
+            model_task=args.model_task, 
+            modalities=args.modalities, 
+            fusion_type=args.fusion_type
+        )
+
 
     # with_multimodal_align
     if args.with_multimodal_align:
@@ -66,7 +76,8 @@ class ModelInterface(nn.Module):
             "multi_oscc",
             "hancock",
             "multi_oscc_it",
-            "oscc_inhouse"
+            "multi_oscc_split",
+            "oscc_inhouse",
         ], f"Unknown model task: {model_task}"
 
         self.modalities = modalities
@@ -82,6 +93,8 @@ class ModelInterface(nn.Module):
             self.task_head = HANCOCKSurvivalPred(modalities=modalities)
         elif model_task == 'multi_oscc_it':
             self.task_head = MultiOSCCRecPred_IT(modalities=modalities)
+        elif model_task == 'multi_oscc_split':
+            self.task_head = MultiOSCCRecPred_Split(modalities=modalities)
         elif model_task == "oscc_inhouse":
             self.task_head = OSCCSurvivalPred(modalities=modalities)
         else:
@@ -102,6 +115,8 @@ class ModelInterface(nn.Module):
             self.fusion_module = SimpleFusion(embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
         elif self.fusion_type == "kl_gated":
             self.fusion_module = KLGatedFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == "MIBF_fusion":
+            self.fusion_module = MIBF_fusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
