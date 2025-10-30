@@ -283,7 +283,7 @@ class SimpleFusion(nn.Module):
                 # Handle cases where some modalities might not have a mask
                 for i in present_indices:
                     if masks[i] is not None:
-                         present_masks_for_msa.append(masks[i])
+                        present_masks_for_msa.append(masks[i])
                     else:
                         # If no mask is provided for a present modality, assume no padding
                         emb = embeddings[i]
@@ -294,6 +294,9 @@ class SimpleFusion(nn.Module):
                     # The mask for TransformerEncoder needs to be boolean, with True for padded tokens
                     key_padding_mask = (concatenated_masks == 0)
 
+            patient_wise_mask = torch.any(~key_padding_mask, dim=1)
+            assert patient_wise_mask.shape == (batch_size,), f"Expected patient-wise mask shape (B,), got {patient_wise_mask.shape}"
+            assert patient_wise_mask.all().item(), "All patients must have at least one valid token"
             fused_embedding = self.fusion_block(concatenated_embeddings, mask=key_padding_mask)
         
         # --- Pooling-based Fusion: Pool then fuse ---

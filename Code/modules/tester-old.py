@@ -10,9 +10,6 @@ from datasets import GetDataLoader
 from modules.model import GetModel
 from modules.training_utils import Logger, load_model
 
-# (*** 新增 ***) 导入我们的新绘图工具
-from modules.training_utils.kaplan_meier_plotter import plot_risk_stratified_km, convert_logits_to_risk_scores
-
 class Tester:
     """
     Handles the model testing process: loading a trained model, running inference on the test set,
@@ -69,8 +66,7 @@ class Tester:
         self.model.eval()
         
         # Lists to store results from all batches
-        # (*** all_original_labels 是新增的 ***)
-        all_logits, all_labels, all_original_labels, all_losses = [], [], [], {}
+        all_logits, all_labels, all_losses = [], [], {}
 
         with torch.no_grad():
             pbar = tqdm.tqdm(total=len(self.test_loader), desc="Testing")
@@ -83,40 +79,24 @@ class Tester:
                 all_logits.extend(out['logits'].detach().cpu().numpy().tolist())
                 all_labels.extend(batch_data['labels'])
                 
-                # (*** 新增 ***) 收集真实的、未离散化的标签用于KM图
-                # 我们假设 dataloader 返回一个 'original_labels' 键
-                if 'original_labels' in batch_data:
-                    all_original_labels.extend(batch_data['original_labels'])
-                
                 # Collect loss values
                 for key, value in out['losses'].items():
                     all_losses.setdefault(key, []).append(value.item())
                 
                 pbar.update(1)
             pbar.close()
-        
-        # (*** 新增 ***) 检查我们是否收集到了KM图所需的数据
-        if hasattr(self.args, 'draw_kaplan_meier') and self.args.draw_kaplan_meier:
-            if not all_original_labels:
-                print("\n警告: 请求绘制KM图, 但 'original_labels' 未从 Dataloader 中收集到。")
-                print("请确保 Dataloader 返回 'original_labels' 键。跳过绘图。")
-                self.log.write("\n警告: 'draw_kaplan_meier=True' 但 'original_labels' 未找到。跳过绘图。")
-                # 将其关闭，这样 log_results 就不会再次尝试
-                self.args.draw_kaplan_meier = False
 
         # --- Metric Calculation and Logging ---
-        # (*** 修改 ***) 传入 all_original_labels
-        self.log_results(all_losses, all_logits, all_labels, all_original_labels)
+        self.log_results(all_losses, all_logits, all_labels)
 
-    def log_results(self, losses, logits, labels, original_labels):
+    def log_results(self, losses, logits, labels):
         """
         Calculates, logs, and prints the final evaluation metrics and losses.
         
         Args:
             losses (dict): A dictionary of lists containing loss values for each batch.
             logits (list): A list of model outputs (logits).
-            labels (list): A list of ground truth discrete labels (用于计算 C-Index 等).
-            original_labels (list): A list of ground truth original continuous labels (用于绘制 KM 图).
+            labels (list): A list of ground truth labels.
         """
         loss_dict, metrics_dict = {}, {}
         
@@ -124,7 +104,7 @@ class Tester:
         for key, value_list in losses.items():
             loss_dict[f"loss_{key}_test"] = np.mean(value_list)
 
-        # Calculate performance metrics using the DISCRETE labels
+        # Calculate performance metrics
         metrics = self.model.task_head.METRICS_FN(logits, labels)
 
         for metric_name, metric_value in metrics.items():
@@ -146,41 +126,3 @@ class Tester:
         # Save metrics to a JSON file for easy access
         with open(os.path.join(self.log_path, 'test_metrics.json'), 'w') as f:
             json.dump(metrics_dict, f, indent=4)
-            
-        # --- (*** 新增 ***) 绘制 Kaplan-Meier 曲线 ---
-        # 检查 args 中是否有 draw_kaplan_meier 标志，并且它是否为 True
-        if hasattr(self.args, 'draw_kaplan_meier') and self.args.draw_kaplan_meier:
-            print("\nGenerating Kaplan-Meier plot...", flush=True)
-            try:
-                # 1. 准备数据
-                # 将 logits (list of lists) 转换为 risk scores (list)
-                risk_scores = convert_logits_to_risk_scores(logits)
-                
-                # 2. 从 all_original_labels (list of dicts) 中
-                #    提取 'label_Y' (duration) 和 'label_c' (censorship)
-                #    你的 __getitem__ 中: 'label_Y': event_time, 'label_c': censorship
-                #    你的 'censorship' = 1 (删失), 0 (事件)
-                #    lifelines 需要 'event_observed' = 0 (删失), 1 (事件)
-                
-                durations = [orig_label['label_Y'] for orig_label in original_labels]
-                censorship = [orig_label['label_c'] for orig_label in original_labels]
-                
-                # 转换为 lifelines 格式 (1=事件, 0=删失)
-                events_observed = [1 - c for c in censorship] 
-
-                # 3. 定义保存路径
-                save_path = os.path.join(self.log_path, 'Kaplan_Meier_Plot_Test_Set.png')
-
-                # 4. 调用绘图函数
-                plot_risk_stratified_km(
-                    risk_scores,
-                    durations,
-                    events_observed,
-                    save_path
-                )
-                self.log.write(f"\nKaplan-Meier plot saved to: {save_path}")
-                print(f"Kaplan-Meier plot saved to: {save_path}", flush=True)
-
-            except Exception as e:
-                print(f"\nError generating Kaplan-Meier plot: {e}", flush=True)
-                self.log.write(f"\nError generating Kaplan-Meier plot: {e}")

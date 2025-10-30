@@ -328,6 +328,11 @@ class HANCOCKDataset(Dataset):
             'label_Y': int(time_bin),
             'label_c': censorship,
         }
+        
+        output_dict['original_labels'] = {
+            'label_Y': event_time,
+            'label_c': censorship
+        }
 
         # --- Data Integrity Check ---
         # If no requested modalities were found for this patient, get the next one.

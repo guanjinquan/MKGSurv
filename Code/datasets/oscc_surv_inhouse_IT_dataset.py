@@ -137,6 +137,12 @@ class OSCCSurvInHouseITDataset(Dataset):
             'label_c': censorship,
         }
 
+        output_dict['original_labels'] = {
+            'label_Y': event_time,
+            'label_c': censorship
+        }
+
+
 
         # -- Dynamically build the output dictionary ---
         # --- Image modality ---

@@ -18,6 +18,7 @@ def parse_arguments():
     parser.add_argument('--model_task', type=str, default='multi_oscc', help="model_task: [multi_oscc]")
     parser.add_argument('--fusion_type', type=str, default='hier_align', help="fusion_block: [hier_align, concat, LMF, gated, msa, i2moe, healnet]")
     parser.add_argument('--with_multimodal_align', action='store_true')
+    parser.add_argument('--with_multimodal_vib', action='store_true')
     
     # trainer settings
     parser.add_argument("--runs_id", type=str)
@@ -38,6 +39,10 @@ def parse_arguments():
     parser.add_argument('--freezed_backbone', action='store_true')
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--continue_training', action='store_true')
+    
+    
+    # Tester settings
+    parser.add_argument('--draw_kaplan_meier', action='store_true')
     
     
     args = parser.parse_args()

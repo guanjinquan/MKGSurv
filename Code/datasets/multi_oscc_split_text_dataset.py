@@ -325,13 +325,13 @@ class MultiOSCCSplitDataset(Dataset):
             elif column_name == "TumorM": sentence = f"The distant metastasis stage (M stage) is {value}."
             elif column_name == "TumorDifferentiation(1high/2med/3low)":
                 diff_map = {1: "well-differentiated", 2: "moderately-differentiated", 3: "poorly-differentiated"}
-                sentence = f"The tumor differentiation is {diff_map.get(value, 'not specified')}."
+                sentence = f"The tumor differentiation is {diff_map.get(int(value), 'not specified')}."
             elif "(0/1)" in column_name or "(+)" in column_name:
-                status = "present" if value == 1 else "absent"
+                status = "present" if int(value) == 1 else "absent"
                 feature_name = column_name.replace("(0/1)", "").replace("(+)", "").replace("_", " ")
                 sentence = f"{feature_name} is {status}."
             elif "(0no/1yes)" in column_name:
-                status = "yes" if value == 1 else "no"
+                status = "yes" if int(value) == 1 else "no"
                 feature_name = column_name.replace("(0no/1yes)", "").replace("History", " history")
                 sentence = f"The patient has a record of {feature_name}: {status}."
             elif column_name == "Age(Y)": sentence = f"The patient's age is {value} years."
@@ -354,6 +354,9 @@ class MultiOSCCSplitDataset(Dataset):
                 elif "(d)" in column_name: unit = " days"; col_name_simple = "Postoperative discharge time"
                 
                 sentence = f"The {col_name_simple.lower().replace('_', ' ')} is recorded as: {value}{unit}."
+
+            else:
+                raise ValueError(f"Unrecognized column: {column_name}")
 
             if sentence: text_list.append(sentence)
 

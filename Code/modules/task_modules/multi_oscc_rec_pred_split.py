@@ -358,10 +358,14 @@ class MultiOSCCRecPred_Split(nn.Module):
             target = F.one_hot(valid_labels, num_classes=self.out_dim).float()
         else:
             target = valid_labels.float()
-        loss = self.loss_fn(valid_logits, target)
-        logits[patient_mask] = valid_logits
-        return {"logits": logits, "loss": loss}
 
+        loss_tensor = self.loss_fn(valid_logits, target)
+        loss_tensor = loss_tensor.mean(dim=1).reshape(-1, 1)  # (B, 1)
+        loss = loss_tensor.mean()                             # float32
+
+        logits[patient_mask] = valid_logits
+
+        return {"logits": logits, "loss": loss, 'loss_tensor': loss_tensor}
 
 
     # -------------------------
