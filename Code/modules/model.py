@@ -12,10 +12,13 @@ import torch
 # --- Task Modules ---
 from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
 from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
+from modules.task_modules.hancock_survival_pred_it import HANCOCKSurvivalPred_IT
+from modules.task_modules.hancock_survival_pred_128 import HANCOCKSurvivalPred_128
 from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
 from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
 from modules.task_modules.oscc_inhouse_survival_pred_it import OSCCSurvivalPred_IT
+
 
 
 # --- Fusion Modules
@@ -83,6 +86,8 @@ class ModelInterface(nn.Module):
         assert model_task in [  # Tasks that the model can handle
             "multi_oscc",
             "hancock",
+            "hancock_it",
+            "hancock_128",
             "multi_oscc_it",
             "multi_oscc_split",
             "oscc_inhouse",
@@ -100,6 +105,10 @@ class ModelInterface(nn.Module):
             self.task_head = MultiOSCCRecPred(modalities=modalities)
         elif model_task == "hancock":
             self.task_head = HANCOCKSurvivalPred(modalities=modalities)
+        elif model_task == "hancock_it":
+            self.task_head = HANCOCKSurvivalPred_IT(modalities=modalities)
+        elif model_task == "hancock_128":
+            self.task_head = HANCOCKSurvivalPred_128(modalities=modalities)
         elif model_task == 'multi_oscc_it':
             self.task_head = MultiOSCCRecPred_IT(modalities=modalities)
         elif model_task == 'multi_oscc_split':

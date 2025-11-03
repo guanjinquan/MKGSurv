@@ -143,9 +143,10 @@ class OSCCSurvInHouseDataset(Dataset):
             'label_c': censorship
         }
 
+
         # -- Dynamically build the output dictionary ---
         # --- Image modality ---
-        if "image-pathology" in self.modalities:
+        if "images" in self.modalities:
             npy_path = os.path.join(self.npy_dir, f"{pid_int}.npy")
             try:
                 images_array = np.load(npy_path)
@@ -158,33 +159,41 @@ class OSCCSurvInHouseDataset(Dataset):
                 else:
                     transformed_images = loaded_images
                 
-                output_dict["image-pathology"] = transformed_images
+                output_dict["images"] = transformed_images
+
             except (FileNotFoundError, AssertionError) as e:
+                # This case should be rare due to the pre-filtering in _load_and_filter_items
                 print(f"Warning: NPY file missing or invalid for {pid_int} at getitem: {e}")
+                pass # Skip adding the 'images' key
 
         # --- Text modalities ---
-        if any("text" in modal for modal in self.modalities):
+        if "strong_related_text" in self.modalities or "weak_related_text" in self.modalities:
+
+            # assert pid_int in self.clinical_df.index, f"Clinical data missing for PID {pid_int}, Index = {self.clinical_df.index[:100]}"
+
             if self.clinical_df is not None and pid_int in self.clinical_df.index:
                 patient_series = self.clinical_df.loc[pid_int]  # ALL Value in clinical df is STRING
-                texts, texts_modalities = self._generate_clinical_text(patient_series)
-                for text, text_modality in zip(texts, texts_modalities):
-                    if text_modality in self.modalities and len(text):
-                        output_dict[text_modality] = text
+                strong_text, weak_text = self._generate_clinical_text(patient_series)
+                # print("Text = ", strong_text, weak_text)
+                if "strong_related_text" in self.modalities:
+                    output_dict["strong_related_text"] = strong_text
+                if "weak_related_text" in self.modalities:
+                    output_dict["weak_related_text"] = weak_text
+            else:
+                # This case should also be rare
+                if "strong_related_text" in self.modalities:
+                    output_dict["strong_related_text"] = None
+                if "weak_related_text" in self.modalities:
+                    output_dict["weak_related_text"] = None
 
-        # --- Tabular modalities ---
-        if any("tabular" in modal for modal in self.modalities):
-            if self.clinical_df is not None and pid_int in self.clinical_df.index:
-                patient_series = self.clinical_df.loc[pid_int]
-                tabular_datas, tabular_modalities = self._generate_tabular_data(patient_series)
-                for tabular_data, tabular_modality in zip(tabular_datas, tabular_modalities):
-                    if tabular_modality in self.modalities:
-                        assert len(tabular_data) > 0, f"Tabular data is empty for {tabular_modality}"
-                        output_dict[tabular_modality] = tabular_data
 
         # --- Data Integrity Check ---
         # If no requested modalities were found for this patient, get the next one.
-        modalities_found = sum([1 for m in self.modalities if m in output_dict and output_dict[m] is not None])
-        if modalities_found:
+        modalities_found = sum(1 for m in self.modalities if output_dict.get(m) is not None and (isinstance(output_dict.get(m), str) and output_dict.get(m).strip() != "" or not isinstance(output_dict.get(m), str)))
+        # print(f"Modalities found for PID {pid_int}: {modalities_found}, modalities requested: {self.modalities}, keys in output_dict: {output_dict.keys()}")
+        # print("Strong related text: ", output_dict.get("strong_related_text"))
+        # print("Weak related text: ", output_dict.get("weak_related_text"))
+        if modalities_found == 0:
             return self.__getitem__((index + 1) % len(self))
 
         return output_dict
@@ -195,29 +204,11 @@ class OSCCSurvInHouseDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the modalities string into a list of valid modality keys."""
         if modalities_str == "all":
-            return [
-                "image-pathology", 
-                "text-pathology", 
-                "text-clinical", 
-                "tabular-pathology-15",
-                "tabular-clinical-16",
-                "tabular-blood-9",
-                "tabular-immunohistochemic-6",
-            ] 
+            return ["images", "strong_related_text", "weak_related_text"]
     
-        valid_set = {
-            "image-pathology", 
-            "text-pathology", 
-            "text-clinical", 
-            "tabular-pathology-15",
-            "tabular-clinical-16",
-            "tabular-blood-9",
-            "tabular-immunohistochemic-6",
-        }
-
-
-        # Allow for ',' as separators
-        parsed = [m.strip() for m in modalities_str.split(',')]
+        valid_set = {"images", "strong_related_text", "weak_related_text"}
+        # Allow for both '-' and ',' as separators
+        parsed = [m.strip() for m in modalities_str.replace('-', ',').split(',')]
         
         for m in parsed:
             if m not in valid_set:
@@ -283,6 +274,8 @@ class OSCCSurvInHouseDataset(Dataset):
             split_data = json.load(f)
 
         target_pids = set([str(pid) for pid in split_data[self.mode]])
+        # self.patient_ids = list(target_pids)
+        
         initial_items = [
             all_patients_info[pid] for pid in target_pids
             if pid in all_patients_info
@@ -298,23 +291,20 @@ class OSCCSurvInHouseDataset(Dataset):
     def _generate_clinical_text(self, patient_series):
         """Generates natural language descriptions from clinical data. (No changes needed here)"""
         # This function remains unchanged from your original code.
-        
-        sources_with_columns = {
-            "clinical": [  # 对应原本的 text-3
-                "SurgicalMethod",
-                "SurgeryDuration",
-                "TumorLocation",
-                "Flap",
-                "PreoperativeHistoryDetails",
-                "PostopComplicationDetails",
-            ],
-            "pathology": [  # 对应原本的 text-2
-                "Pathology",
-            ]
-        }
-
-        texts = []
-        texts_modalities = []
+        strong_sentences, weak_sentences = [], []
+        strong_cols = [
+            "TumorT", "TumorN", "TumorM", "Pathology", "TumorDifferentiation(1high/2med/3low)",
+            "CancerThrombus(0/1)", "SurroundingTissueInvasion(0/1)", "SurgicalMargin(0/1)", "LNM(0/1)", "Ki-67",
+            "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", "PD_L1", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
+            "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)"
+        ]
+        weak_cols = [
+            "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)", "AlcoholHistory(0no/1yes)",
+            "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", "SurgicalMethod", "TumorLocation",
+            "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
+            "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
+            "Metastasis(0no/1yes)", "Radiotherapy(0no/1yes)", "Chemotherapy(0no/1yes)"
+        ]
 
         def add_sentence(text_list, column_name, value):
             if pd.isna(value) or str(value).strip() in ['/', '']: return
@@ -340,58 +330,14 @@ class OSCCSurvInHouseDataset(Dataset):
                 sentence = f"The {column_name.lower()} is recorded as: {value}."
             if sentence: text_list.append(sentence)
 
-        for key, columns in sources_with_columns.items():
-            key_sents = []
-            for column_name in columns:
-                value = patient_series[column_name]
-                add_sentence(key_sents, column_name, value)
-            key_sents = ". ".join(key_sents)
-            texts.append(key_sents)
-            texts_modalities.append(f"text-{key}")
+        for col in strong_cols:
+            if col in patient_series: add_sentence(strong_sentences, col, patient_series[col])
+        for col in weak_cols:
+            if col in patient_series: add_sentence(weak_sentences, col, patient_series[col])
 
-        return texts, texts_modalities
+        strong_text = "Pathological findings include: " + " ".join(strong_sentences) if strong_sentences else "No detailed pathological information available."
+        weak_text = "Clinical and demographic profile: " + " ".join(weak_sentences) if weak_sentences else "No detailed clinical information available."
 
+        return strong_text, weak_text
 
-    def _generate_tabular_data(self, patient_series):
-
-        sources_with_columns = {
-            "clinical": [    # length = 16  # 对应原本的 text-1
-                "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)", "AlcoholHistory(0no/1yes)",
-                "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", 
-                "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
-                "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
-                "Metastasis(0no/1yes)", "Radiotherapy(0no/1yes)", "Chemotherapy(0no/1yes)", 
-            ],
-            "blood": [  # length = 9 对应原本的 text-4
-                "PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD",
-                "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"
-            ],
-            "pathology": [  # length = 15 对应原本的 text-2
-                "TumorT", "TumorN", "TumorM", "TumorDifferentiation(1high/2med/3low)",
-                "CancerThrombus(0/1)", "SurroundingTissueInvasion(0/1)",  "LNM(0/1)", 
-                "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
-            ],
-            "immunohistochemic": [  # 对应原本 text-5
-                "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", "PD_L1"
-            ]
-        }
-
-        tabular_datas = []
-        tabular_data_sources = []
-        tabular_modalities = []
-        for key, columns in sources_with_columns.items():
-            tabular_data = []
-            tabular_data_source = []
-            for column_name in columns:
-                value = patient_series[column_name]
-                if pd.isna(value) or str(value).strip() in ['/', '']:
-                    tabular_data.append(-1)  # padding nan with -1
-                else:
-                    tabular_data.append(float(value))
-                tabular_data_source.append(column_name)
-            tabular_datas.append(tabular_data)
-            tabular_data_sources.append(tabular_data_source)
-            tabular_modalities.append(f"tabular-{key}-{len(tabular_data)}")
-
-        return tabular_datas, tabular_data_sources, tabular_modalities
 

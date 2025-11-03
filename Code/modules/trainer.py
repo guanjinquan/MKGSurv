@@ -262,7 +262,10 @@ class Trainer:
                 local_true.extend(batch_data['labels'])
                 for k, v in out['losses'].items():
                     # OPTIMIZATION: 使用 setdefault 和 append
-                    local_loss.setdefault(k, []).append(v.item())
+                    if isinstance(v, torch.Tensor):
+                        local_loss.setdefault(k, []).append(v.item())
+                    elif isinstance(v, float):
+                        local_loss.setdefault(k, []).append(v)
                 pbar.update(1)
             pbar.close()
 

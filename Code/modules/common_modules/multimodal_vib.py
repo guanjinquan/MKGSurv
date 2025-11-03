@@ -151,6 +151,8 @@ class TokenWiseMultiModalVIB(nn.Module):
         z_sequences = []
         z_masks = []  # 为 VIB 输出创建新的掩码列表
         kl_losses = {}  # 用于存储每个模态的损失
+        mu_dict = {}
+        var_dict = {}
 
         # 预先获取 device，以防第一个模态为 None
         device = None
@@ -235,6 +237,9 @@ class TokenWiseMultiModalVIB(nn.Module):
                 # 3e. 运行 VIB heads (只在子批次上)
                 mu_valid = vib_encoder_parts['mu'](h_valid)
                 log_var_valid = vib_encoder_parts['log_var'](h_valid)
+
+                mu_dict[str(i)] = torch.mean(mu_valid)
+                var_dict[str(i)] = torch.mean(log_var_valid)
                 
                 # 3f. 将有效输出放回全零张量
                 final_h[patient_has_data_mask] = h_valid
@@ -262,7 +267,8 @@ class TokenWiseMultiModalVIB(nn.Module):
 
             # 稳定性修复：裁剪 log_var 以防止 NaN
             # [修改] 将 log_var 的上界从 10 降低到 6，以提高采样稳定性
-            log_var = torch.clamp(log_var, min=-1e5, max=1e5)
+            # log_var = torch.clamp(log_var, min=-1e5, max=1e5)
+            log_var = torch.clamp(log_var, min=-10, max=10)
 
             # Samping
             z_seq = self.reparameterize(mu, log_var)  # (B, num_queries, D_latent)
@@ -296,6 +302,11 @@ class TokenWiseMultiModalVIB(nn.Module):
             total_kl_loss_scalar = torch.stack(valid_kl_scalars).mean()
             
         kl_losses['total_loss'] = total_kl_loss_scalar
+
+        # record mu and var
+        for i in range(self.num_modalities):
+            kl_losses[f"mu_{i}"] = mu_dict[str(i)]
+            kl_losses[f"logvar_{i}"] = var_dict[str(i)]
 
         # 返回元组以匹配 model.py 中的解包
         return z_sequences, z_masks, kl_losses

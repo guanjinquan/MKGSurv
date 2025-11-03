@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
-from typing import Dict, Any, List, Tuple, Optional, Union
+from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
@@ -57,12 +57,12 @@ class AggregatingTransMIL(nn.Module):
     """
     A modified TransMIL that aggregates information into K tokens.
     """
-    def __init__(self, input_dim=1024, embed_dim=512, num_aggregated_tokens: int = 16):
+    def __init__(self, input_dim=1024, embed_dim=512, num_aggregated_tokens: int = 128):
         super(AggregatingTransMIL, self).__init__()
         self.num_aggregated_tokens = num_aggregated_tokens
-        self.pos_layer = PPEG(num_aggregated_tokens=1, dim=embed_dim)
+        self.pos_layer = PPEG(dim=embed_dim)
         self._fc1 = nn.Sequential(nn.Linear(input_dim, embed_dim), nn.ReLU())
-        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.cls_token = nn.Parameter(torch.randn(1, num_aggregated_tokens, embed_dim))
         self.layer1 = TransLayer(dim=embed_dim)
         self.layer2 = TransLayer(dim=embed_dim)
         self.norm = nn.LayerNorm(embed_dim)
@@ -95,7 +95,7 @@ class AggregatingTransMIL(nn.Module):
 # ==========================================================================================
 # Main Encoder-Decoder Model for HANCOCK Dataset
 # ==========================================================================================
-class HANCOCKSurvivalPred(nn.Module):
+class HANCOCKSurvivalPred_128(nn.Module):
     
     METRICS_FN = staticmethod(survival_metrics)
 

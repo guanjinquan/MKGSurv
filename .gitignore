@@ -27,7 +27,7 @@ share/python-wheels/
 MANIFEST
 
 
-Checkpoints/*
+*Checkpoints*/*
 Data/*
 Results/*
 PretrainedWeights/*

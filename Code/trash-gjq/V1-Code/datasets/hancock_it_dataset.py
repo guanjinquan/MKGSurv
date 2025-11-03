@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 
 import h5py
 import numpy as np
@@ -8,10 +8,10 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 import random
-import copy
 
 
-class HANCOCKDataset(Dataset):
+
+class HANCOCK_IT_Dataset(Dataset):
 
     def __init__(self, mode: str = "train", modalities: str = "all"):
         """
@@ -38,12 +38,9 @@ class HANCOCKDataset(Dataset):
         print(f"Dataset will be initialized for modalities: {self.modalities}")
 
         # --- Dataframes and Dictionaries to hold the data ---
-        self.clinical_df_str = None
-        self.clinical_df_encoded = None
-        self.pathological_df_str = None
-        self.pathological_df_encoded = None
-        self.blood_data_map_str = {}
-        self.blood_data_map_encoded = {}
+        self.clinical_df = None
+        self.pathological_df = None
+        self.blood_data_map = {}
         self.blood_ref_df = None
         self.pat_to_wsi_embeddings = {}
         self.patient_ids = []
@@ -108,19 +105,9 @@ class HANCOCKDataset(Dataset):
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the comma-separated modalities string into a list."""
         if modalities_str == "all":
-            return [
-                "image-pathology", 
-                "text-clinical",
-                "tabular-pathology-17",
-                "tabular-clinical-52"
-            ]
+            return ["images", "text"]
 
-        valid_modalities = {
-            "image-pathology", 
-            "text-clinical",
-            "tabular-pathology-17",
-            "tabular-clinical-52"
-        }
+        valid_modalities = {"images", "text"}
         modalities = [m.strip() for m in modalities_str.split(',')]
 
         for m in modalities:
@@ -129,14 +116,8 @@ class HANCOCKDataset(Dataset):
 
         return modalities
 
-    def _load_json_to_df(self, file_path: str, target_pids: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Helper to load a JSON file and filter it for target patient IDs.
-        
-        Returns:
-            Tuple containing:
-            - df_str: DataFrame with all values converted to strings
-            - df_encoded: DataFrame with all values converted to numeric types (int/float)
-        """
+    def _load_json_to_df(self, file_path: str, target_pids: List[str]) -> pd.DataFrame:
+        """Helper to load a JSON file and filter it for target patient IDs."""
         try:
             index_col = "patient_id"
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -144,82 +125,18 @@ class HANCOCKDataset(Dataset):
 
             filtered_data = [item for item in data if item.get(index_col) in target_pids]
             if not filtered_data:
-                return pd.DataFrame(), pd.DataFrame()
+                return pd.DataFrame()
 
-            # Create original DataFrame
-            df_original = pd.DataFrame(filtered_data)
-            if index_col in df_original.columns:
-                df_original.set_index(index_col, inplace=True)
-
-            # Create string DataFrame - convert all values to strings
-            df_str = df_original.astype(str)
-            
-            # Create encoded DataFrame - convert all values to numeric types
-            df_encoded = df_original.copy()
-            
-            # --- FIX 1: 定义要豁免编码的列 ---
-            not_encode_columns = ["analyte_name"]
-            
-            for col in df_encoded.columns:
-                # Try to convert to numeric first
-                try:
-                    # Attempt direct numeric conversion
-                    df_encoded[col] = pd.to_numeric(df_encoded[col])
-                except:
-                    pass
-                
-                # --- FIX 2: 如果列在豁免列表中，则跳过后续的标签编码 ---
-                if any(no_encode_col in col for no_encode_col in not_encode_columns):
-                    continue
-                    
-                # Handle specific data types
-                if df_encoded[col].dtype == 'object':
-                    try:
-                        # Try to convert to numeric first
-                        converted = pd.to_numeric(df_encoded[col])
-                        if not converted.isna().all():  # If successful conversion
-                            df_encoded[col] = converted
-                        else:
-                            # Use label encoding for categorical strings
-                            unique_values = df_encoded[col].dropna().unique()
-                            if len(unique_values) > 0:
-                                unique_values = sorted(unique_values)
-                                mapping = {value: idx for idx, value in enumerate(unique_values)}
-                                df_encoded[col] = df_encoded[col].map(mapping)
-                    except:
-                        # Fallback: use label encoding
-                        unique_values = df_encoded[col].dropna().unique()
-                        if len(unique_values) > 0:
-                            unique_values = sorted(unique_values)
-                            mapping = {value: idx for idx, value in enumerate(unique_values)}
-                            df_encoded[col] = df_encoded[col].map(mapping)
-                
-                elif df_encoded[col].dtype == 'bool':
-                    df_encoded[col] = df_encoded[col].astype(int)
-                
-                elif 'datetime' in str(df_encoded[col].dtype):
-                    df_encoded[col] = pd.to_datetime(df_encoded[col]).astype('int64') // 10**9  # Convert to Unix timestamp
-                
-                elif 'timedelta' in str(df_encoded[col].dtype):
-                    df_encoded[col] = df_encoded[col].dt.total_seconds()
-
-            # --- FIX 3: 移除多余的 "Final pass" 循环 ---
-            # (原先 77-87 行的代码已被删除，因为上面的循环已正确处理)
-            
-            # Convert all columns to numeric, filling NaN with 0 for any remaining non-numeric values
-            for col in df_encoded.columns:
-                # 这部分逻辑是正确的
-                if all(no_encode_col not in col for no_encode_col in not_encode_columns):
-                    df_encoded[col] = pd.to_numeric(df_encoded[col]).fillna(-1)
-
-            return df_str, df_encoded
+            df = pd.DataFrame(filtered_data)
+            if index_col in df.columns:
+                df.set_index(index_col, inplace=True)
+            return df
 
         except FileNotFoundError:
             raise FileNotFoundError(f"Error: Data file not found at {file_path}")
 
         except Exception as e:
             raise RuntimeError(f"Error loading or processing {file_path}: {e}")
-        
 
     def _load_data(self):
         """Loads all data sources based on the requested modalities and data split."""
@@ -231,80 +148,25 @@ class HANCOCKDataset(Dataset):
         self.patient_ids = self.target_patids
 
         # Always load clinical data for labels and basic info
-        self.clinical_df_str, self.clinical_df_encoded = self._load_json_to_df(
+        self.clinical_df = self._load_json_to_df(
             os.path.join(self.structured_data_dir, "clinical_data.json"), self.target_patids
         )
-        self.clinical_tabular_columns = [
-            "year_of_initial_diagnosis", 
-            "age_at_initial_diagnosis",
-            "sex",
-            "smoking_status",
-            "primarily_metastasis",
-            "first_treatment_intent",
-            "first_treatment_modality", 
-            "days_to_first_treatment",
-            "adjuvant_treatment_intent",
-            "adjuvant_radiotherapy",
-            "adjuvant_radiotherapy_modality",
-            "adjuvant_systemic_therapy",
-            "adjuvant_systemic_therapy_modality",
-            "adjuvant_radiochemotherapy"
-        ]
 
         # 2. Conditionally load data for text modalities
-        if any("text" in modal for modal in self.modalities) or any("tabular" in modal for modal in self.modalities):
-            # Load Pathological Data
-            self.pathological_df_str, self.pathological_df_encoded = self._load_json_to_df(
+        if "text" in self.modalities:
+            self.pathological_df = self._load_json_to_df(
                 os.path.join(self.structured_data_dir, "pathological_data.json"), self.target_patids
             )
-            self.pathology_tabular_columns = [
-                "primary_tumor_site",
-                "pT_stage",
-                "pN_stage", 
-                "grading",
-                "hpv_association_p16",
-                "number_of_positive_lymph_nodes",
-                "number_of_resected_lymph_nodes",
-                "perinodal_invasion",
-                "lymphovascular_invasion_L",
-                "vascular_invasion_V",
-                "perineural_invasion_Pn",
-                "resection_status",
-                "resection_status_carcinoma_in_situ",
-                "carcinoma_in_situ",
-                "closest_resection_margin_in_cm",
-                "histologic_type",
-                "infiltration_depth_in_mm"
-            ]
-
-            # Load Blood Data
             self.blood_ref_df = pd.read_json(os.path.join(self.structured_data_dir, "blood_data_reference_ranges.json"))
-            # 找到所有包含 _min 或 _max 的列
-            ref_cols = [col for col in self.blood_ref_df.columns if '_min' in col or '_max' in col]
-            for col in ref_cols:
-                # 强制将它们转换为数值类型，无法转换的变为 NaN
-                self.blood_ref_df[col] = pd.to_numeric(self.blood_ref_df[col])
-
-
-            self.blood_df_str, self.blood_df_encoded = self._load_json_to_df(
-                os.path.join(self.structured_data_dir, "blood_data.json"), self.target_patids
+            blood_df = self._load_json_to_df(
+                 os.path.join(self.structured_data_dir, "blood_data.json"), self.target_patids
             )
-
-            assert self.blood_df_str.empty is False and self.blood_df_encoded.empty is False, "Blood data is empty"
-
-            for patient_id, group in self.blood_df_str.reset_index().groupby('patient_id'):
-                self.blood_data_map_str[patient_id] = group.to_dict('records')
-            for patient_id, group in self.blood_df_encoded.reset_index().groupby('patient_id'):
-                self.blood_data_map_encoded[patient_id] = group.to_dict('records')
-            # analyte_name
-            self.blood_tabular_columns = sorted(list(set(self.blood_df_encoded["analyte_name"].dropna().unique())))
-
-            print("Blood Tabular Columns: ", self.blood_tabular_columns)
-            print("Blood Tabular Columns Number: ", len(self.blood_tabular_columns))  # 38
-
+            if not blood_df.empty:
+                for patient_id, group in blood_df.reset_index().groupby('patient_id'):
+                    self.blood_data_map[patient_id] = group.to_dict('records')
 
         # 3. Conditionally load WSI embeddings for the image modality
-        if "image-pathology" in self.modalities:
+        if "images" in self.modalities:
             if os.path.exists(self.wsi_encodings_dir):
                 for root, _, file in os.walk(self.wsi_encodings_dir):
                     for fname in file:
@@ -337,73 +199,30 @@ class HANCOCKDataset(Dataset):
 
     def _generate_blood_summary(self, patient_id: str) -> str:
         """Generates a natural language summary of the patient's blood data."""
-        if patient_id not in self.blood_data_map_str or self.clinical_df_str is None or self.blood_ref_df is None:
+        if patient_id not in self.blood_data_map or self.clinical_df is None or self.blood_ref_df is None:
             return "No blood data available."
 
-        patient_sex = self.clinical_df_str.loc[patient_id].get('sex', 'unknown')
-        patient_blood_records = self.blood_data_map_str[patient_id]
-        patient_blood_records_encoded = self.blood_data_map_encoded[patient_id]
+        patient_sex = self.clinical_df.loc[patient_id].get('sex', 'unknown')
+        patient_blood_records = self.blood_data_map[patient_id]
 
         summary_lines = []
-        for record, record_encoded in zip(patient_blood_records, patient_blood_records_encoded):
-            analyte, value_str, unit = record.get('analyte_name'), record.get('value'), record.get('unit', '')
-            analyte, value_float = record_encoded.get('analyte_name'), record_encoded.get('value')
-            if analyte is None or value_float is None or value_str is None: continue
+        for record in patient_blood_records:
+            analyte, value, unit = record.get('analyte_name'), record.get('value'), record.get('unit', '')
+            if analyte is None or value is None: continue
 
             ref_range_row = self.blood_ref_df[self.blood_ref_df['analyte_name'] == analyte]
-            line = f"- {analyte}: {value_str} {unit if unit else ''}"
+            line = f"- {analyte}: {value:.2f} {unit if unit else ''}"
             if not ref_range_row.empty:
                 ref = ref_range_row.iloc[0]
-                min_val, max_val = ref.get(f'normal_{patient_sex}_min', None), ref.get(f'normal_{patient_sex}_max', None)
-                if min_val and max_val and pd.notna(min_val) and pd.notna(max_val):
+                min_val, max_val = ref.get(f'normal_{patient_sex}_min'), ref.get(f'normal_{patient_sex}_max')
+                if pd.notna(min_val) and pd.notna(max_val):
                     status = "normal"
-                    if value_float < min_val: status = "low"
-                    elif value_float > max_val: status = "high"
+                    if value < min_val: status = "low"
+                    elif value > max_val: status = "high"
                     line += f" (Status: {status}, Reference: {min_val}-{max_val} {ref.get('unit', '')})"
             summary_lines.append(line)
 
-        return "\n".join(summary_lines) if summary_lines else ""
-    
-    def _generate_pathology_tabular_data(self, patient_id):
-        # Get pathological features in dict format
-        pathological_features = self.pathological_df_encoded .loc[patient_id].to_dict() \
-            if self.pathological_df_encoded  is not None and patient_id in self.pathological_df_encoded .index else {}
-        
-        # dict to tabular sorted the key
-        self.pathology_tabular_columns = sorted(list(set(self.pathology_tabular_columns)))
-        tabular_pathology_data = [pathological_features.get(column, -1) for column in self.pathology_tabular_columns]
-
-        assert len(tabular_pathology_data) == len(self.pathology_tabular_columns), "Pathology Tabular Columns Number is not equal to {}".format(len(self.pathology_tabular_columns))
-        assert len(tabular_pathology_data) == 17, "Pathology Tabular Columns Number is not 17, but got {}".format(len(tabular_pathology_data))
-        return tabular_pathology_data
-    
-    def _generate_clinical_tabular_data(self, patient_id):
-        # return tabular data in order blood_tabular_columns
-        patient_blood_records = self.blood_data_map_encoded[patient_id]
-        print("patient_blood_records = ", patient_blood_records)
-        tabular_data = []
-
-        # blood tabular  length = 38
-        self.blood_tabular_columns = sorted(list(set(self.blood_tabular_columns)))
-        for column in self.blood_tabular_columns:
-            value = next(record['analyte_name'] == column for record in patient_blood_records)
-            if value is None:
-                tabular_data.append(-1)  # padding nan with -1
-            else:
-                tabular_data.append(value)
-
-        # clinical tabular  length = 14
-        self.clinical_tabular_columns = sorted(list(set(self.clinical_tabular_columns)))
-        for column_name in self.clinical_tabular_columns:
-            value = self.clinical_df_encoded.loc[patient_id, column_name]
-            if pd.isna(value):
-                tabular_data.append(-1)  # padding nan with -1
-            else:
-                tabular_data.append(value)
-
-        assert len(tabular_data) == len(self.clinical_tabular_columns) + len(self.blood_tabular_columns), "Clinical Tabular Columns Number is not equal to {}".format(len(self.clinical_tabular_columns) + len(self.blood_tabular_columns))
-        assert len(tabular_data) == 52, f"Expected 52 tabular data columns, got {len(tabular_data)}"
-        return tabular_data
+        return "\n".join(summary_lines) if summary_lines else "No blood data available."
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
         """
@@ -413,7 +232,7 @@ class HANCOCKDataset(Dataset):
         output_dict = {"pid": patient_id}
 
         # --- Image Modality ---
-        if "image-pathology" in self.modalities:
+        if "images" in self.modalities:
             wsi_embeddings = self.pat_to_wsi_embeddings.get(patient_id)
             if wsi_embeddings:
                 wsi_tensor = torch.cat(wsi_embeddings, dim=0) if len(wsi_embeddings) > 1 else wsi_embeddings[0]
@@ -436,15 +255,16 @@ class HANCOCKDataset(Dataset):
                 output_dict["images"] = None
 
         # --- Text Modalities ---
-        if "text-clinical" in self.modalities:
+        if "text" in self.modalities:
+            pathological_features = self.pathological_df.loc[patient_id].to_dict() if self.pathological_df is not None and patient_id in self.pathological_df.index else {}
+            pathology_summary = " ".join([f"{k}: {v}" for k, v in pathological_features.items() if pd.notna(v)])
             radiology_report = self._read_text_file('reports_english', f'SurgeryReport_{patient_id}.txt')
-            clinical_features = self.clinical_df_str.loc[patient_id].to_dict()
-            for col_leak in self.label_leakage_columns:
-                if col_leak in clinical_features:
-                    clinical_features.pop(col_leak)
-            clinical_summary = " ".join([f"{k}: {v}" for k, v in clinical_features.items() if pd.notna(v)])
 
-            text_dict = {
+            strong_text = f"Pathology Summary: {pathology_summary}"
+
+            clinical_features = self.clinical_df.loc[patient_id].drop(labels=self.label_leakage_columns, errors='ignore').to_dict()
+            clinical_summary = " ".join([f"{k}: {v}" for k, v in clinical_features.items() if pd.notna(v)])
+            weak_texts = {
                 "Surgery and Radiology Report": radiology_report,
                 "Clinical Summary": clinical_summary,
                 "Surgery Description": self._read_text_file('surgery_descriptions_english', f'SurgeryDescriptionEnglish_{patient_id}.txt'),
@@ -455,28 +275,20 @@ class HANCOCKDataset(Dataset):
             }
 
             # random shuffle the sections to introduce variability
-            text_sents = [f"{key}: {value}" for key, value in text_dict.items() if value]
+            text_sents = [f"{key}: {value}" for key, value in weak_texts.items() if value]
             random.shuffle(text_sents)
 
-            full_weak_text = "\n".join(text_sents)
-            output_dict["text-clinical"] = full_weak_text.strip()
+            full_weak_text = "\n".join(text_sents).strip()
 
-        # --- Tabular Modalities ---
-        if "tabular-clinical-52" in self.modalities:
-            tabular_data = self._generate_clinical_tabular_data(patient_id)
-            output_dict["tabular-clinical"] = torch.tensor(tabular_data)
-        
-        if "tabular-pathology-17" in self.modalities:
-            tabular_data = self._generate_pathology_tabular_data(patient_id)
-            output_dict["tabular-pathology"] = torch.tensor(tabular_data)
-
+            # ALL TEXT
+            output_dict["text"] = strong_text + " " + full_weak_text
 
         # --- Survival Labels (Y and c) ---
-        label_info = self.clinical_df_str.loc[patient_id]
+        label_info = self.clinical_df.loc[patient_id]
         
         has_recurrence = label_info.get('recurrence') == 'yes'
-        time_to_recurrence = float(label_info.get('days_to_recurrence'))
-        time_to_last_info = float(label_info.get('days_to_last_information'))
+        time_to_recurrence = label_info.get('days_to_recurrence')
+        time_to_last_info = label_info.get('days_to_last_information')
 
         event_time = -1.0
         # c = 1 means censored, c = 0 means event occurred.
@@ -531,10 +343,4 @@ class HANCOCKDataset(Dataset):
 
 
 
-if __name__ == "__main__":
-    print("HANCOCK Dataset")
-    import os
-    os.chdir("/home/Guanjq/NewWork/MedAlignFusion/Code")
-    dataset = HANCOCKDataset(mode="train", modalities="all")
-    print(len(dataset))
-    print(dataset[0])
+

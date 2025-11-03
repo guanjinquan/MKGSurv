@@ -104,7 +104,7 @@ class OSCCSurvivalPred(nn.Module):
 
     def __init__(
         self,
-        modalities: List[str]  # list of modalities to use according to the dataset class
+        modalities: str = "all"
     ):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
@@ -112,8 +112,15 @@ class OSCCSurvivalPred(nn.Module):
         self.embed_dim = 512
 
         # 保留原始输入，用于解析
-        self.modalities = modalities
-        self.max_modalities_num = len(modalities)
+        self._raw_modalities = modalities
+        valid_modalities = [
+            "all", "images", "strong_related_text", "weak_related_text",
+            "images,strong_related_text", "images,weak_related_text", "strong_related_text,weak_related_text"
+        ]
+        cleaned_modalities = ",".join(modalities.split('-'))
+        assert cleaned_modalities in valid_modalities, f"Invalid modalities specified: {modalities}"
+        self.modalities = cleaned_modalities
+        self.max_modalities_num = 3 if self.modalities == 'all' else len(cleaned_modalities.split(','))
 
         # ----- Vision backbone (vit small) -----
         vit_model, vit_emb = get_vit_small_pathology(pretrained=True, progress=True, key="DINO_p16")
@@ -137,12 +144,6 @@ class OSCCSurvivalPred(nn.Module):
             self.bert_proj = nn.Identity()
         self.bert.to(self.device)
 
-        # ----- Tabular -----
-        self.tabular_encoder = nn.ModuleDict()
-        for i, modality in enumerate(modalities):
-            if "tabular" in modality:
-                tabular_dim = int(modality.split("-")[-1])
-                self.tabular_encoder[modality] = nn.Linear(tabular_dim, self.embed_dim)
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 10) # Predicts risk for 10 time intervals
@@ -177,90 +178,101 @@ class OSCCSurvivalPred(nn.Module):
             chunks.append(ids[i:i + chunk_size])
         return chunks
 
-    def _encode_text(self, texts_list: List[Optional[str | List[str]]]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Encodes a batch of texts, handling List[str] as separate items and chunking long inputs."""
-        batch_size = len(texts_list) # <--- 修正了拼写错误 (was text_list)
-        chunk_payload = 510  # 512 - 2 for [CLS] and [SEP]
-        
-        all_chunks = []
-        mapping_info = [] # (original_batch_index, num_chunks)
-        
-        for i, item in enumerate(texts_list):
-            
-            # 存放这个批次项 (item) 最终对应的所有 token 块
-            item_specific_chunks = [] 
-            
-            # --- 这是新的核心逻辑 ---
-            texts_to_process = []
-            if isinstance(item, str) and item.strip():
-                # 1. 如果是单个字符串，将其放入待处理列表
-                texts_to_process.append(item)
-            elif isinstance(item, list):
-                # 2. 如果是列表，过滤掉无效字符串后，全部放入待处理列表
-                texts_to_process.extend([t for t in item if isinstance(t, str) and t.strip()])
-            
-            # 3. 如果 item 是 None, [], 或 ["", " "]，texts_to_process 将为空
-            if not texts_to_process:
-                mapping_info.append({'index': i, 'n': 0})
-                continue
-            
-            # 4. 统一处理所有待处理的文本
-            # 无论是单个 str 还是 List[str] 中的每个 str，
-            # 它们现在都被同等对待：tokenize -> chunk
-            for text in texts_to_process:
-                token_ids = self.tokenizer.encode(text, add_special_tokens=False)
-                # _chunk_token_ids 会处理长文本和短文本
-                chunks = self._chunk_token_ids(token_ids, chunk_payload) 
-                if chunks:
-                    item_specific_chunks.extend(chunks)
-            # --- 新逻辑结束 ---
+    def _encode_text(self, text_list: List[Optional[str]]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Encode a list of texts (batch) and return:
+            final_embeddings: Tensor (B, max_chunks, embed_dim)
+            final_mask: Tensor (B, max_chunks)  (1 places where chunk exists)
+        Behavior:
+            - empty/None/blank string => all-zero embeddings and zero mask
+            - long text is split into chunks (model_max_length - 2 for [CLS]/[SEP])
+            - each chunk is fed to bert, we take pooler_output if available, else mean-pool
+        """
+        batch_size = len(text_list)
+        model_max = 512
+        chunk_payload = max(1, model_max - 2)
 
-            # 记录这个批次项 (item) 总共产生了多少个 chunk
-            if not item_specific_chunks:
-                mapping_info.append({'index': i, 'n': 0})
-                continue
-                
-            mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
-            all_chunks.extend(item_specific_chunks)
+        valid_texts_with_idx = []
+        for i, t in enumerate(text_list):
+            if t and isinstance(t, str) and t.strip():
+                valid_texts_with_idx.append({"index": i, "text": t})
 
-        # --- 从这里开始，你原有的代码逻辑完全不变 ---
-
-        if not all_chunks:
-            # 返回一个 (B, 1, D) 和 (B, 1) 的空张量，与你原始逻辑保持一致
+        if not valid_texts_with_idx:
             return torch.zeros(batch_size, 1, self.embed_dim, device=self.device), torch.zeros(batch_size, 1, device=self.device).bool()
 
-        # 将所有 chunk 转换成 token 字符串（注意：这里有潜在的效率问题，但忠于你的原始代码）
-        inputs = self.tokenizer(
-            [' '.join(self.tokenizer.convert_ids_to_tokens(c)) for c in all_chunks],
-            return_tensors="pt", padding=True, truncation=True, max_length=512
-        ).to(self.device)
+        chunk_input_ids = []
+        chunk_attention_masks = []
+        mapping_info = []  # per valid text: (orig_index, num_chunks)
+        for item in valid_texts_with_idx:
+            txt = item["text"]
+            idx = item["index"]
+            ids = self.tokenizer.encode(txt, add_special_tokens=False)
+            chunks = self._chunk_token_ids(ids, chunk_payload)
+            mapping_info.append({"index": idx, "n": len(chunks)})
+            for ch in chunks:
+                input_ids = [self.tokenizer.cls_token_id] + ch + [self.tokenizer.sep_token_id]
+                att_mask = [1] * len(input_ids)
+                pad_len = model_max - len(input_ids)
+                if pad_len > 0:
+                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+                    input_ids = input_ids + [pad_token] * pad_len
+                    att_mask = att_mask + [0] * pad_len
+                chunk_input_ids.append(torch.tensor(input_ids, dtype=torch.long))
+                chunk_attention_masks.append(torch.tensor(att_mask, dtype=torch.long))
 
-        # BERT 批量推理
-        bert_outputs = self.bert(**inputs)
-        pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
+        chunk_input_ids = torch.stack(chunk_input_ids, dim=0).to(self.device)
+        chunk_attention_masks = torch.stack(chunk_attention_masks, dim=0).to(self.device)
 
-        # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)
-        max_chunks = max((m['n'] for m in mapping_info), default=1)
-        final_embeddings = torch.zeros(batch_size, max_chunks, self.embed_dim, device=self.device)
-        final_mask = torch.zeros(batch_size, max_chunks, device=self.device).bool()
+        # Extract pooled embeddings
+        outputs = self.bert(input_ids=chunk_input_ids, attention_mask=chunk_attention_masks)
 
-        chunk_idx = 0
+        if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
+            pooled = outputs.pooler_output
+        else:
+            last_hidden = outputs.last_hidden_state
+            att = chunk_attention_masks.unsqueeze(-1).float()
+            summed = (last_hidden * att).sum(dim=1)
+            lengths = att.sum(dim=1).clamp(min=1e-6)
+            pooled = summed / lengths
+
+        pooled_proj = self.bert_proj(pooled)  # (total_chunks, embed_dim)
+
+        num_chunks_list = [m["n"] for m in mapping_info]
+        max_chunks = max(num_chunks_list) if num_chunks_list else 1
+
+        final_embeddings_list = []
+        final_mask_list = []
+        cur = 0
+        for m in mapping_info:
+            n = m["n"]
+            emb = pooled_proj[cur: cur + n]  # (n, embed_dim)
+            cur += n
+            if n < max_chunks:
+                pad_n = max_chunks - n
+                emb = torch.cat([emb, torch.zeros(pad_n, self.embed_dim, device=self.device)], dim=0)
+                mask = torch.cat([torch.ones(n, device=self.device), torch.zeros(pad_n, device=self.device)], dim=0)
+            else:
+                mask = torch.ones(n, device=self.device)
+            final_embeddings_list.append(emb)
+            final_mask_list.append(mask)
+
+        final_embeddings = []
+        final_masks = []
+        valid_indices = [m["index"] for m in mapping_info]
+        valid_iter = iter(final_embeddings_list)
+        mask_iter = iter(final_mask_list)
         for i in range(batch_size):
-            # 查找索引为 i 的批次项有多少个 chunk
-            num_chunks = next((m['n'] for m in mapping_info if m['index'] == i), 0)
-            
-            if num_chunks > 0:
-                # 从 'pooled' 中提取这些 chunk 的 embedding
-                patient_chunks = pooled[chunk_idx : chunk_idx + num_chunks]
-                
-                # 放入最终的张量
-                final_embeddings[i, :num_chunks] = patient_chunks
-                final_mask[i, :num_chunks] = True
-                
-                # 移动指针
-                chunk_idx += num_chunks
-        
-        return final_embeddings, final_mask.bool()
+            if i in valid_indices:
+                final_embeddings.append(next(valid_iter))
+                final_masks.append(next(mask_iter))
+            else:
+                final_embeddings.append(torch.zeros(max_chunks, self.embed_dim, device=self.device))
+                final_masks.append(torch.zeros(max_chunks, device=self.device))
+
+        final_embeddings = torch.stack(final_embeddings, dim=0)
+        final_masks = torch.stack(final_masks, dim=0)
+
+        return final_embeddings, final_masks.bool()
 
     # -------------------------
     # Public encode: multimodal
@@ -282,8 +294,8 @@ class OSCCSurvivalPred(nn.Module):
         all_masks = [] # [image_mask, strong_text_mask, weak_text_mask]
 
         # ----- Image branch -----
-        if 'image-pathology' in batch and batch['image-pathology']:
-            list_of_image_lists = batch.get('image-pathology', [])
+        if 'images' in batch and batch['images']:
+            list_of_image_lists = batch.get('images', [])
             if list_of_image_lists and isinstance(list_of_image_lists[0], list) and list_of_image_lists[0]:
                 num_images_per_patient = len(list_of_image_lists[0])
                 all_images = [img for patient_images in list_of_image_lists for img in patient_images]
@@ -301,26 +313,23 @@ class OSCCSurvivalPred(nn.Module):
                 all_embeddings.append(image_features)
                 all_masks.append(image_mask)
 
-        # ----- Text branch -----
-        if 'text-clincal' in batch and batch['text-clincal']:
-            text_features, text_mask = self._encode_text(batch['text-clincal'])
-            all_embeddings.append(text_features)
-            all_masks.append(text_mask)
+        # ----- Strong text branch -----
+        if 'strong_related_text' in batch and batch['strong_related_text']:
+            strong_text_features, strong_text_mask = self._encode_text(batch['strong_related_text'])
+            all_embeddings.append(strong_text_features)
+            all_masks.append(strong_text_mask)
 
-        # ----- Tabular branch -----
-        for i, modality in enumerate(self.modalities):
-            if "tabular" in modality and modality in batch and batch[modality]:
-                tabular_features = self.tabular_encoder(batch[modality])
-                tabular_masks = torch.ones(batch_size, 1, device=self.device).bool()
-                all_embeddings.append(tabular_features)
-                all_masks.append(tabular_masks)
-
+        # ----- Weak text branch -----
+        if 'weak_related_text' in batch and batch['weak_related_text']:
+            weak_text_features, weak_text_mask = self._encode_text(batch['weak_related_text'])
+            all_embeddings.append(weak_text_features)
+            all_masks.append(weak_text_mask)
 
         # Define which modalities are strongly related (e.g., for cross-attention)
         # Index 0: image, Index 1: strong_related_text
         strong_related_pairs = []
-        # if image_features is not None and strong_text_features is not None:
-        #     strong_related_pairs.append((0, 1))
+        if image_features is not None and strong_text_features is not None:
+            strong_related_pairs.append((0, 1))
 
         # Check number of present modalities
         assert len(all_embeddings) <= self.max_modalities_num, f"Number of present modalities exceeds the maximum allowed: {self.max_modalities_num}"

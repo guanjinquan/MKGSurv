@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
-from typing import Dict, Any, List, Tuple, Optional, Union
+from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
@@ -57,12 +57,12 @@ class AggregatingTransMIL(nn.Module):
     """
     A modified TransMIL that aggregates information into K tokens.
     """
-    def __init__(self, input_dim=1024, embed_dim=512, num_aggregated_tokens: int = 16):
+    def __init__(self, input_dim=1024, embed_dim=512, num_aggregated_tokens: int = 128):
         super(AggregatingTransMIL, self).__init__()
         self.num_aggregated_tokens = num_aggregated_tokens
-        self.pos_layer = PPEG(num_aggregated_tokens=1, dim=embed_dim)
+        self.pos_layer = PPEG(dim=embed_dim)
         self._fc1 = nn.Sequential(nn.Linear(input_dim, embed_dim), nn.ReLU())
-        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.cls_token = nn.Parameter(torch.randn(1, num_aggregated_tokens, embed_dim))
         self.layer1 = TransLayer(dim=embed_dim)
         self.layer2 = TransLayer(dim=embed_dim)
         self.norm = nn.LayerNorm(embed_dim)
@@ -95,7 +95,7 @@ class AggregatingTransMIL(nn.Module):
 # ==========================================================================================
 # Main Encoder-Decoder Model for HANCOCK Dataset
 # ==========================================================================================
-class HANCOCKSurvivalPred(nn.Module):
+class HANCOCKSurvivalPred_IT(nn.Module):
     
     METRICS_FN = staticmethod(survival_metrics)
 
@@ -106,7 +106,7 @@ class HANCOCKSurvivalPred(nn.Module):
 
         # --- Modality Setup ---
         if modalities == 'all':
-            self.active_modalities = ["images", "strong_related_text", "weak_related_text"]
+            self.active_modalities = ["images", "text"]
         else:
             self.active_modalities = sorted([m.strip() for m in modalities.split(',')])
         
@@ -122,7 +122,7 @@ class HANCOCKSurvivalPred(nn.Module):
             self.num_wsi_tokens = self.wsi_mil.num_aggregated_tokens
 
         # ----- Text Branch (ClinicalBERT) -----
-        if 'strong_related_text' in self.active_modalities or 'weak_related_text' in self.active_modalities:
+        if 'text' in self.active_modalities:
             self.text_model_name = "medicalai/ClinicalBERT"
             self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_name, use_fast=True)
             self.bert = AutoModel.from_pretrained(self.text_model_name)
@@ -137,87 +137,50 @@ class HANCOCKSurvivalPred(nn.Module):
         """Splits a list of token ids into chunks."""
         return [ids[i:i + chunk_size] for i in range(0, len(ids), chunk_size)]
 
-    def _encode_text(self, texts_list: List[Optional[str | List[str]]]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Encodes a batch of texts, handling List[str] as separate items and chunking long inputs."""
-        batch_size = len(texts_list) # <--- 修正了拼写错误 (was text_list)
+    def _encode_text(self, text_list: List[Optional[str]]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Encodes a batch of texts, handling chunking for long inputs."""
+        batch_size = len(text_list)
         chunk_payload = 510  # 512 - 2 for [CLS] and [SEP]
         
         all_chunks = []
         mapping_info = [] # (original_batch_index, num_chunks)
         
-        for i, item in enumerate(texts_list):
-            
-            # 存放这个批次项 (item) 最终对应的所有 token 块
-            item_specific_chunks = [] 
-            
-            # --- 这是新的核心逻辑 ---
-            texts_to_process = []
-            if isinstance(item, str) and item.strip():
-                # 1. 如果是单个字符串，将其放入待处理列表
-                texts_to_process.append(item)
-            elif isinstance(item, list):
-                # 2. 如果是列表，过滤掉无效字符串后，全部放入待处理列表
-                texts_to_process.extend([t for t in item if isinstance(t, str) and t.strip()])
-            
-            # 3. 如果 item 是 None, [], 或 ["", " "]，texts_to_process 将为空
-            if not texts_to_process:
+        for i, text in enumerate(text_list):
+            if not text or not isinstance(text, str) or not text.strip():
                 mapping_info.append({'index': i, 'n': 0})
                 continue
             
-            # 4. 统一处理所有待处理的文本
-            # 无论是单个 str 还是 List[str] 中的每个 str，
-            # 它们现在都被同等对待：tokenize -> chunk
-            for text in texts_to_process:
-                token_ids = self.tokenizer.encode(text, add_special_tokens=False)
-                # _chunk_token_ids 会处理长文本和短文本
-                chunks = self._chunk_token_ids(token_ids, chunk_payload) 
-                if chunks:
-                    item_specific_chunks.extend(chunks)
-            # --- 新逻辑结束 ---
-
-            # 记录这个批次项 (item) 总共产生了多少个 chunk
-            if not item_specific_chunks:
+            token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+            chunks = self._chunk_token_ids(token_ids, chunk_payload)
+            if not chunks:
                 mapping_info.append({'index': i, 'n': 0})
                 continue
-                
-            mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
-            all_chunks.extend(item_specific_chunks)
 
-        # --- 从这里开始，你原有的代码逻辑完全不变 ---
+            mapping_info.append({'index': i, 'n': len(chunks)})
+            all_chunks.extend(chunks)
 
         if not all_chunks:
-            # 返回一个 (B, 1, D) 和 (B, 1) 的空张量，与你原始逻辑保持一致
             return torch.zeros(batch_size, 1, self.embed_dim, device=self.device), torch.zeros(batch_size, 1, device=self.device).bool()
 
-        # 将所有 chunk 转换成 token 字符串（注意：这里有潜在的效率问题，但忠于你的原始代码）
         inputs = self.tokenizer(
             [' '.join(self.tokenizer.convert_ids_to_tokens(c)) for c in all_chunks],
             return_tensors="pt", padding=True, truncation=True, max_length=512
         ).to(self.device)
 
-        # BERT 批量推理
         bert_outputs = self.bert(**inputs)
         pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
 
-        # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)
         max_chunks = max((m['n'] for m in mapping_info), default=1)
         final_embeddings = torch.zeros(batch_size, max_chunks, self.embed_dim, device=self.device)
         final_mask = torch.zeros(batch_size, max_chunks, device=self.device).bool()
 
         chunk_idx = 0
         for i in range(batch_size):
-            # 查找索引为 i 的批次项有多少个 chunk
             num_chunks = next((m['n'] for m in mapping_info if m['index'] == i), 0)
-            
             if num_chunks > 0:
-                # 从 'pooled' 中提取这些 chunk 的 embedding
                 patient_chunks = pooled[chunk_idx : chunk_idx + num_chunks]
-                
-                # 放入最终的张量
                 final_embeddings[i, :num_chunks] = patient_chunks
                 final_mask[i, :num_chunks] = True
-                
-                # 移动指针
                 chunk_idx += num_chunks
         
         return final_embeddings, final_mask
@@ -255,26 +218,16 @@ class HANCOCKSurvivalPred(nn.Module):
                 all_masks.append(wsi_mask)
                 present_modalities.append("images")
 
-        # --- 2. Strong Related Text Branch ---
-        if 'strong_related_text' in batch and batch['strong_related_text']:
-            pathology_embeds, pathology_mask = self._encode_text(batch['strong_related_text'])
+        # --- 2. Text Branch ---
+        if 'text' in batch and batch['text']:
+            pathology_embeds, pathology_mask = self._encode_text(batch['text'])
             all_embeddings.append(pathology_embeds)
             all_masks.append(pathology_mask)
-            present_modalities.append("strong_related_text")
+            present_modalities.append("text")
 
-        # --- 3. Weak Related Text Branch ---
-        if 'weak_related_text' in batch and batch['weak_related_text']:
-            other_text_embeds, other_text_mask = self._encode_text(batch['weak_related_text'])
-            all_embeddings.append(other_text_embeds)
-            all_masks.append(other_text_mask)
-            present_modalities.append("weak_related_text")
 
         # --- Define Alignment Pairs ---
         align_pairs = []
-        if "images" in present_modalities and "strong_related_text" in present_modalities:
-            image_idx = present_modalities.index("images")
-            strong_text_idx = present_modalities.index("strong_related_text")
-            align_pairs.append((image_idx, strong_text_idx))
 
         return {
             "embeddings": all_embeddings,
