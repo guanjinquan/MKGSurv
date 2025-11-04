@@ -274,6 +274,8 @@ class SimpleFusion(nn.Module):
             
         # --- MSA Fusion: Concatenate sequences ---
         if self.fusion_type == 'msa':
+            # for emb in present_embeddings:
+                # print("Shape = ", emb.shape)
             concatenated_embeddings = torch.cat(present_embeddings, dim=1)
             
             # Prepare the attention mask

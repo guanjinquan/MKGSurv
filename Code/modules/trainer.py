@@ -49,8 +49,12 @@ class Trainer:
         self.device = torch.device("cuda", self.local_rank)
         print("device ", self.device)
         
+        # --- DDP CHANGE: 数据加载器需要 DistributedSampler ---
+        self.train_loader, self.val_loader, self.test_loader = GetDataLoader(self.args)
+
         # --- DDP CHANGE: 将模型移动到正确的设备 ---
-        self.model = GetModel(self.args).to(self.device)
+        modalities_of_dataset = self.train_loader.dataset.modalities
+        self.model = GetModel(self.args, modalities_of_dataset).to(self.device)
         
         # --- DDP ADDITION: 使用 DDP 包装模型 ---
         if self.args.use_ddp:
@@ -58,9 +62,6 @@ class Trainer:
 
         self.optimizer = GetOptimizer(self.args, self.model)
         self.scheduler = GetScheduler(self.args, self.optimizer)
-        
-        # --- DDP CHANGE: 数据加载器需要 DistributedSampler ---
-        self.train_loader, self.val_loader, self.test_loader = GetDataLoader(self.args)
         
         self.epoch = 0
         self.iters = 0

@@ -1,14 +1,14 @@
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from datasets.multi_oscc_dataset import MultiOSCCDataset
+# from datasets.multi_oscc_dataset import MultiOSCCDataset
+# from datasets.hancock_it_dataset import HANCOCK_IT_Dataset
+# from datasets.hancock_textlist_dataset import HANCOCK_TextList_Dataset
+# from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset
+# from datasets.multi_oscc_split_text_dataset import MultiOSCCSplitDataset
+# from datasets.oscc_surv_inhouse_IT_dataset import OSCCSurvInHouseITDataset
 from datasets.hancock_dataset import HANCOCKDataset
-from datasets.hancock_it_dataset import HANCOCK_IT_Dataset
-from datasets.hancock_textlist_dataset import HANCOCK_TextList_Dataset
-from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset
-from datasets.multi_oscc_split_text_dataset import MultiOSCCSplitDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
-from datasets.oscc_surv_inhouse_IT_dataset import OSCCSurvInHouseITDataset
 from datasets.dataset_sampler import BalancedBatchSampler, DistributedBalancedBatchSampler
 import torch
 from torch.utils.data import DataLoader
@@ -68,21 +68,9 @@ def GetDataLoader(args):
 
 def GetDataset(mode, args):
     dataset = args.dataset
-    if dataset == "multi_oscc":
-        return MultiOSCCDataset(mode=mode, modalities=args.modalities)
-    elif dataset == "hancock":
+    if dataset == "hancock":
         return HANCOCKDataset(mode=mode, modalities=args.modalities)
-    elif dataset == "hancock_it":
-        return HANCOCK_IT_Dataset(mode=mode, modalities=args.modalities)
-    elif dataset == "hancock_textlist":
-        return HANCOCK_TextList_Dataset(mode=mode, modalities=args.modalities)
-    elif dataset == "multi_oscc_it":
-        return MultiOSCCITDataset(mode=mode, modalities=args.modalities)
-    elif dataset == "multi_oscc_split":
-        return MultiOSCCSplitDataset(mode=mode, modalities=args.modalities)
     elif dataset == "oscc_inhouse":
         return OSCCSurvInHouseDataset(mode=mode, modalities=args.modalities)
-    elif dataset == "oscc_inhouse_it":
-        return OSCCSurvInHouseITDataset(mode=mode, modalities=args.modalities)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

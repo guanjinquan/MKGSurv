@@ -271,11 +271,9 @@ class OSCCSurvivalPred(nn.Module):
         Returns a dictionary with token-level embeddings and masks.
         """
         batch_size = len(batch.get('labels', []))
+        device = next(self.parameters()).device
         if batch_size == 0:
-            return {"embeddings": [None, None, None], "masks": [None, None, None], "align_pairs": []}
-
-        image_features, strong_text_features, weak_text_features = None, None, None
-        image_mask, strong_text_mask, weak_text_mask = None, None, None
+            raise ValueError("Batch Size can not be zero.")
 
         # --- Process modalities only if their key exists in the batch ---
         all_embeddings = []  #[image_features, strong_text_features, weak_text_features]
@@ -302,18 +300,31 @@ class OSCCSurvivalPred(nn.Module):
                 all_masks.append(image_mask)
 
         # ----- Text branch -----
-        if 'text-clincal' in batch and batch['text-clincal']:
-            text_features, text_mask = self._encode_text(batch['text-clincal'])
+        if 'text-clinical' in batch and batch['text-clinical']:
+            text_features, text_mask = self._encode_text(batch['text-clinical'])
             all_embeddings.append(text_features)
             all_masks.append(text_mask)
 
         # ----- Tabular branch -----
         for i, modality in enumerate(self.modalities):
             if "tabular" in modality and modality in batch and batch[modality]:
-                tabular_features = self.tabular_encoder(batch[modality])
-                tabular_masks = torch.ones(batch_size, 1, device=self.device).bool()
-                all_embeddings.append(tabular_features)
-                all_masks.append(tabular_masks)
+                table_features = []
+                table_masks = []
+                for table in batch[modality]:
+                    if table:
+                        modality_stack_tensor = torch.tensor(table).to(device).float()
+                        tabular_feature = self.tabular_encoder[modality](modality_stack_tensor).reshape(1, 1, -1)  # (1, 1, D)  B, N, D
+                        tabular_mask = torch.ones(1, 1, device=self.device).bool()
+                    else:  # Some patient missing modality
+                        tabular_feature = torch.zeros((1, 1, self.embed_dim)).to(device).float()
+                        tabular_mask = torch.zeros(1, 1, device=self.device).bool()
+                    table_features.append(tabular_feature)
+                    table_masks.append(tabular_mask)
+
+                table_features = torch.cat(table_features, dim=0)
+                table_masks = torch.cat(table_masks, dim=0)
+                all_embeddings.append(table_features)
+                all_masks.append(table_masks)
 
 
         # Define which modalities are strongly related (e.g., for cross-attention)

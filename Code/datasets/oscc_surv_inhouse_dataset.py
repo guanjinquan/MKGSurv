@@ -137,7 +137,6 @@ class OSCCSurvInHouseDataset(Dataset):
             'label_c': censorship,
         }
 
-        
         output_dict['original_labels'] = {
             'label_Y': event_time,
             'label_c': censorship
@@ -170,6 +169,12 @@ class OSCCSurvInHouseDataset(Dataset):
                 for text, text_modality in zip(texts, texts_modalities):
                     if text_modality in self.modalities and len(text):
                         output_dict[text_modality] = text
+                    else:
+                        output_dict[text_modality] = None
+            else:
+                for text_modality in self.modalities:
+                    if "text" in text_modality:
+                        output_dict[text_modality] = None
 
         # --- Tabular modalities ---
         if any("tabular" in modal for modal in self.modalities):
@@ -180,11 +185,15 @@ class OSCCSurvInHouseDataset(Dataset):
                     if tabular_modality in self.modalities:
                         assert len(tabular_data) > 0, f"Tabular data is empty for {tabular_modality}"
                         output_dict[tabular_modality] = tabular_data
+            else:
+                for tabular_modality in self.modalities:
+                    if "tabular" in tabular_modality:
+                        output_dict[tabular_modality] = None
 
         # --- Data Integrity Check ---
         # If no requested modalities were found for this patient, get the next one.
         modalities_found = sum([1 for m in self.modalities if m in output_dict and output_dict[m] is not None])
-        if modalities_found:
+        if not modalities_found:
             return self.__getitem__((index + 1) % len(self))
 
         return output_dict
@@ -202,7 +211,7 @@ class OSCCSurvInHouseDataset(Dataset):
                 "tabular-pathology-15",
                 "tabular-clinical-16",
                 "tabular-blood-9",
-                "tabular-immunohistochemic-6",
+                "tabular-immunohistochemic-5",
             ] 
     
         valid_set = {
@@ -212,9 +221,8 @@ class OSCCSurvInHouseDataset(Dataset):
             "tabular-pathology-15",
             "tabular-clinical-16",
             "tabular-blood-9",
-            "tabular-immunohistochemic-6",
+            "tabular-immunohistochemic-5",
         }
-
 
         # Allow for ',' as separators
         parsed = [m.strip() for m in modalities_str.split(',')]
@@ -307,6 +315,7 @@ class OSCCSurvInHouseDataset(Dataset):
                 "Flap",
                 "PreoperativeHistoryDetails",
                 "PostopComplicationDetails",
+                "PD_L1"
             ],
             "pathology": [  # 对应原本的 text-2
                 "Pathology",
@@ -372,26 +381,37 @@ class OSCCSurvInHouseDataset(Dataset):
                 "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
             ],
             "immunohistochemic": [  # 对应原本 text-5
-                "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", "PD_L1"
+                "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", 
             ]
         }
 
+        def process_specical_column(column, value):
+            if column == "TumorT":
+                try:
+                    return float(value)
+                except:
+                    if value == '4a': return 4
+                    elif value == 'Tis': return 0
+                    else: return -1
+            
+            return value
+
         tabular_datas = []
-        tabular_data_sources = []
         tabular_modalities = []
         for key, columns in sources_with_columns.items():
             tabular_data = []
             tabular_data_source = []
             for column_name in columns:
                 value = patient_series[column_name]
+                value = process_specical_column(column_name, value)
+
                 if pd.isna(value) or str(value).strip() in ['/', '']:
                     tabular_data.append(-1)  # padding nan with -1
                 else:
                     tabular_data.append(float(value))
                 tabular_data_source.append(column_name)
             tabular_datas.append(tabular_data)
-            tabular_data_sources.append(tabular_data_source)
             tabular_modalities.append(f"tabular-{key}-{len(tabular_data)}")
 
-        return tabular_datas, tabular_data_sources, tabular_modalities
+        return tabular_datas, tabular_modalities
 

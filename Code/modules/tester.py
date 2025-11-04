@@ -1,16 +1,16 @@
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 假设父目录已在 sys.path 中，或者根据您的项目结构调整
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tqdm
 import numpy as np
 import torch
 import json
 
+# 假设这些模块路径都正确
 from datasets import GetDataLoader
 from modules.model import GetModel
 from modules.training_utils import Logger, load_model
-
-# (*** 新增 ***) 导入我们的新绘图工具
 from modules.training_utils.kaplan_meier_plotter import plot_risk_stratified_km, convert_logits_to_risk_scores
 
 class Tester:
@@ -32,8 +32,13 @@ class Tester:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("Using device:", self.device, flush=True)
         
+        # --- Data Loader ---
+        _, _, self.test_loader = GetDataLoader(self.args)
+        assert self.test_loader is not None, "Test loader could not be created."
+
         # --- Model Initialization and Loading ---
-        self.model = GetModel(self.args).to(self.device)
+        modalities = self.test_loader.dataset.modalities
+        self.model = GetModel(self.args, modalities_of_dataset=modalities).to(self.device)
 
         if self.args.load_pth_path is None:
             run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type]
@@ -52,10 +57,6 @@ class Tester:
         
         print("Model loaded successfully.", flush=True)
 
-        # --- Data Loader ---
-        _, _, self.test_loader = GetDataLoader(self.args)
-        assert self.test_loader is not None, "Test loader could not be created."
-        
         # --- Logging Setup ---
         # The log file will be saved in the same directory as the model checkpoint.
         self.log_path = os.path.dirname(self.args.load_pth_path)
@@ -70,7 +71,7 @@ class Tester:
         
         # Lists to store results from all batches
         # (*** all_original_labels 是新增的 ***)
-        all_logits, all_labels, all_original_labels, all_losses = [], [], [], {}
+        all_pids, all_logits, all_labels, all_original_labels, all_losses = [], [], [], [], {}
 
         with torch.no_grad():
             pbar = tqdm.tqdm(total=len(self.test_loader), desc="Testing")
@@ -80,6 +81,8 @@ class Tester:
                 out = self.model(batch_size, batch_data)
                 
                 # Collect logits and labels
+                all_pids.extend(batch_data['pid'])
+                # .tolist() 确保数据是可 JSON 序列化的
                 all_logits.extend(out['logits'].detach().cpu().numpy().tolist())
                 all_labels.extend(batch_data['labels'])
                 
@@ -106,13 +109,14 @@ class Tester:
 
         # --- Metric Calculation and Logging ---
         # (*** 修改 ***) 传入 all_original_labels
-        self.log_results(all_losses, all_logits, all_labels, all_original_labels)
+        self.log_results(all_pids, all_losses, all_logits, all_labels, all_original_labels)
 
-    def log_results(self, losses, logits, labels, original_labels):
+    def log_results(self, pids, losses, logits, labels, original_labels):
         """
         Calculates, logs, and prints the final evaluation metrics and losses.
         
         Args:
+            pids (list): A list of patient/sample IDs.
             losses (dict): A dictionary of lists containing loss values for each batch.
             logits (list): A list of model outputs (logits).
             labels (list): A list of ground truth discrete labels (用于计算 C-Index 等).
@@ -146,6 +150,36 @@ class Tester:
         # Save metrics to a JSON file for easy access
         with open(os.path.join(self.log_path, 'test_metrics.json'), 'w') as f:
             json.dump(metrics_dict, f, indent=4)
+
+        # --- (*** 修改：将 logits 和 labels 合并到一个文件 ***) ---
+        print("\nSaving PID-to-Data (logits+labels) mapping...", flush=True)
+        if original_labels: # 确保我们收集到了
+            try:
+                pid_to_data = {}
+                # 遍历所有 pids，创建一个新字典
+                for i in range(len(pids)):
+                    pid_to_data[pids[i]] = {
+                        "logits": logits[i],       # logits 已经是 .tolist()
+                        "label": original_labels[i] # original_labels 是 dict
+                    }
+                
+                # 2. 定义保存路径
+                data_save_path = os.path.join(self.log_path, 'test_pid_to_data.json')
+
+                # 3. 将字典保存为 JSON 文件
+                with open(data_save_path, 'w') as f:
+                    json.dump(pid_to_data, f, indent=4)
+                    
+                self.log.write(f"\nPID-to-Data mapping saved to: {data_save_path}")
+                print(f"PID-to-Data mapping saved to: {data_save_path}", flush=True)
+
+            except Exception as e:
+                print(f"\nError saving PID-to-Data mapping: {e}", flush=True)
+                self.log.write(f"\nError saving PID-to-Data mapping: {e}")
+        else:
+            print("Warning: 'original_labels' is empty. Skipping saving PID-to-Data mapping.", flush=True)
+            self.log.write("\nWarning: 'original_labels' is empty. Skipping saving PID-to-Data mapping.")
+        # --- (*** 修改结束, 已替换单独的 pid_to_logits 和 pid_to_labels ***) ---
             
         # --- (*** 新增 ***) 绘制 Kaplan-Meier 曲线 ---
         # 检查 args 中是否有 draw_kaplan_meier 标志，并且它是否为 True
@@ -184,3 +218,5 @@ class Tester:
             except Exception as e:
                 print(f"\nError generating Kaplan-Meier plot: {e}", flush=True)
                 self.log.write(f"\nError generating Kaplan-Meier plot: {e}")
+
+

@@ -76,7 +76,7 @@ class HANCOCKDataset(Dataset):
         """
         labels_y = []
         for patient_id in self.patient_ids:
-            label_info = self.clinical_df.loc[patient_id]
+            label_info = self.clinical_df_encoded.loc[patient_id]
             
             has_recurrence = label_info.get('recurrence') == 'yes'
             time_to_recurrence = label_info.get('days_to_recurrence')
@@ -297,10 +297,10 @@ class HANCOCKDataset(Dataset):
             for patient_id, group in self.blood_df_encoded.reset_index().groupby('patient_id'):
                 self.blood_data_map_encoded[patient_id] = group.to_dict('records')
             # analyte_name
-            self.blood_tabular_columns = sorted(list(set(self.blood_df_encoded["analyte_name"].dropna().unique())))
-
-            print("Blood Tabular Columns: ", self.blood_tabular_columns)
-            print("Blood Tabular Columns Number: ", len(self.blood_tabular_columns))  # 38
+            # self.blood_tabular_columns = sorted(list(set(self.blood_df_encoded["analyte_name"].dropna().unique())))
+            self.blood_tabular_columns = ['Basophils', 'Basophils %', 'CRP', 'Calcium', 'Chloride', 'Creatinine', 'Eosinophils', 'Eosinophils %', 'Erythrocytes', 'Glomerular filtration rate', 'Glucose', 'Granulocytes', 'Granulocytes %', 'Hematocrit', 'Hemoglobin', 'INR', 'Immature Granulocytyes', 'Leukocytes', 'Lymphocytes', 'Lymphocytes %', 'MCH', 'MCV', 'MHCH', 'MPV', 'Magnesium', 'Monocytes', 'Monocytes %', 'Normoblasts', 'PDW', 'PLCR', 'PT', 'Platelets', 'Potassium', 'RDW', 'Sodium', 'Thrombin time', 'Urea', 'aPPT']
+            # print("Blood Tabular Columns: ", self.blood_tabular_columns)
+            # print("Blood Tabular Columns Number: ", len(self.blood_tabular_columns))  # 38
 
 
         # 3. Conditionally load WSI embeddings for the image modality
@@ -379,8 +379,12 @@ class HANCOCKDataset(Dataset):
     
     def _generate_clinical_tabular_data(self, patient_id):
         # return tabular data in order blood_tabular_columns
+        CLINICAL_TABULAR_LENGTH = 52
+        if patient_id not in self.blood_data_map_encoded or self.clinical_df_encoded is None:
+            return None
+        
         patient_blood_records = self.blood_data_map_encoded[patient_id]
-        print("patient_blood_records = ", patient_blood_records)
+        # print("patient_blood_records = ", patient_blood_records)
         tabular_data = []
 
         # blood tabular  length = 38
@@ -402,7 +406,7 @@ class HANCOCKDataset(Dataset):
                 tabular_data.append(value)
 
         assert len(tabular_data) == len(self.clinical_tabular_columns) + len(self.blood_tabular_columns), "Clinical Tabular Columns Number is not equal to {}".format(len(self.clinical_tabular_columns) + len(self.blood_tabular_columns))
-        assert len(tabular_data) == 52, f"Expected 52 tabular data columns, got {len(tabular_data)}"
+        assert len(tabular_data) == CLINICAL_TABULAR_LENGTH, f"Expected 52 tabular data columns, got {len(tabular_data)}"
         return tabular_data
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
@@ -464,12 +468,11 @@ class HANCOCKDataset(Dataset):
         # --- Tabular Modalities ---
         if "tabular-clinical-52" in self.modalities:
             tabular_data = self._generate_clinical_tabular_data(patient_id)
-            output_dict["tabular-clinical"] = torch.tensor(tabular_data)
+            output_dict["tabular-clinical"] = tabular_data  # maybe None when no data
         
         if "tabular-pathology-17" in self.modalities:
             tabular_data = self._generate_pathology_tabular_data(patient_id)
-            output_dict["tabular-pathology"] = torch.tensor(tabular_data)
-
+            output_dict["tabular-pathology"] = tabular_data  # maybe None when no data
 
         # --- Survival Labels (Y and c) ---
         label_info = self.clinical_df_str.loc[patient_id]

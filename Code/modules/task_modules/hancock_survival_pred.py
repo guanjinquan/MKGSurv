@@ -99,22 +99,21 @@ class HANCOCKSurvivalPred(nn.Module):
     
     METRICS_FN = staticmethod(survival_metrics)
 
-    def __init__(self, modalities='all'):
+    def __init__(
+        self,
+        modalities: List[str]  # list of modalities to use according to the dataset class
+    ):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
         self.embed_dim = 512
 
         # --- Modality Setup ---
-        if modalities == 'all':
-            self.active_modalities = ["images", "strong_related_text", "weak_related_text"]
-        else:
-            self.active_modalities = sorted([m.strip() for m in modalities.split(',')])
-        
+        self.active_modalities = modalities
         self.max_modalities_num = len(self.active_modalities)  # For reference in fusion module
         print(f"Model initialized for modalities: {self.active_modalities}")
 
         # ----- WSI Branch (AggregatingTransMIL) -----
-        if 'images' in self.active_modalities:
+        if 'image-pathology' in self.active_modalities:
             self.wsi_mil = AggregatingTransMIL(
                 input_dim=1024,
                 embed_dim=self.embed_dim,
@@ -122,12 +121,19 @@ class HANCOCKSurvivalPred(nn.Module):
             self.num_wsi_tokens = self.wsi_mil.num_aggregated_tokens
 
         # ----- Text Branch (ClinicalBERT) -----
-        if 'strong_related_text' in self.active_modalities or 'weak_related_text' in self.active_modalities:
+        if 'text-clinical' in self.active_modalities:
             self.text_model_name = "medicalai/ClinicalBERT"
             self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_name, use_fast=True)
             self.bert = AutoModel.from_pretrained(self.text_model_name)
             bert_hidden_size = self.bert.config.hidden_size
             self.bert_proj = nn.Linear(bert_hidden_size, self.embed_dim) if bert_hidden_size != self.embed_dim else nn.Identity()
+
+        # ----- Tabular Branch  -----
+        self.tabular_encoder = nn.ModuleDict()
+        for i, modality in enumerate(modalities):
+            if "tabular" in modality:
+                tabular_dim = int(modality.split("-")[-1])
+                self.tabular_encoder[modality] = nn.Linear(tabular_dim, self.embed_dim)
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 10)  # Predicts risk for 10 time intervals
@@ -230,8 +236,8 @@ class HANCOCKSurvivalPred(nn.Module):
         present_modalities = []
 
         # --- 1. WSI Branch ---
-        if 'images' in batch and batch['images']:
-            wsi_tensors = batch['images']
+        if 'image-pathology' in batch and batch['image-pathology']:
+            wsi_tensors = batch['image-pathology']
             valid_tensors = [t for t in wsi_tensors if t is not None]
             
             if valid_tensors:
@@ -253,28 +259,44 @@ class HANCOCKSurvivalPred(nn.Module):
                 
                 all_embeddings.append(wsi_token_embeds)
                 all_masks.append(wsi_mask)
-                present_modalities.append("images")
+                present_modalities.append("image-pathology")
 
-        # --- 2. Strong Related Text Branch ---
-        if 'strong_related_text' in batch and batch['strong_related_text']:
-            pathology_embeds, pathology_mask = self._encode_text(batch['strong_related_text'])
-            all_embeddings.append(pathology_embeds)
-            all_masks.append(pathology_mask)
-            present_modalities.append("strong_related_text")
+        # --- 2. Text Branch ---
+        if 'text-clinical' in batch and batch['text-clinical']:
+            embeds, mask = self._encode_text(batch['text-clinical'])
+            all_embeddings.append(embeds)
+            all_masks.append(mask)
+            present_modalities.append("text-clinical")
 
-        # --- 3. Weak Related Text Branch ---
-        if 'weak_related_text' in batch and batch['weak_related_text']:
-            other_text_embeds, other_text_mask = self._encode_text(batch['weak_related_text'])
-            all_embeddings.append(other_text_embeds)
-            all_masks.append(other_text_mask)
-            present_modalities.append("weak_related_text")
+        # --- 3. Tabuler Branch ---
+        # ----- Tabular branch -----
+        for i, modality in enumerate(self.active_modalities):
+            if "tabular" in modality and modality in batch and batch[modality]:
+                table_features = []
+                table_masks = []
+                for table in batch[modality]:
+                    if table:
+                        modality_stack_tensor = torch.tensor(table).to(device).float()
+                        tabular_feature = self.tabular_encoder[modality](modality_stack_tensor).reshape(1, 1, -1)  # (1, 1, D)  B, N, D
+                        tabular_mask = torch.ones(1, 1, device=self.device).bool()
+                    else:  # Some patient missing modality
+                        tabular_feature = torch.zeros((1, 1, self.embed_dim)).to(device).float()
+                        tabular_mask = torch.zeros(1, 1, device=self.device).bool()
+                    table_features.append(tabular_feature)
+                    table_masks.append(tabular_mask)
+
+                table_features = torch.cat(table_features, dim=0)
+                table_masks = torch.cat(table_masks, dim=0)
+                all_embeddings.append(table_features)
+                all_masks.append(table_masks)
+                present_modalities.append(modality)
 
         # --- Define Alignment Pairs ---
         align_pairs = []
-        if "images" in present_modalities and "strong_related_text" in present_modalities:
-            image_idx = present_modalities.index("images")
-            strong_text_idx = present_modalities.index("strong_related_text")
-            align_pairs.append((image_idx, strong_text_idx))
+        # if "images" in present_modalities and "strong_related_text" in present_modalities:
+        #     image_idx = present_modalities.index("images")
+        #     strong_text_idx = present_modalities.index("strong_related_text")
+        #     align_pairs.append((image_idx, strong_text_idx))
 
         return {
             "embeddings": all_embeddings,

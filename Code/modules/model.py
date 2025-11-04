@@ -10,14 +10,14 @@ import torch.nn.functional as F
 import torch
 
 # --- Task Modules ---
-from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
-from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
-from modules.task_modules.hancock_survival_pred_it import HANCOCKSurvivalPred_IT
-from modules.task_modules.hancock_survival_pred_128 import HANCOCKSurvivalPred_128
-from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
-from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
-from modules.task_modules.oscc_inhouse_survival_pred_it import OSCCSurvivalPred_IT
+from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
+# from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
+# from modules.task_modules.hancock_survival_pred_it import HANCOCKSurvivalPred_IT
+# from modules.task_modules.hancock_survival_pred_128 import HANCOCKSurvivalPred_128
+# from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
+# from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
+# from modules.task_modules.oscc_inhouse_survival_pred_it import OSCCSurvivalPred_IT
 
 
 
@@ -35,26 +35,26 @@ from modules.common_modules.aggregation_utils import masked_mean_pool
 from modules.common_modules.multimodal_vib import TokenWiseMultiModalVIB
 
 
-def GetModel(args):
+def GetModel(args, modalities_of_dataset: List[str] = []):
 
     if args.fusion_type == 'kl_gated':
         return ModelInterfaceWithDeepSupervision(
             model_task=args.model_task, 
-            modalities=args.modalities, 
+            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
     
     if args.fusion_type == "mibf_fusion":
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
             model_task=args.model_task, 
-            modalities=args.modalities, 
+            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
     
     if args.with_multimodal_vib:
         return ModelInterfaceWithMultimodalVIB(
             model_task=args.model_task, 
-            modalities=args.modalities, 
+            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
@@ -63,7 +63,7 @@ def GetModel(args):
     if args.with_multimodal_align:
         return ModelInterfaceWithAlign(
             model_task=args.model_task, 
-            modalities=args.modalities, 
+            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
@@ -71,7 +71,7 @@ def GetModel(args):
     else:
         return ModelInterface(
             model_task=args.model_task, 
-            modalities=args.modalities, 
+            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
@@ -80,20 +80,15 @@ def GetModel(args):
 
 class ModelInterface(nn.Module):
 
-    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
+    def __init__(self, model_task: str = "multi_oscc", modalities: List[str] = [], fusion_type: str = 'moe'):
         super(ModelInterface, self).__init__()
 
         assert model_task in [  # Tasks that the model can handle
-            "multi_oscc",
             "hancock",
-            "hancock_it",
-            "hancock_128",
-            "multi_oscc_it",
-            "multi_oscc_split",
             "oscc_inhouse",
-            "oscc_inhouse_it",
         ], f"Unknown model task: {model_task}"
 
+        assert len(modalities) > 0, f"Want at least one modality, but got no modalities passed in."
         self.modalities = modalities
         self.fusion_type = fusion_type
 
@@ -101,22 +96,10 @@ class ModelInterface(nn.Module):
         # self.task_head should define: 
         #   1. self.task_head.embed_dim, 
         #   2. self.task_head.max_modalities_num
-        if model_task == "multi_oscc":
-            self.task_head = MultiOSCCRecPred(modalities=modalities)
-        elif model_task == "hancock":
+        if model_task == "hancock":
             self.task_head = HANCOCKSurvivalPred(modalities=modalities)
-        elif model_task == "hancock_it":
-            self.task_head = HANCOCKSurvivalPred_IT(modalities=modalities)
-        elif model_task == "hancock_128":
-            self.task_head = HANCOCKSurvivalPred_128(modalities=modalities)
-        elif model_task == 'multi_oscc_it':
-            self.task_head = MultiOSCCRecPred_IT(modalities=modalities)
-        elif model_task == 'multi_oscc_split':
-            self.task_head = MultiOSCCRecPred_Split(modalities=modalities)
         elif model_task == "oscc_inhouse":
             self.task_head = OSCCSurvivalPred(modalities=modalities)
-        elif model_task == "oscc_inhouse_it":
-            self.task_head = OSCCSurvivalPred_IT(modalities=modalities)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 
