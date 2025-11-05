@@ -13,6 +13,7 @@ def parse_arguments():
     parser.add_argument('--dataset', type=str, default="multi_oscc")
     parser.add_argument('--modalities', type=str, default="all")
     parser.add_argument("--debug_mode", type=bool, default=False)
+    parser.add_argument("--fold", type=int, default=None)
     
     # models settings 
     parser.add_argument('--model_task', type=str, default='multi_oscc', help="model_task: [multi_oscc]")

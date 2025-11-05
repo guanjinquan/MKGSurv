@@ -166,11 +166,14 @@ class OSCCSurvInHouseDataset(Dataset):
             if self.clinical_df is not None and pid_int in self.clinical_df.index:
                 patient_series = self.clinical_df.loc[pid_int]  # ALL Value in clinical df is STRING
                 texts, texts_modalities = self._generate_clinical_text(patient_series)
+
+                for modality in self.modalities:
+                    if "text" in modality:
+                        output_dict[modality] = None
+
                 for text, text_modality in zip(texts, texts_modalities):
                     if text_modality in self.modalities and len(text):
                         output_dict[text_modality] = text
-                    else:
-                        output_dict[text_modality] = None
             else:
                 for text_modality in self.modalities:
                     if "text" in text_modality:

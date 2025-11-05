@@ -37,7 +37,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "tabular-pathology-15,tabular-clinical-16,tabular-blood-9,tabular-immunohistochemic-5"
+    --modalities "tabular-pathology-15,tabular-clinical-16,tabular-blood-9,tabular-immunohistochemic-5" \
+    --continue_training \
+    --load_pth_path "/home/Guanjq/NewWork/MedAlignFusion/Checkpoints/oscc_inhouse/inhouse_run008+msa-backup/Final_Trainer.pkl"
 
 
 echo "Training run ${RUN_ID} finished."

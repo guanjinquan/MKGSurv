@@ -435,9 +435,9 @@ class HANCOCKDataset(Dataset):
                         # Update the tensor
                         wsi_tensor = wsi_tensor[keep_indices]
 
-                output_dict["images"] = wsi_tensor
+                output_dict["image-pathology"] = wsi_tensor
             else:
-                output_dict["images"] = None
+                output_dict["image-pathology"] = None
 
         # --- Text Modalities ---
         if "text-clinical" in self.modalities:
@@ -468,11 +468,11 @@ class HANCOCKDataset(Dataset):
         # --- Tabular Modalities ---
         if "tabular-clinical-52" in self.modalities:
             tabular_data = self._generate_clinical_tabular_data(patient_id)
-            output_dict["tabular-clinical"] = tabular_data  # maybe None when no data
+            output_dict["tabular-clinical-52"] = tabular_data  # maybe None when no data
         
         if "tabular-pathology-17" in self.modalities:
             tabular_data = self._generate_pathology_tabular_data(patient_id)
-            output_dict["tabular-pathology"] = tabular_data  # maybe None when no data
+            output_dict["tabular-pathology-17"] = tabular_data  # maybe None when no data
 
         # --- Survival Labels (Y and c) ---
         label_info = self.clinical_df_str.loc[patient_id]

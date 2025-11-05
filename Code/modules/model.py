@@ -12,6 +12,8 @@ import torch
 # --- Task Modules ---
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
 from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
+from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
+
 # from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
 # from modules.task_modules.hancock_survival_pred_it import HANCOCKSurvivalPred_IT
 # from modules.task_modules.hancock_survival_pred_128 import HANCOCKSurvivalPred_128
@@ -86,6 +88,7 @@ class ModelInterface(nn.Module):
         assert model_task in [  # Tasks that the model can handle
             "hancock",
             "oscc_inhouse",
+            "tcga_luad",
         ], f"Unknown model task: {model_task}"
 
         assert len(modalities) > 0, f"Want at least one modality, but got no modalities passed in."
@@ -100,6 +103,8 @@ class ModelInterface(nn.Module):
             self.task_head = HANCOCKSurvivalPred(modalities=modalities)
         elif model_task == "oscc_inhouse":
             self.task_head = OSCCSurvivalPred(modalities=modalities)
+        elif model_task == "tcga_luad":
+            self.task_head = TCGA_LUAD_SurvivalPred(modalities=modalities)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 

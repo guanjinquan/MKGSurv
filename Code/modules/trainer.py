@@ -301,7 +301,7 @@ class Trainer:
         # 这个函数只在主进程被调用
         save_trainer(self, os.path.join(self.ckpt_path, 'Final_Trainer.pkl'))
         save_model(self.model, self.epoch, os.path.join(self.ckpt_path, f'Final.pth'))
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
         self.log.write(f"Best Score : {self.best_score}")
         self.log.write(f"Best Metrics : {self.best_metrics}")
         self.epoch += 1

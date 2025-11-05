@@ -1,14 +1,12 @@
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-# from datasets.multi_oscc_dataset import MultiOSCCDataset
-# from datasets.hancock_it_dataset import HANCOCK_IT_Dataset
-# from datasets.hancock_textlist_dataset import HANCOCK_TextList_Dataset
-# from datasets.multi_oscc_IT_dataset import MultiOSCCITDataset
-# from datasets.multi_oscc_split_text_dataset import MultiOSCCSplitDataset
-# from datasets.oscc_surv_inhouse_IT_dataset import OSCCSurvInHouseITDataset
+
+
 from datasets.hancock_dataset import HANCOCKDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
+from datasets.tcga_luad_dataset import TCGA_LUAD_Dataset
+
 from datasets.dataset_sampler import BalancedBatchSampler, DistributedBalancedBatchSampler
 import torch
 from torch.utils.data import DataLoader
@@ -72,5 +70,7 @@ def GetDataset(mode, args):
         return HANCOCKDataset(mode=mode, modalities=args.modalities)
     elif dataset == "oscc_inhouse":
         return OSCCSurvInHouseDataset(mode=mode, modalities=args.modalities)
+    elif dataset == "tcga_luad":
+        return TCGA_LUAD_Dataset(mode=mode, modalities=args.modalities, fold=args.fold)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

@@ -133,7 +133,10 @@ class HANCOCKSurvivalPred(nn.Module):
         for i, modality in enumerate(modalities):
             if "tabular" in modality:
                 tabular_dim = int(modality.split("-")[-1])
-                self.tabular_encoder[modality] = nn.Linear(tabular_dim, self.embed_dim)
+                self.tabular_encoder[modality] = nn.Sequential(
+                        nn.LayerNorm(tabular_dim),
+                        nn.Linear(tabular_dim, self.embed_dim)
+                    )
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 10)  # Predicts risk for 10 time intervals
@@ -361,119 +364,16 @@ class HANCOCKSurvivalPred(nn.Module):
         return {"logits": logits, "loss": loss, "loss_tensor": loss_tensor}
 
     def get_backbone_params(self) -> List[nn.Parameter]:
-        parms_in_clinical_bert = [p for p in self.bert.parameters()]
-        return parms_in_clinical_bert
+        try:
+            parms_in_clinical_bert = [p for p in self.bert.parameters()]
+            return parms_in_clinical_bert
+        except AttributeError:
+            # text-pathology (bert) 未被激活
+            return []
+    
     
     def get_others_params(self) -> List[nn.Parameter]:
         backbone_params = set(self.get_backbone_params())
         parms_in_others = [p for p in self.parameters() if p not in backbone_params]
         return parms_in_others
 
-
-
-if __name__ == '__main__':
-    import os
-    os.chdir("/home/Guanjq/NewWork/MedAlignFusion/Code")
-    # ==========================================================================================
-    # Debugging and Testing Block
-    # ==========================================================================================
-    
-    # 确保可以找到 hancock_dataset 模块。
-    # 假设项目结构为 MedAlignFusion/Code/datasets/ 和 MedAlignFusion/Code/modules/
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../../../'))
-    from datasets.hancock_dataset import HANCOCKDataset, hancock_custom_collate_fn
-    from torch.utils.data import DataLoader
-
-    # 切换到 Code 目录以正确解析相对数据路径 ../Data/HANCOCK
-    try:
-        os.chdir(os.path.join(os.path.dirname(__file__), '../../'))
-        print(f"Current working directory: {os.getcwd()}")
-    except FileNotFoundError:
-        print("Error: Could not change directory. Please run this script from its original location.")
-        exit()
-
-    device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
-    print(f"调试将在设备上运行: {device}")
-
-    # 1. 实例化数据集和数据加载器
-    print("\n[1/4] 初始化数据集和数据加载器...")
-    try:
-        # 使用 "all" 模态进行测试以检查完整逻辑
-        dataset = HANCOCKDataset(mode='train', modalities='all')
-        if len(dataset) == 0:
-            raise ValueError("数据集为空。请检查数据路径和拆分配置。")
-        
-        data_loader = DataLoader(
-            dataset,
-            batch_size=4,
-            shuffle=False, # 为了可复现的调试，设置为 False
-            collate_fn=hancock_custom_collate_fn
-        )
-        print("数据集和数据加载器初始化成功。")
-    except Exception as e:
-        print(f"初始化数据加载器时出错: {e}")
-        print("请确保 'hancock_dataset.py' 位于正确的路径并且数据文件存在。")
-        exit()
-
-    # 2. 实例化模型
-    print("\n[2/4] 初始化 HANCOCKSurvivalPred 模型...")
-    try:
-        model = HANCOCKSurvivalPred(modalities='all').to(device)
-        model.eval() # 设置为评估模式进行测试
-        print("模型初始化成功。")
-    except Exception as e:
-        print(f"初始化模型时出错: {e}")
-        exit()
-
-    # 3. 获取一个批次并运行 encode 函数
-    print("\n[3/4] 获取一个批次并运行 encode() 方法...")
-    try:
-        with torch.no_grad(): # 禁用梯度计算以进行推理
-            batch = next(iter(data_loader))
-            
-            encoded_output = model.encode(batch)
-
-            print("encode() 方法执行成功。")
-            print("--- 编码输出 ---")
-            print(f"嵌入张量数量: {len(encoded_output['embeddings'])}")
-            print(f"掩码张量数量: {len(encoded_output['masks'])}")
-            
-            for i, (emb, mask) in enumerate(zip(encoded_output['embeddings'], encoded_output['masks'])):
-                print(f"  - 模态 {i}:")
-                if emb is not None:
-                    print(f"    - 嵌入形状: {emb.shape}")
-                    print(f"    - 掩码形状: {mask.shape}")
-                    print(f"    - 掩码数据类型: {mask.dtype}")
-                else:
-                    print("    - 此批次中不存在此模态。")
-            
-            print(f"对齐对: {encoded_output['align_pairs']}")
-
-    except Exception as e:
-        import traceback
-        print(f"在 encode() 过程中出错: {e}")
-        traceback.print_exc()
-        exit()
-        
-    # 4. 模拟融合并运行 decode 函数
-    print("\n[4/4] 模拟融合并运行 decode() 方法...")
-    try:
-        with torch.no_grad():
-            # 这是一个用于测试 decode 函数接口的伪融合过程。
-            # 实际的融合逻辑会更复杂。
-            batch_size = batch['label_Y'].shape[0]
-            dummy_fused_embedding = torch.randn(batch_size, model.embed_dim).to(device)
-            print("为测试 decode() 创建了一个虚拟的融合嵌入。")
-            
-            decoded_output = model.decode(dummy_fused_embedding, batch)
-            
-            print("decode() 方法执行成功。")
-            print("--- 解码输出 ---")
-            print(f"风险分数形状: {decoded_output['risk'].shape}")
-            print(f"计算出的损失: {decoded_output['loss'].item():.4f}")
-            print("\n调试测试成功完成！")
-
-    except Exception as e:
-        import traceback
-        print(f"在 decode() 过程中出错: {e}")
-        traceback.print_exc()

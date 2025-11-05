@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="inhouse_run001"
+RUN_ID="inhouse_run015"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
@@ -23,7 +23,7 @@ NUM_EPOCHS=200        # Total number of training epochs.
 # The command below executes the main training script with the configured parameters.
 echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 
-python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
+python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
     --model_task "oscc_inhouse" \
@@ -37,7 +37,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "text-pathology,text-clinical,tabular-clinical-16,tabular-blood-9,tabular-immunohistochemic-5"
 
 
 echo "Training run ${RUN_ID} finished."

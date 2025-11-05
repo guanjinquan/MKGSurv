@@ -142,7 +142,10 @@ class OSCCSurvivalPred(nn.Module):
         for i, modality in enumerate(modalities):
             if "tabular" in modality:
                 tabular_dim = int(modality.split("-")[-1])
-                self.tabular_encoder[modality] = nn.Linear(tabular_dim, self.embed_dim)
+                self.tabular_encoder[modality] = nn.Sequential(
+                        nn.LayerNorm(tabular_dim),
+                        nn.Linear(tabular_dim, self.embed_dim)
+                    )
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 10) # Predicts risk for 10 time intervals
