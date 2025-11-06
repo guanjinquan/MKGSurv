@@ -72,8 +72,7 @@ class TCGA_LUAD_Dataset(Dataset):
         print("Please ensure this path is correct or modify as needed.")
 
         self.data_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_data.pkl")) # DICT ID:torch_geometric.data.data.Data, 
-        self.label_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_sur_and_time.pkl"))  # DICT ID: [death if 1 else 0, last time float number but means month]
-        
+
         # 加载 5 折交叉验证数据
         # [fold] 会选择是第 0, 1, 2, 3, 还是 4 折
         split_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_split.pkl"))[fold]
@@ -87,53 +86,34 @@ class TCGA_LUAD_Dataset(Dataset):
         self.modalities = self._parse_modalities(modalities)
         print(f"Dataset will be initialized for modalities: {self.modalities}")
 
-        # --- Survival Analysis Parameters ---
-        # --- 生存时间单位是 *月* ---
-        self.five_years_in_months = 5 * 12.0  # 60.0 个月
-        self.num_time_bins = 10
-        # self.time_bins 结果: [ 0., 6., 12., 18., 24., 30., 36., 42., 48., 54., 60.]
-        # 这匹配了 "半年一个分期bin"
-        self.time_bins = np.linspace(0, self.five_years_in_months, self.num_time_bins + 1)
-        print(f"Survival time bins (in Months): {self.time_bins}")
-        # --- BUG 修复结束 ---
-
         # --- Load and preprocess all data sources ---
         self._load_data()
         print(f"Dataset for mode '{self.mode}' initialized. Found {len(self.patient_ids)} patients.")
 
-    
-    def _get_labels(self):
+    def _get_survival_bins(self):
         """
         Returns a list of all labels (time bins) in the dataset.
         This is used by the SurvivalBalancedBatchSampler.
-        (重写以匹配 __getitem__ 并使用 self.label_pickle)
         """
+        self.observed_years = 20 * 365.0
+        self.num_time_bins = 20
+        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
+
         labels_y = []
         for patient_id in self.patient_ids:
             try:
-                # 1. 从 'luad_sur_and_time.pkl' 获取标签
-                survival_info = self.label_pickle[patient_id]
-                time_months = float(survival_info[1]) # 生存时间（月）
+                survival_info = self.patient_labels[patient_id]
+                time_days = float(survival_info['DFS_time'])  
 
-                # 2. 确保事件时间在 5 年 (60 个月) 内
-                event_time = min(time_months, self.five_years_in_months)
-                
-                # 3. 将连续时间离散化到 10 个 bins (0-9)
-                #    Y is the discrete time interval index
+                event_time = min(time_days, self.observed_years)
                 time_bin = np.digitize(event_time, self.time_bins) - 1
                 
-                # 4. 确保索引在 [0, num_bins-1]
+                # 确保索引在 [0, num_bins-1]
                 time_bin = max(0, min(time_bin, self.num_time_bins - 1))
                 
                 labels_y.append(int(time_bin))
 
-            except KeyError:
-                # 如果一个 patient_id 存在于 split_pickle 但不存在于 label_pickle
-                # 我们必须附加一个默认 bin，以保持与 self.patient_ids 的长度一致
-                print(f"Warning: Patient ID {patient_id} not found in label_pickle. Assigning time_bin = 0 (default).")
-                labels_y.append(0) # 附加一个默认 bin (0)
             except Exception as e:
-                # 捕获其他潜在错误 (e.g., time_months 不是数字)
                 print(f"Error processing label for {patient_id}: {e}. Assigning time_bin = 0 (default).")
                 labels_y.append(0) # 附加一个默认 bin (0)
                 
@@ -177,7 +157,7 @@ class TCGA_LUAD_Dataset(Dataset):
         genomics_path = os.path.join(processed_dir, "genomics_data_aggregated.csv")
         histology_path = os.path.join(processed_dir, "histology_data_aggregated.csv")
         reports_path = os.path.join(processed_dir, "tcga_luad_reports.csv")
-        # time_info_path = os.path.join(processed_dir, "time_info_table.csv") # <-- 不再需要
+        labels_path = os.path.join(processed_dir, "luad_patient_labels.csv")  
         
         try:
             # --- 更新：加载时明确指定 dtype=str，以防止 pandas 自动转换 ---
@@ -188,8 +168,10 @@ class TCGA_LUAD_Dataset(Dataset):
             print(f"Loaded genomics data with shape: {self.genomics_df.shape}")
             self.histology_df = pd.read_csv(histology_path, dtype=str)
             print(f"Loaded histology data with shape: {self.histology_df.shape}")
-            self.reports_df = pd.read_csv(reports_path) # 报告文本没有这个问题
+            self.reports_df = pd.read_csv(reports_path, dtype=str)  
             print(f"Loaded reports data with shape: {self.reports_df.shape}")
+            self.labels_df = pd.read_csv(labels_path, dtype=str)  
+            print(f"Loaded reports data with shape: {self.labels_df.shape}")
             # -----------------------------------------------------------
         except FileNotFoundError as e:
             print(f"!!! 错误: 文件未找到 !!!")
@@ -276,16 +258,26 @@ class TCGA_LUAD_Dataset(Dataset):
             if full_text:
                 self.report_pathology[patient_key] = full_text
 
+        # --- 处理标签 ---
+        self.patient_labels = {}
+        for idx, row in self.labels_df.iterrows():
+            patient_key = row['cases.submitter_id']
+            case_id = row['cases.case_id']
+            self.patient_labels[patient_key] = {
+                "DFS_time": float(row["DFS_time"]),
+                "DFS_event": float(row["DFS_event"]),
+            }
+
         # print tabular columns
-        print("\n--- 检查表格数据维度 (Tabular Data Dimensions) ---")
-        print(f"  [tabular-clinical]: {len(tabular_cols_cli)} columns.")
-        print(f"  [tabular-genomics]: {len(tabular_cols_gen)} columns.")
-        print(f"  [tabular-pathology]: {len(tabular_cols_path)} columns.")
+        # print("\n--- 检查表格数据维度 (Tabular Data Dimensions) ---")
+        # print(f"  [tabular-clinical]: {len(tabular_cols_cli)} columns.")
+        # print(f"  [tabular-genomics]: {len(tabular_cols_gen)} columns.")
+        # print(f"  [tabular-pathology]: {len(tabular_cols_path)} columns.")
         # [tabular-clinical]: 56 columns.
         # [tabular-genomics]: 27 columns.
         # [tabular-pathology]: 37 columns.
-        print("-------------------------------------------------")
-        print("请使用这些数字来设置 tcga_luad_pred.py 中的 'tabular_dims' 字典。")
+        # print("-------------------------------------------------")
+        # print("请使用这些数字来设置 tcga_luad_pred.py 中的 'tabular_dims' 字典。")
 
 
         print("Finished processing all CSV files.")
@@ -305,38 +297,18 @@ class TCGA_LUAD_Dataset(Dataset):
         output_dict = {"pid": patient_id}
 
         # 2. 获取并处理生存标签 (来自 luad_sur_and_time.pkl)
-        # --- 时间单位是 *月* ---
+        # --- 时间单位是 *days* ---
         try:
-            survival_info = self.label_pickle[patient_id]
-            event = int(survival_info[0])       # 0 = 审查 (censored), 1 = 事件 (death)
-            time_months = float(survival_info[1]) # 生存时间（月）
-        except KeyError:
-            print(f"Error: Patient ID {patient_id} not found in label_pickle (luad_sur_and_time.pkl).")
-            # 递归获取下一个，但要小心
+            survival_info = self.patient_labels[patient_id]
+            event = int(survival_info['DFS_event'])         # 0 = 审查 (censored), 1 = 事件 (death)
+            time_days = float(survival_info['DFS_time'])    # 生存时间（days）
+        except Exception as e:
+            print(f"Error: {e}")
             return self.__getitem__((idx + 1) % len(self))
         
-        # c = 1 means censored, c = 0 means event occurred.
-        # 我们的 TCGA event 标签是反的 (1=event), 所以我们转换它
-        censorship = 1.0 - float(event)
-        
-        # 确保事件时间在 5 年 (60 个月) 内
-        event_time = min(time_months, self.five_years_in_months)
-        
-        # 将连续时间离散化到 10 个 bins (0-9)
-        # Y is the discrete time interval index
-        time_bin = np.digitize(event_time, self.time_bins) - 1
-        # 确保索引在 [0, num_bins-1]
-        time_bin = max(0, min(time_bin, self.num_time_bins - 1))
-        # --- BUG 修复结束 ---
-
-        # --- 存储标签 ---
         output_dict['labels'] = {
-            'label_Y': int(time_bin),      # 离散化的时间桶索引
-            'label_c': int(censorship)     # 1=审查, 0=事件
-        }
-        output_dict['original_labels'] = {
-            'label_Y': event_time,         # 连续时间 (截断到5年/60个月)
-            'label_c': int(censorship)
+            'label_time': time_days,
+            'label_event': event  # 1 means event happen!!, 0 means censored
         }
 
         # 3. 获取图数据 (来自 luad_data.pkl)
@@ -350,7 +322,6 @@ class TCGA_LUAD_Dataset(Dataset):
             return self.__getitem__((idx + 1) % len(self))
 
         # 4. 根据 self.modalities 动态加载其他数据
-        
         # --- (PyG) 图像特征 ---
         if "image-pathology" in self.modalities:
             # 图像特征已经包含在 graph_data.x_img 中

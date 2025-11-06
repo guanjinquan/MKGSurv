@@ -18,7 +18,7 @@ class BalancedBatchSampler(sampler.Sampler):
         super().__init__(dataset)
         
         # Get all labels from the dataset
-        labels = dataset._get_labels()
+        labels = dataset._get_survival_bins()
         self.dataset = dict()      # {label0: [indices of label0], label1: [...]}
         self.balanced_max = 0      # The size of the largest class
         
@@ -74,7 +74,7 @@ class DistributedBalancedBatchSampler(sampler.Sampler):
         super().__init__(dataset)
 
         self.seed = seed
-        self.labels = dataset._get_labels()
+        self.labels = dataset._get_survival_bins()
         self.length = len(dataset)
         self.class_nums = len(set(self.labels))
         assert self.class_nums > 1, "class_nums must be greater than 1"

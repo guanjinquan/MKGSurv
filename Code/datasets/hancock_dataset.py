@@ -49,11 +49,6 @@ class HANCOCKDataset(Dataset):
         self.patient_ids = []
         self.target_patids = []
 
-        # --- Survival Analysis Parameters ---
-        self.five_years_in_days = 5 * 365.0
-        self.num_time_bins = 10
-        self.time_bins = np.linspace(0, self.five_years_in_days, self.num_time_bins + 1)
-
         # --- Columns to exclude from features (labels and identifiers) ---
         self.label_leakage_columns = [
             "patient_id", "survival_status", "survival_status_with_cause",
@@ -69,11 +64,15 @@ class HANCOCKDataset(Dataset):
         self._load_data()
         print(f"Dataset for mode '{self.mode}' initialized. Found {len(self.patient_ids)} patients.")
 
-    def _get_labels(self):
+    def _get_survival_bins(self):
         """
         Returns a list of all labels (time bins) in the dataset.
         This is used by the SurvivalBalancedBatchSampler.
         """
+        self.observed_years = 20 * 365.0
+        self.num_time_bins = 20
+        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
+
         labels_y = []
         for patient_id in self.patient_ids:
             label_info = self.clinical_df_encoded.loc[patient_id]
@@ -85,12 +84,12 @@ class HANCOCKDataset(Dataset):
             event_time = -1.0
             
             if has_recurrence and pd.notna(time_to_recurrence):
-                if time_to_recurrence < self.five_years_in_days:
+                if time_to_recurrence < self.observed_years:
                     event_time = time_to_recurrence
                 else:
-                    event_time = self.five_years_in_days
+                    event_time = self.observed_years
             elif pd.notna(time_to_last_info):
-                event_time = min(time_to_last_info, self.five_years_in_days)
+                event_time = min(time_to_last_info, self.observed_years)
             
             time_bin = -1
             if event_time >= 0:
@@ -482,46 +481,20 @@ class HANCOCKDataset(Dataset):
         time_to_last_info = float(label_info.get('days_to_last_information'))
 
         event_time = -1.0
-        # c = 1 means censored, c = 0 means event occurred.
-        censorship = 1 
+        event_flag = 0   # event_flag = 0 means censored, event_flag = 1 means event occurred.
 
         if has_recurrence and pd.notna(time_to_recurrence):
             # The patient had a recurrence event.
-            if time_to_recurrence < self.five_years_in_days:
-                # Event occurred WITHIN the 5-year study period.
-                censorship = 0
-                event_time = time_to_recurrence
-            else:
-                # Event occurred AFTER 5 years. For a 5-year analysis, this is censored.
-                censorship = 1
-                event_time = self.five_years_in_days
+            event_flag = 0
+            event_time = time_to_recurrence
         elif pd.notna(time_to_last_info):
             # No recurrence event, use last follow-up time. Always censored.
-            censorship = 1
-            # We observe them until their last follow-up or the end of the study, whichever comes first.
-            event_time = min(time_to_last_info, self.five_years_in_days)
+            event_flag = 0
+            event_time = time_to_last_info  # We observe them until their last follow-up or the end of the study, whichever comes first.
         
-        # Discretize the event time into bins (0 to 9)
-        # Y is the discrete time interval index
-        time_bin = -1
-        if event_time >= 0:
-            # np.digitize finds which bin the value falls into.
-            # We subtract 1 to get a 0-based index.
-            time_bin = np.digitize(event_time, self.time_bins) - 1
-            # Ensure the index is within the valid range [0, num_bins-1]
-            time_bin = min(time_bin, self.num_time_bins - 1)
-
-        # output_dict["label_Y"] = int(time_bin)
-        # output_dict["label_c"] = censorship
-
         output_dict['labels'] = {
-            'label_Y': int(time_bin),
-            'label_c': censorship,
-        }
-        
-        output_dict['original_labels'] = {
-            'label_Y': event_time,
-            'label_c': censorship
+            'label_time': event_time,
+            'label_event': event_flag
         }
 
         # --- Data Integrity Check ---

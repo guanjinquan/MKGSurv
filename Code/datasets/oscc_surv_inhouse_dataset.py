@@ -74,11 +74,6 @@ class OSCCSurvInHouseDataset(Dataset):
         self._load_clinical_data()
         self._load_and_filter_items() # Changed from _load_items
 
-        # --- Survival Bins ---
-        self.five_years_in_days = 5 * 365.0
-        self.num_time_bins = 10
-        self.time_bins = np.linspace(0, self.five_years_in_days, self.num_time_bins + 1)
-
         if mode == "train":
             self.transforms = TrainTransforms()
         else:
@@ -102,44 +97,23 @@ class OSCCSurvInHouseDataset(Dataset):
         time_to_recurrence = item_info.get('days_to_recurrence')
         time_to_last_info = item_info.get('days_to_last_information')
 
+
         event_time = -1.0
-        censorship = 1 # c = 1 means censored, c = 0 means event occurred.
+        event_flag = 0   # event_flag = 0 means censored, event_flag = 1 means event occurred.
 
         if has_recurrence and pd.notna(time_to_recurrence):
             # The patient had a recurrence event.
-            if time_to_recurrence < self.five_years_in_days:
-                # Event occurred WITHIN the 5-year study period.
-                censorship = 0
-                event_time = time_to_recurrence
-            else:
-                # Event occurred AFTER 5 years. For a 5-year analysis, this is censored.
-                censorship = 1
-                event_time = self.five_years_in_days
+            event_flag = 0
+            event_time = time_to_recurrence
         elif pd.notna(time_to_last_info):
             # No recurrence event, use last follow-up time. Always censored.
-            censorship = 1
-            # We observe them until their last follow-up or the end of the study, whichever comes first.
-            event_time = min(time_to_last_info, self.five_years_in_days)
+            event_flag = 0
+            event_time = time_to_last_info  # We observe them until their last follow-up or the end of the study, whichever comes first.
         
-        # Discretize the event time into bins (0 to 9)
-        # Y is the discrete time interval index
-        time_bin = -1
-        if event_time >= 0:
-            # np.digitize finds which bin the value falls into.
-            # We subtract 1 to get a 0-based index.
-            time_bin = np.digitize(event_time, self.time_bins) - 1
-            # Ensure the index is within the valid range [0, num_bins-1]
-            time_bin = min(time_bin, self.num_time_bins - 1)
-
-        # --- Labels (always included) ---
+        # --- Labels ---
         output_dict['labels'] = {
-            'label_Y': int(time_bin),
-            'label_c': censorship,
-        }
-
-        output_dict['original_labels'] = {
-            'label_Y': event_time,
-            'label_c': censorship
+            'label_time': event_time,
+            'label_event': event_flag
         }
 
         # -- Dynamically build the output dictionary ---
@@ -247,11 +221,15 @@ class OSCCSurvInHouseDataset(Dataset):
             print(f"Warning: Clinical data file not found at {clinical_data_path}. Text modalities will be unavailable.")
             self.clinical_df = None # Ensure it's None if file not found
 
-    def _get_labels(self):
+    def _get_survival_bins(self):  # bins balance!!!
         """
         Returns a list of all labels (time bins) in the dataset.
         This is used by the SurvivalBalancedBatchSampler.
         """
+        self.observed_years = 20 * 365.0
+        self.num_time_bins = 20
+        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
+
         labels_y = []
         for index in range(len(self.items)):
             label_info = self.items[index]
@@ -263,12 +241,12 @@ class OSCCSurvInHouseDataset(Dataset):
             event_time = -1.0
             
             if has_recurrence and pd.notna(time_to_recurrence):
-                if time_to_recurrence < self.five_years_in_days:
+                if time_to_recurrence < self.observed_years:
                     event_time = time_to_recurrence
                 else:
-                    event_time = self.five_years_in_days
+                    event_time = self.observed_years
             elif pd.notna(time_to_last_info):
-                event_time = min(time_to_last_info, self.five_years_in_days)
+                event_time = min(time_to_last_info, self.observed_years)
             
             time_bin = -1
             if event_time >= 0:
@@ -278,7 +256,6 @@ class OSCCSurvInHouseDataset(Dataset):
             labels_y.append(int(time_bin))
             
         return labels_y
-    
 
     def _load_and_filter_items(self):
         """Loads dataset items and filters them based on modality availability."""
@@ -359,7 +336,7 @@ class OSCCSurvInHouseDataset(Dataset):
                 add_sentence(key_sents, column_name, value)
             key_sents = ". ".join(key_sents)
             texts.append(key_sents)
-            texts_modalities.append(f"text-{key}")
+            texts_modalities.append(f"text-{key}")  # pathology
 
         return texts, texts_modalities
 

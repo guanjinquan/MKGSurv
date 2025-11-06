@@ -10,16 +10,8 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
-
-# 假设这些模块与此文件在同一 'modules' 目录下
-try:
-    from common_modules.surv_loss import NLLSurvLoss
-    from training_utils.metrics import survival_metrics
-except ImportError:
-    print("Warning: Could not import custom modules. Assuming placeholder loss/metrics.")
-    # Fallback/Placeholders
-    NLLSurvLoss = lambda reduction='none': nn.CrossEntropyLoss(reduction=reduction) # Placeholder
-    survival_metrics = lambda *args, **kwargs: {} # Placeholder
+from modules.common_modules.surv_loss import CustomCoxPHLoss
+from training_utils.metrics import survival_metrics
 
 
 # ==========================================================================================
@@ -118,23 +110,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
     
     METRICS_FN = staticmethod(survival_metrics)
 
-    @staticmethod
-    def check_nan_inf(tensor: torch.Tensor, name: str) -> bool:
-        """
-        [新增] 辅助函数，用于检查张量是否包含 NaN 或 Inf。
-        """
-        if torch.isnan(tensor).any():
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print(f"!!! DEBUG: NaN found in: {name} !!!")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            return True
-        if torch.isinf(tensor).any():
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            print(f"!!! DEBUG: Inf found in: {name} !!!")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            return True
-        return False
-
     def __init__(
         self,
         modalities: List[str],  # 来自 TCGA_LUAD_Dataset 的模态列表
@@ -195,8 +170,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
 
         # ----- Prediction Head (for Decode step) -----
-        self.prediction_head = nn.Linear(self.embed_dim, 10)  # 预测 10 个时间间隔的风险
-        self.loss_fn = NLLSurvLoss(reduction='none')
+        self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
+        self.loss_fn = CustomCoxPHLoss(reduction='none')
 
     def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
         """Splits a list of token ids into chunks."""
@@ -379,7 +354,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             present_modalities.append("genomics-genomics")
 
         # --- 3. Text Branch ---
-        if 'text-pathology' in self.active_modalities:
+        if 'text-pathology' in self.active_modalities and batch['text-pathology']:
             # _encode_text 期望一个 (B,) 的列表
             embeds, mask = self._encode_text(batch['text-pathology'])
             # [新增] _encode_text 内部已经有检查了，但我们再次检查最终输出
@@ -449,19 +424,14 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
     def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
-        [已修改] 适配 TCGA_LUAD_Dataset 的 collate 格式。
-        
         Args:
             pooled_embeddings: (B, embed_dim)
             pooled_mask: (B,)
-            batch: 包含 batch['labels'] = {'label_Y': [y1, y2,...], 'label_c': [c1, c2,...]}
+            batch: 包含 batch['labels'] = {'label_time': [y1, y2,...], 'label_event': [c1, c2,...]}
         """
         batch_size = pooled_embeddings.shape[0]
         device = pooled_embeddings.device
 
-        # [新增] 检查 decode 的输入 (来自外部融合模块)
-        # self.check_nan_inf(pooled_embeddings, "decode Input (pooled_embeddings)")
-        
         out_dim = self.prediction_head.out_features
         logits = torch.zeros(batch_size, out_dim, device=device)
         loss = torch.tensor(0.0, device=device)
@@ -476,50 +446,31 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         # 3. 过滤有效的嵌入
         valid_embeddings = pooled_embeddings[patient_mask]
         
-        # [新增] 检查有效嵌入
-        # self.check_nan_inf(valid_embeddings, "decode valid_embeddings (Input to prediction_head)")
         if valid_embeddings.shape[0] == 0:
              print("Warning: decode valid_embeddings is empty.")
              return {"logits": logits, "loss": loss}
 
         # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
-        label_Y_list = [batch['labels'][i]['label_Y'] for i in range(batch_size)]
-        label_c_list = [batch['labels'][i]['label_c'] for i in range(batch_size)]
+        label_time_list = [batch['labels'][i]['label_time'] for i in range(batch_size)]
+        label_event_list = [batch['labels'][i]['label_event'] for i in range(batch_size)]
 
-        Y_full = torch.tensor(label_Y_list, device=device, dtype=torch.long)
-        c_full = torch.tensor(label_c_list, device=device, dtype=torch.long)
+        Y_full = torch.tensor(label_time_list, device=device, dtype=torch.long)
+        c_full = torch.tensor(label_event_list, device=device, dtype=torch.long)
 
         valid_Y = Y_full[patient_mask]
         valid_c = c_full[patient_mask]
 
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
-        
-        # [新增] 检查 prediction_head 的输出 (非常重要!)
-        # self.check_nan_inf(valid_logits, "decode valid_logits (Output of prediction_head)")
-        
-        # 打印 logits 的范围，检查是否爆炸
-        print(f"--- DEBUG Step: Logits range: min={valid_logits.min().item():.4f}, max={valid_logits.max().item():.4f}, mean={valid_logits.mean().item():.4f}")
-
-
-        # loss_tensor = self.loss_fn(valid_logits, None, valid_Y, valid_c) # (N_valid,)
-        # 为了与 HANCOCK 的返回签名匹配
-        loss_tensor_unreduced = self.loss_fn(valid_logits, None, valid_Y, valid_c)
-        
-        # [新增] 检查 loss_fn 的输出 (未 reduce)
-        # self.check_nan_inf(loss_tensor_unreduced, "decode loss_tensor_unreduced (Output of loss_fn)")
-
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c)
         loss = loss_tensor_unreduced.mean()
-
-        # [新增] 检查最终的 loss (已 reduce)
-        # self.check_nan_inf(loss, "decode final loss (mean)")
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
         logits[patient_mask] = valid_logits
 
         # 创建一个 (B,) 的 loss_tensor 以保持一致性 (可选)
         full_loss_tensor = torch.zeros(batch_size, device=device)
-        full_loss_tensor[patient_mask] = loss_tensor_unreduced.squeeze(1)
+        full_loss_tensor[patient_mask] = loss_tensor_unreduced.squeeze(1) if loss_tensor_unreduced.dim() == 2 else loss_tensor_unreduced
 
         return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
 

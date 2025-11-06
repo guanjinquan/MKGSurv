@@ -14,9 +14,9 @@ RUN_ID="tcga_luad_run005"
 # --- Training Hyperparameters ---
 BATCH_SIZE=4          # Number of samples per batch.
 ACC_STEP=4           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=1e-6               # Learning rate for the model head.
-BACKBONE_LR=5e-7        # Learning rate for the model backbone.
-NUM_EPOCHS=200        # Total number of training epochs.
+LR=1e-5               # Learning rate for the model head.
+BACKBONE_LR=5e-6        # Learning rate for the model backbone.
+NUM_EPOCHS=50        # Total number of training epochs.
 
 
 # --- Execution ---
@@ -37,7 +37,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --optimizer "AdamW" \
     --weight_decay 5e-6 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "tabular-pathology-37,tabular-clinical-56,tabular-genomics-27",
+    --modalities "tabular-pathology-37,tabular-clinical-56,tabular-genomics-27" \
     --fold 0
 
 

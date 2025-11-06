@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
-from modules.common_modules.surv_loss import NLLSurvLoss
+from modules.common_modules.surv_loss import CustomCoxPHLoss
 from modules.training_utils.metrics import survival_metrics
 
 
@@ -139,8 +139,8 @@ class HANCOCKSurvivalPred(nn.Module):
                     )
 
         # ----- Prediction Head (for Decode step) -----
-        self.prediction_head = nn.Linear(self.embed_dim, 10)  # Predicts risk for 10 time intervals
-        self.loss_fn = NLLSurvLoss(reduction='none')
+        self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
+        self.loss_fn = CustomCoxPHLoss(reduction='none')
 
     def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
         """Splits a list of token ids into chunks."""
@@ -309,59 +309,55 @@ class HANCOCKSurvivalPred(nn.Module):
 
     def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
-        Applies masking to the decoding process, calculating logits and loss only for valid (unmasked) data.
-
         Args:
-            pooled_embeddings: Tensor of shape (B, embed_dim) containing patient embeddings.
-            pooled_mask: Optional boolean tensor of shape (B,) where True indicates a valid patient.
-                         If None, all patients are considered valid.
-            batch: A list of dictionary containing labels, including 'label_Y' and 'label_c'.
-
-        Returns:
-            A dictionary containing:
-            - 'logits': Tensor of shape (B, out_dim) with predictions. Logits for masked-out
-                        patients will be zero.
-            - 'loss': A scalar tensor representing the loss, calculated only on the valid data.
+            pooled_embeddings: (B, embed_dim)
+            pooled_mask: (B,)
+            batch: 包含 batch['labels'] = {'label_time': [y1, y2,...], 'label_event': [c1, c2,...]}
         """
         batch_size = pooled_embeddings.shape[0]
         device = pooled_embeddings.device
 
-        # Assuming the prediction head outputs a single score (out_dim = 1)
         out_dim = self.prediction_head.out_features
         logits = torch.zeros(batch_size, out_dim, device=device)
-        loss_tensor = torch.zeros((batch_size, 1), device=device)
         loss = torch.tensor(0.0, device=device)
-
-        # 1. Create a boolean mask for valid (present) patients.
-        # If pooled_mask is None, we assume all data in the batch is valid.
+        
+        # 1. 创建患者掩码
         patient_mask = pooled_mask.bool().to(device) if pooled_mask is not None else torch.ones(batch_size, dtype=torch.bool, device=device)
 
-        # 2. If no patients are valid in this batch, return zeros immediately.
+        # 2. 如果没有有效患者，立即返回
         if not patient_mask.any():
-            return {"logits": logits, "loss": loss, 'loss_tensor': loss_tensor}
+            return {"logits": logits, "loss": loss}
 
-        # 3. Filter the embeddings and labels to only include the valid data.
+        # 3. 过滤有效的嵌入
         valid_embeddings = pooled_embeddings[patient_mask]
+        
+        if valid_embeddings.shape[0] == 0:
+             print("Warning: decode valid_embeddings is empty.")
+             return {"logits": logits, "loss": loss}
 
-        label_Y_list = [batch['labels'][i]['label_Y'] for i in range(batch_size)]
-        label_c_list = [batch['labels'][i]['label_c'] for i in range(batch_size)]
+        # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
+        label_time_list = [batch['labels'][i]['label_time'] for i in range(batch_size)]
+        label_event_list = [batch['labels'][i]['label_event'] for i in range(batch_size)]
 
-        Y_full = torch.tensor(label_Y_list).to(device).to(torch.long)
-        c_full = torch.tensor(label_c_list).to(device).to(torch.long)
+        Y_full = torch.tensor(label_time_list, device=device, dtype=torch.long)
+        c_full = torch.tensor(label_event_list, device=device, dtype=torch.long)
 
         valid_Y = Y_full[patient_mask]
         valid_c = c_full[patient_mask]
 
-        # 4. Perform prediction and loss calculation only on the valid subset.
+        # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
-        loss_tensor = self.loss_fn(valid_logits, None, valid_Y, valid_c)
-        loss = loss_tensor.mean()
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c)
+        loss = loss_tensor_unreduced.mean()
 
-        # 5. Place the calculated logits for the valid data back into the original tensor.
-        # The positions for masked-out data remain zero.
+        # 6. 将 logits 映射回原始 (B, out_dim) 张量
         logits[patient_mask] = valid_logits
 
-        return {"logits": logits, "loss": loss, "loss_tensor": loss_tensor}
+        # 创建一个 (B,) 的 loss_tensor 以保持一致性 (可选)
+        full_loss_tensor = torch.zeros(batch_size, device=device)
+        full_loss_tensor[patient_mask] = loss_tensor_unreduced.squeeze(1) if loss_tensor_unreduced.dim() == 2 else loss_tensor_unreduced
+
+        return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
 
     def get_backbone_params(self) -> List[nn.Parameter]:
         try:
