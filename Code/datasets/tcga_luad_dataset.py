@@ -126,8 +126,8 @@ class TCGA_LUAD_Dataset(Dataset):
             "image-pathology", 
             "text-pathology", 
             "tabular-pathology-37", 
-            "tabular-clinical-56", 
-            "tabular-genomics-27",
+            "tabular-clinical-44", 
+            # "tabular-genomics-27",
             "genomics-genomics",
         }
 
@@ -337,13 +337,13 @@ class TCGA_LUAD_Dataset(Dataset):
             output_dict["text-pathology"] = self.report_pathology.get(patient_id, None)
 
         # --- 各种表格数据 ---
-        if "tabular-clinical-56" in self.modalities:
+        if "tabular-clinical-44" in self.modalities:
             data = self.clinical_tabular_dict.get(patient_id, None)
-            output_dict["tabular-clinical-56"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
+            output_dict["tabular-clinical-44"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
 
-        if "tabular-genomics-27" in self.modalities:
-            data = self.genomics_tabular_dict.get(patient_id, None)
-            output_dict["tabular-genomics-27"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
+        # if "tabular-genomics-27" in self.modalities:
+        #     data = self.genomics_tabular_dict.get(patient_id, None)
+        #     output_dict["tabular-genomics-27"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
             
         if "tabular-pathology-37" in self.modalities:
             data = self.pathology_tabular_dict.get(patient_id, None)

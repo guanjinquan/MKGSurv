@@ -103,7 +103,7 @@ class OSCCSurvInHouseDataset(Dataset):
 
         if has_recurrence and pd.notna(time_to_recurrence):
             # The patient had a recurrence event.
-            event_flag = 0
+            event_flag = 1
             event_time = time_to_recurrence
         elif pd.notna(time_to_last_info):
             # No recurrence event, use last follow-up time. Always censored.

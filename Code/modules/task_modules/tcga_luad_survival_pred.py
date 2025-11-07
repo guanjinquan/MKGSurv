@@ -271,10 +271,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 
                 for tensor in wsi_tensors:
                     if tensor is not None:
-                        # [新增] 检查输入的 WSI tensor
-                        # if self.check_nan_inf(tensor, "encode WSI Input Tensor (Original)"):
-                            # print(f"NaN found in WSI tensor BEFORE padding.")
-                        
                         pad_len = max_patches - tensor.shape[0]
                         padded = F.pad(tensor, (0, 0, 0, pad_len), 'constant', 0)
                         padded_wsi.append(padded.to(device))
@@ -284,17 +280,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                         is_valid_wsi.append(False)
 
                 wsi_batch = torch.stack(padded_wsi).to(device)
-                
-                # [新增] 检查堆叠和填充后的 WSI batch
-                # if self.check_nan_inf(wsi_batch, "encode WSI Padded Batch (Input to MIL)"):
-                #      print(f"NaN found in WSI batch BEFORE image_mil.")
-
                 wsi_token_embeds = self.image_mil(wsi_batch) # (B, num_image_tokens, D)
-                
-                # [新增] 检查 WSI MIL 模块的输出
-                # if self.check_nan_inf(wsi_token_embeds, "encode WSI MIL Output (wsi_token_embeds)"):
-                #     print(f"NaN found in WSI batch AFTER image_mil.")
-
                 wsi_mask = torch.tensor(is_valid_wsi, device=device).unsqueeze(1).expand(-1, self.num_image_tokens)
                 
                 all_embeddings.append(wsi_token_embeds)
@@ -317,9 +303,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             assert len(rna_tensors) > 0, f"Must have rna_tensors"
             for tensor in rna_tensors:
                 if tensor is not None:
-                    # [新增] 检查输入的 Genomics tensor
-                    # self.check_nan_inf(tensor, "encode Genomics Input Tensor (Original)")
-                    
+
                     n_nodes = tensor.shape[0]
                     # 我们将截断/填充到 max_nodes
                     if n_nodes > max_nodes:
@@ -346,9 +330,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
             # 应用 Linear Encoder: (B, n, 1024) -> (B, n, 512)
             rna_token_embeds = self.genomics_encoder(rna_batch) 
-            # [新增] 检查 Genomics encoder 的输出
-            self.check_nan_inf(rna_token_embeds, "encode Genomics Encoder Output (rna_token_embeds)")
-            
+
             all_embeddings.append(rna_token_embeds)
             all_masks.append(rna_mask)
             present_modalities.append("genomics-genomics")
@@ -357,9 +339,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         if 'text-pathology' in self.active_modalities and batch['text-pathology']:
             # _encode_text 期望一个 (B,) 的列表
             embeds, mask = self._encode_text(batch['text-pathology'])
-            # [新增] _encode_text 内部已经有检查了，但我们再次检查最终输出
-            # self.check_nan_inf(embeds, "encode Text Output (embeds)")
-            
+
             all_embeddings.append(embeds)
             all_masks.append(mask)
             present_modalities.append("text-pathology")
@@ -374,8 +354,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 # batch[mod_name] 是一个 List[Optional[Tensor(L,)]]
                 for table_tensor in batch[mod_name]:
                     if table_tensor is not None:
-                        # [新增] 检查输入的 Tabular tensor
-                        # self.check_nan_inf(table_tensor, f"encode {mod_name} Input Tensor (Original)")
 
                         # 确保它是正确类型和设备
                         modality_stack_tensor = table_tensor.to(device).float()
