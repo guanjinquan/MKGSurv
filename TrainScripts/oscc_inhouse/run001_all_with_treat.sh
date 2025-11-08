@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_luad_run007_fold0"
+RUN_ID="inhouse_run001"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=16          # Number of samples per batch.
@@ -26,8 +26,8 @@ echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "tcga_luad" \
-    --dataset "tcga_luad" \
+    --model_task "oscc_inhouse" \
+    --dataset "oscc_inhouse" \
     --fusion_type "msa" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
@@ -35,10 +35,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --backbone_lr ${BACKBONE_LR} \
     --num_epochs ${NUM_EPOCHS} \
     --optimizer "AdamW" \
-    --weight_decay 5e-6 \
+    --weight_decay 0.1 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "image-pathology,genomics-genomics" \
-    --fold 0
+    --modalities "all"
 
 
 echo "Training run ${RUN_ID} finished."

@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_luad_run006"
+RUN_ID="tcga_luad_run001"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=16          # Number of samples per batch.
@@ -35,7 +35,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --backbone_lr ${BACKBONE_LR} \
     --num_epochs ${NUM_EPOCHS} \
     --optimizer "AdamW" \
-    --weight_decay 5e-6 \
+    --weight_decay 0.1 \
     --scheduler "CosineAnnealingLR"  \
     --modalities "image-pathology" \
     --fold 0

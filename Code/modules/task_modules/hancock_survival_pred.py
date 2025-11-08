@@ -205,7 +205,8 @@ class HANCOCKSurvivalPred(nn.Module):
         ).to(self.device)
 
         # BERT 批量推理
-        bert_outputs = self.bert(**inputs)
+        with torch.no_grad():
+            bert_outputs = self.bert(**inputs)
         pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
 
         # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)

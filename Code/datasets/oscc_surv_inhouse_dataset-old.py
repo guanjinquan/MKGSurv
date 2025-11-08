@@ -11,7 +11,7 @@ from torchvision.transforms import Compose, RandomVerticalFlip, RandomHorizontal
     RandomAdjustSharpness, RandomResizedCrop, Normalize, ToTensor, Resize
 import pandas as pd 
 from typing import List, Dict, Any
-import re
+
 
 
 # ==========================================================================================
@@ -173,76 +173,33 @@ class OSCCSurvInHouseDataset(Dataset):
         if not modalities_found:
             return self.__getitem__((index + 1) % len(self))
 
-        if self.mode == 'train' and random.random() < 0.5:
-            output_dict = self.aug_treatment_data(output_dict)
-
         return output_dict
-    
-    def aug_treatment_data(self, output_dict):
-        treatment_keys = [
-            "text-pathology",        
-            "text-treatment",         
-            "tabular-pathology-16",   
-        ]
-
-        def aug_tabular(tabular_data):
-            for i in range(len(tabular_data)):
-                tabular_data[i] += random.gauss() * 0.1
-            return tabular_data
-        
-        def aug_text(text):
-            # random shuffle after split '.' or '+'
-            for tag in ['.', '+']:
-                text = text.split(tag)
-                random.shuffle(text)
-                text = tag.join(text)
-            return text.strip()
-
-        for key in treatment_keys:
-            if key not in output_dict:
-                continue
-
-            # 20% possibility to drop!
-            random_prob = random.random()
-            if random_prob < 0.5:
-                if sum([1 for val in output_dict.values() if val is not None]) > 3 and len(self.modalities) > 1:  # labels, pids, + one column
-                    output_dict[key] = None
-
-            else:
-                # process text
-                if output_dict[key] is not None:
-                    if "text" in key:
-                        output_dict[key] = aug_text(output_dict[key])
-                    elif "tabular" in key:
-                        output_dict[key] = aug_tabular(output_dict[key])
-
-        return output_dict
-
 
     def __len__(self):
         return len(self.items)
 
     def _parse_modalities(self, modalities_str: str) -> List[str]:
         """Parses the modalities string into a list of valid modality keys."""
+        if modalities_str == "all":
+            return [
+                "image-pathology", 
+                "text-pathology", 
+                "text-clinical", 
+                "tabular-pathology-15",
+                "tabular-clinical-16",
+                "tabular-blood-9",
+                "tabular-immunohistochemic-5",
+            ] 
+    
         valid_set = {
-            # image
             "image-pathology", 
-
-            # text
+            "text-pathology", 
             "text-clinical", 
-            "text-pathology",        # with-treat
-            "text-treatment",        # with-treat
-
-            # tabular
-            "tabular-pathology-16",  # with-treat
-            "tabular-metadata-4",
-            "tabular-history-9",
-            "tabular-blood-5",
+            "tabular-pathology-15",
+            "tabular-clinical-16",
+            "tabular-blood-9",
             "tabular-immunohistochemic-5",
         }
-
-        if modalities_str == "all":
-            return valid_set
 
         # Allow for ',' as separators
         parsed = [m.strip() for m in modalities_str.split(',')]
@@ -331,18 +288,16 @@ class OSCCSurvInHouseDataset(Dataset):
         # This function remains unchanged from your original code.
         
         sources_with_columns = {
-            "clinical": [    # 对应原本的 text-3 (part-1)
-                "TumorLocation",
-                "PreoperativeHistoryDetails",
-            ],
-            "treatment": [   # 对应原本的 text-3 (part-2)
+            "clinical": [    # 对应原本的 text-3
                 "SurgicalMethod",
+                "SurgeryDuration",
+                "TumorLocation",
                 "Flap",
-                "PD_L1", 
-                "Radiotherapy(0no/1yes)", 
-                "Chemotherapy(0no/1yes)", 
+                "PreoperativeHistoryDetails",
+                "PostopComplicationDetails",
+                "PD_L1"
             ],
-            "pathology": [   # 对应原本的 text-2
+            "pathology": [    # 对应原本的 text-2
                 "Pathology",
             ]
         }
@@ -359,9 +314,7 @@ class OSCCSurvInHouseDataset(Dataset):
             elif column_name == "TumorM": sentence = f"The distant metastasis stage (M stage) is {value}."
             elif column_name == "TumorDifferentiation(1high/2med/3low)":
                 diff_map = {1: "well-differentiated", 2: "moderately-differentiated", 3: "poorly-differentiated"}
-                diff = diff_map.get(value, None)
-                if diff:
-                    sentence = f"The tumor differentiation is {diff}."
+                sentence = f"The tumor differentiation is {diff_map.get(value, 'not specified')}."
             elif "(0/1)" in column_name or "(+)" in column_name:
                 status = "present" if value == 1 else "absent"
                 feature_name = column_name.replace("(0/1)", "").replace("(+)", "").replace("_", " ")
@@ -391,23 +344,21 @@ class OSCCSurvInHouseDataset(Dataset):
     def _generate_tabular_data(self, patient_series):
 
         sources_with_columns = {
-            "metadata": [          # length = 4  # 对应原本的 text-1 (part-1)
-                "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)", 
-            ],
-            "history": [           # length = 9  # 对应原本的 text-1 (part-2)
-                "AlcoholHistory(0no/1yes)", "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", 
+            "clinical": [    # length = 16  # 对应原本的 text-1
+                "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)", "AlcoholHistory(0no/1yes)",
+                "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", 
                 "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
                 "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
+                "Metastasis(0no/1yes)", "Radiotherapy(0no/1yes)", "Chemotherapy(0no/1yes)", 
             ],
-            "blood": [             # length = 5 对应原本的 text-4
+            "blood": [  # length = 9 对应原本的 text-4
                 "PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD",
-                # "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"  # 手术后的治疗结果都不能出现
+                "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"
             ],
-            "pathology": [         # length = 16 对应原本的 text-2
+            "pathology": [  # length = 15 对应原本的 text-2
                 "TumorT", "TumorN", "TumorM", "TumorDifferentiation(1high/2med/3low)",
                 "CancerThrombus(0/1)", "SurroundingTissueInvasion(0/1)",  "LNM(0/1)", 
-                "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)", 
-                "Metastasis(0no/1yes)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
+                "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
             ],
             "immunohistochemic": [  # 对应原本 text-5
                 "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)", 
@@ -430,7 +381,6 @@ class OSCCSurvInHouseDataset(Dataset):
         for key, columns in sources_with_columns.items():
             tabular_data = []
             tabular_data_source = []
-            columns = sorted(columns)  # sort by order 避免训练和测试集 columns 不一致
             for column_name in columns:
                 value = patient_series[column_name]
                 value = process_specical_column(column_name, value)

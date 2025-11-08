@@ -239,8 +239,7 @@ class OSCCSurvivalPred(nn.Module):
         ).to(self.device)
 
         # BERT 批量推理
-        with torch.no_grad():
-            bert_outputs = self.bert(**inputs)
+        bert_outputs = self.bert(**inputs)
         pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
 
         # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)
@@ -312,11 +311,6 @@ class OSCCSurvivalPred(nn.Module):
             all_embeddings.append(text_features)
             all_masks.append(text_mask)
 
-        if 'text-treatment' in batch and batch['text-treatment']:
-            text_features, text_mask = self._encode_text(batch['text-treatment'])
-            all_embeddings.append(text_features)
-            all_masks.append(text_mask)
-
         # ----- Tabular branch -----
         for i, modality in enumerate(self.modalities):
             if "tabular" in modality and modality in batch and batch[modality]:
@@ -340,8 +334,10 @@ class OSCCSurvivalPred(nn.Module):
 
 
         # Define which modalities are strongly related (e.g., for cross-attention)
+        # Index 0: image, Index 1: strong_related_text
         strong_related_pairs = []
-
+        # if image_features is not None and strong_text_features is not None:
+        #     strong_related_pairs.append((0, 1))
 
         # Check number of present modalities
         assert len(all_embeddings) <= self.max_modalities_num, f"Number of present modalities exceeds the maximum allowed: {self.max_modalities_num}"

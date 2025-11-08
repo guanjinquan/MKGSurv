@@ -30,6 +30,7 @@ from modules.fusion_modules.simple_fusion import SimpleFusion
 from modules.fusion_modules.healnet_fusion import HealNetFusionModule
 from modules.fusion_modules.KL_gated_fusion import KLGatedFusion
 from modules.fusion_modules.MIBF_fusion import MIBF_fusion
+from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 
 # --- Common Modules ---
 from modules.common_modules.align_utils import AlignmentModule
@@ -55,6 +56,13 @@ def GetModel(args, modalities_of_dataset: List[str] = []):
     
     if args.with_multimodal_vib:
         return ModelInterfaceWithMultimodalVIB(
+            model_task=args.model_task, 
+            modalities=modalities_of_dataset, 
+            fusion_type=args.fusion_type
+        )
+    
+    if args.fusion_type == "hgcn_fusion":
+        return ModelInterfaceWithDeepSupervisionWeightedLoss(
             model_task=args.model_task, 
             modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
@@ -125,6 +133,8 @@ class ModelInterface(nn.Module):
             self.fusion_module = KLGatedFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "mibf_fusion":
             self.fusion_module = MIBF_fusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == 'hgcn_fusion':
+            self.fusion_module = HGCNFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
@@ -317,7 +327,7 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
         all_embeddings, all_masks, _ = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
-        assert len(all_embeddings) == 2, "KLfusion requires two modalities"
+        # assert len(all_embeddings) == 2, "KLfusion requires two modalities"
 
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]

@@ -64,6 +64,7 @@ class Trainer:
         self.scheduler = GetScheduler(self.args, self.optimizer)
         
         self.epoch = 0
+        self.save_epoch_limit = self.args.num_epochs // 10
         self.iters = 0
         self.acc_step = self.args.acc_step
             
@@ -299,8 +300,10 @@ class Trainer:
 
     def on_epoch_end(self):
         # 这个函数只在主进程被调用
-        save_trainer(self, os.path.join(self.ckpt_path, 'Final_Trainer.pkl'))
-        save_model(self.model, self.epoch, os.path.join(self.ckpt_path, f'Final.pth'))
+        if self.epoch >= self.save_epoch_limit:
+            save_trainer(self, os.path.join(self.ckpt_path, 'Final_Trainer.pkl'))
+            save_model(self.model, self.epoch, os.path.join(self.ckpt_path, f'Final.pth'))
+        
         # torch.cuda.empty_cache()
         self.log.write(f"Best Score : {self.best_score}")
         self.log.write(f"Best Metrics : {self.best_metrics}")
@@ -308,7 +311,7 @@ class Trainer:
 
     def save_best_model(self, metrics_dict):
         score = get_score(metrics_dict)
-        # BUG FIX: 移除了未定义的 multi_task_score
+
         if score > self.best_score:
             self.best_score = score
             self.best_metrics = metrics_dict
@@ -343,8 +346,10 @@ class Trainer:
             
         # 保存最佳模型仍然只基于验证集
         if mode in ['valid']:
-            self.save_best_model(metrics_dict)
-
+            if self.epoch >= self.save_epoch_limit:
+                self.save_best_model(metrics_dict)
+            else:
+                print(f"Current epoch is {self.epoch}, only save best when greater than {self.save_epoch_limit}")
     def get_metrics(self, logits: List[Any], labels: List[Any]):
         print("Type of logits:", type(logits))
         return self.model.task_head.METRICS_FN(logits, labels)  # 调用模型中的 METRICS_FN

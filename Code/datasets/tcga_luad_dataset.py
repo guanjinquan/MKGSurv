@@ -11,8 +11,8 @@ import random
 import copy
 import joblib # 导入 joblib
 
-# 尝试导入 torch_geometric.data.Data
-# 这样在 unpickle 'luad_data.pkl' 时不会出错
+
+
 try:
     from torch_geometric.data import Data
 except ImportError:
@@ -21,6 +21,7 @@ except ImportError:
     # 定义一个占位符，以防万一
     class Data:
         pass
+
 
 
 class TCGA_LUAD_Dataset(Dataset):
@@ -125,9 +126,9 @@ class TCGA_LUAD_Dataset(Dataset):
         valid_modalities = {
             "image-pathology", 
             "text-pathology", 
-            "tabular-pathology-37", 
-            "tabular-clinical-44", 
-            # "tabular-genomics-27",
+            "text-treatment",
+            "tabular-clinical-29", 
+            "tabular-treatment-8", 
             "genomics-genomics",
         }
 
@@ -143,7 +144,7 @@ class TCGA_LUAD_Dataset(Dataset):
             if mod in valid_modalities:
                 parsed_list.append(mod)
             else:
-                print(f"Warning: Modality '{mod}' not recognized and will be skipped.")
+                raise ValueError(f"Warning: Modality '{mod}' not recognized and will be skipped.")
         
         return parsed_list
 
@@ -154,8 +155,8 @@ class TCGA_LUAD_Dataset(Dataset):
 
         # 定义文件路径
         clinical_path = os.path.join(processed_dir, "clinical_data_aggregated.csv")
-        genomics_path = os.path.join(processed_dir, "genomics_data_aggregated.csv")
-        histology_path = os.path.join(processed_dir, "histology_data_aggregated.csv")
+        treatment_path = os.path.join(processed_dir, "treatment_data_aggregated.csv")
+
         reports_path = os.path.join(processed_dir, "tcga_luad_reports.csv")
         labels_path = os.path.join(processed_dir, "luad_patient_labels.csv")  
         
@@ -164,10 +165,8 @@ class TCGA_LUAD_Dataset(Dataset):
             # 这样可以确保 '1.0' 和 '1' 都被视为字符串，直到 _process_row 处理
             self.clinical_df = pd.read_csv(clinical_path, dtype=str)
             print(f"Loaded clinical data with shape: {self.clinical_df.shape}")
-            self.genomics_df = pd.read_csv(genomics_path, dtype=str)
-            print(f"Loaded genomics data with shape: {self.genomics_df.shape}")
-            self.histology_df = pd.read_csv(histology_path, dtype=str)
-            print(f"Loaded histology data with shape: {self.histology_df.shape}")
+            self.treatment_df = pd.read_csv(treatment_path, dtype=str)
+            print(f"Loaded treatment data with shape: {self.treatment_df.shape}")
             self.reports_df = pd.read_csv(reports_path, dtype=str)  
             print(f"Loaded reports data with shape: {self.reports_df.shape}")
             self.labels_df = pd.read_csv(labels_path, dtype=str)  
@@ -191,6 +190,7 @@ class TCGA_LUAD_Dataset(Dataset):
         # 将所有非数字值 (NaN, 空值, 文本) 转换为 -1.0
         def _process_row(row, columns):
             tabular_data = []
+            columns = sorted(columns)
             for col in columns:
                 value = row[col]
                 # 尝试将值转换为数字。
@@ -219,37 +219,25 @@ class TCGA_LUAD_Dataset(Dataset):
             # 提取表格数据
             self.clinical_tabular_dict[patient_key] = _process_row(row, tabular_cols_cli)
 
-        # --- 处理 Genomics (基因组) 数据 ---
-        print("Processing genomics_df...")
-        self.genomics_tabular_dict = {}
-        exclude_cols_gen = ['cases.case_id', 'cases.submitter_id']
-        tabular_cols_gen = [col for col in self.genomics_df.columns if col not in exclude_cols_gen]
-        for idx, row in self.genomics_df.iterrows():
+        # --- 处理 Treatment 数据 ---
+        self.treatment_tabular_dict = {}
+        tabular_cols_treat = [col for col in self.treatment_df.columns if col not in exclude_cols_cli]
+        for idx, row in self.treatment_df.iterrows():
             patient_key = row['cases.submitter_id']
-            # 使用 get 和默认值 None 来安全处理
-            if patient_key not in self.clinical_tabular_dict.get(patient_key, None): 
-                self.genomics_tabular_dict[patient_key] = _process_row(row, tabular_cols_gen)
+            case_id = row['cases.case_id']
+            case_id_to_submitter[case_id] = patient_key
+            
+            # 提取表格数据
+            self.treatment_tabular_dict[patient_key] = _process_row(row, tabular_cols_treat)
 
-        # --- 处理 Histology/Pathology (病理) 数据 ---
-        print("Processing histology_df...")
-        self.pathology_tabular_dict = {}
-        exclude_cols_path = ['cases.case_id', 'cases.submitter_id']
-        tabular_cols_path = [col for col in self.histology_df.columns if col not in exclude_cols_path]
-        for idx, row in self.histology_df.iterrows():
-            patient_key = row['cases.submitter_id']
-            # 使用 get 和默认值 None 来安全处理
-            if patient_key not in self.clinical_tabular_dict.get(patient_key, None): 
-                self.pathology_tabular_dict[patient_key] = _process_row(row, tabular_cols_path)
+
 
         # --- 处理 Reports (报告) 数据 ---
         print("Processing reports_df...")
         self.report_pathology = {}
         for idx, row in self.reports_df.iterrows():
-            case_id = row['patient_id']
-            if case_id not in case_id_to_submitter:
-                continue
-            patient_key = case_id_to_submitter[case_id]
-            
+            patient_key = row['patient_id'].strip()
+
             # 合并报告文本
             report_text = str(row["report_text"]) if pd.notna(row["report_text"]) else ""
             annotation_text = str(row["annotation_text"]) if pd.notna(row["annotation_text"]) else ""
@@ -257,6 +245,8 @@ class TCGA_LUAD_Dataset(Dataset):
             
             if full_text:
                 self.report_pathology[patient_key] = full_text
+            else:
+                print(f"No found report for patient {patient_key}")
 
         # --- 处理标签 ---
         self.patient_labels = {}
@@ -266,22 +256,10 @@ class TCGA_LUAD_Dataset(Dataset):
             self.patient_labels[patient_key] = {
                 "DFS_time": float(row["DFS_time"]),
                 "DFS_event": float(row["DFS_event"]),
+                "Treatment_type": str(row['treatments.treatment_type'])
             }
 
-        # print tabular columns
-        # print("\n--- 检查表格数据维度 (Tabular Data Dimensions) ---")
-        # print(f"  [tabular-clinical]: {len(tabular_cols_cli)} columns.")
-        # print(f"  [tabular-genomics]: {len(tabular_cols_gen)} columns.")
-        # print(f"  [tabular-pathology]: {len(tabular_cols_path)} columns.")
-        # [tabular-clinical]: 56 columns.
-        # [tabular-genomics]: 27 columns.
-        # [tabular-pathology]: 37 columns.
-        # print("-------------------------------------------------")
-        # print("请使用这些数字来设置 tcga_luad_pred.py 中的 'tabular_dims' 字典。")
-
-
         print("Finished processing all CSV files.")
-
 
     def __len__(self) -> int:
         return len(self.patient_ids)
@@ -302,6 +280,7 @@ class TCGA_LUAD_Dataset(Dataset):
             survival_info = self.patient_labels[patient_id]
             event = int(survival_info['DFS_event'])         # 0 = 审查 (censored), 1 = 事件 (death)
             time_days = float(survival_info['DFS_time'])    # 生存时间（days）
+            treatment = str(survival_info['Treatment_type'])
         except Exception as e:
             print(f"Error: {e}")
             return self.__getitem__((idx + 1) % len(self))
@@ -335,22 +314,22 @@ class TCGA_LUAD_Dataset(Dataset):
         # --- 病理报告文本 ---
         if "text-pathology" in self.modalities:
             output_dict["text-pathology"] = self.report_pathology.get(patient_id, None)
+            if patient_id not in self.report_pathology:
+                print(f"Not found report for patient : {patient_id}")
+
+        if "text-treatment" in self.modalities:
+            output_dict["text-treatment"] = treatment
 
         # --- 各种表格数据 ---
-        if "tabular-clinical-44" in self.modalities:
+        if "tabular-clinical-29" in self.modalities:
             data = self.clinical_tabular_dict.get(patient_id, None)
-            output_dict["tabular-clinical-44"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
+            output_dict["tabular-clinical-29"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
 
-        # if "tabular-genomics-27" in self.modalities:
-        #     data = self.genomics_tabular_dict.get(patient_id, None)
-        #     output_dict["tabular-genomics-27"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
-            
-        if "tabular-pathology-37" in self.modalities:
-            data = self.pathology_tabular_dict.get(patient_id, None)
-            output_dict["tabular-pathology-37"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
+        if "tabular-treatment-8" in self.modalities:
+            data = self.treatment_tabular_dict.get(patient_id, None)
+            output_dict["tabular-treatment-8"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
 
-        # 5. 数据完整性检查 (可选，但推荐)
-        # 确保至少加载了一种请求的模态，否则也跳过
+        # 5. 数据完整性检查 
         modalities_found = 0
         for mod_key in self.modalities:
             if mod_key in output_dict and output_dict[mod_key] is not None:
@@ -362,13 +341,55 @@ class TCGA_LUAD_Dataset(Dataset):
                     modalities_found += 1
         
         if modalities_found == 0:
-            # 没有找到任何请求的模态数据 (虽然 graph_data 总是会加载)
-            # print(f"Warning: No *requested* modalities found for {patient_id}. Skipping.")
-            # 递归不一定是个好主意，但为了匹配 OSCC 的逻辑，我们保留它
             return self.__getitem__((idx + 1) % len(self))
+
+        if self.mode == 'train' and random.random() < 0.5:
+            output_dict = self.aug_treatment_data(output_dict)
 
         return output_dict
     
+    def aug_treatment_data(self, output_dict):
+        treatment_keys = [
+            "text-pathology", 
+            "text-treatment",
+            "tabular-treatment-8", 
+        ]
+
+        def aug_tabular(tabular_data):
+            for i in range(len(tabular_data)):
+                tabular_data[i] += random.gauss() * 0.1
+            return tabular_data
+        
+        def aug_text(text):
+            # random shuffle after split '.' or '+'
+            for tag in ['.', '+']:
+                text = text.split(tag)
+                random.shuffle(text)
+                text = tag.join(text)
+            return text.strip()
+
+        for key in treatment_keys:
+            if key not in output_dict:
+                continue
+
+            # 20% possibility to drop!
+            random_prob = random.random()
+            if random_prob < 0.5:
+                if sum([1 for val in output_dict.values() if val is not None]) > 3 and len(self.modalities) > 1:  # labels, pids, + one column
+                    output_dict[key] = None
+
+            else:
+                # process text
+                if output_dict[key] is not None:
+                    if "text" in key:
+                        output_dict[key] = aug_text(output_dict[key])
+                    elif "tabular" in key:
+                        output_dict[key] = aug_tabular(output_dict[key])
+
+        return output_dict
+
+
+
 
 if __name__ == "__main__":
     # 确保 __main__ 中的路径正确

@@ -144,7 +144,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                     )
 
         # ----- 3. Text Branch (text-pathology) -----
-        if 'text-pathology' in self.active_modalities:
+        if any('text' in modal for modal in self.active_modalities):
             print("Initializing Text Encoder (ClinicalBERT)")
             self.text_model_name = "medicalai/ClinicalBERT"
             self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_name, use_fast=True)
@@ -179,7 +179,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
     def _encode_text(self, texts_list: List[Optional[str | List[str]]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """Encodes a batch of texts, handling List[str] as separate items and chunking long inputs."""
-        batch_size = len(texts_list)
+        batch_size = len(texts_list) # <--- 修正了拼写错误 (was text_list)
         chunk_payload = 510  # 512 - 2 for [CLS] and [SEP]
         
         all_chunks = []
@@ -187,24 +187,35 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         
         for i, item in enumerate(texts_list):
             
+            # 存放这个批次项 (item) 最终对应的所有 token 块
             item_specific_chunks = [] 
-            texts_to_process = []
             
+            # --- 这是新的核心逻辑 ---
+            texts_to_process = []
             if isinstance(item, str) and item.strip():
+                # 1. 如果是单个字符串，将其放入待处理列表
                 texts_to_process.append(item)
             elif isinstance(item, list):
+                # 2. 如果是列表，过滤掉无效字符串后，全部放入待处理列表
                 texts_to_process.extend([t for t in item if isinstance(t, str) and t.strip()])
             
+            # 3. 如果 item 是 None, [], 或 ["", " "]，texts_to_process 将为空
             if not texts_to_process:
                 mapping_info.append({'index': i, 'n': 0})
                 continue
             
+            # 4. 统一处理所有待处理的文本
+            # 无论是单个 str 还是 List[str] 中的每个 str，
+            # 它们现在都被同等对待：tokenize -> chunk
             for text in texts_to_process:
                 token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+                # _chunk_token_ids 会处理长文本和短文本
                 chunks = self._chunk_token_ids(token_ids, chunk_payload) 
                 if chunks:
                     item_specific_chunks.extend(chunks)
+            # --- 新逻辑结束 ---
 
+            # 记录这个批次项 (item) 总共产生了多少个 chunk
             if not item_specific_chunks:
                 mapping_info.append({'index': i, 'n': 0})
                 continue
@@ -212,46 +223,45 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
             all_chunks.extend(item_specific_chunks)
 
+        # --- 从这里开始，你原有的代码逻辑完全不变 ---
+
         if not all_chunks:
+            # 返回一个 (B, 1, D) 和 (B, 1) 的空张量，与你原始逻辑保持一致
             return torch.zeros(batch_size, 1, self.embed_dim, device=self.device), torch.zeros(batch_size, 1, device=self.device).bool()
 
-        # 将所有 chunk 转换成 token 字符串
-        # 注意：这里直接传递 token IDs (int) 列表给 tokenizer 会更高效
-        # 但为了保持与 HANCOCK 代码一致，我们使用 convert_ids_to_tokens
+        # 将所有 chunk 转换成 token 字符串（注意：这里有潜在的效率问题，但忠于你的原始代码）
         inputs = self.tokenizer(
             [' '.join(self.tokenizer.convert_ids_to_tokens(c)) for c in all_chunks],
             return_tensors="pt", padding=True, truncation=True, max_length=512
         ).to(self.device)
 
-        bert_outputs = self.bert(**inputs)
-        
-        # [新增] 检查 BERT 输出
-        # self.check_nan_inf(bert_outputs.last_hidden_state, "_encode_text BERT last_hidden_state")
-
+        # BERT 批量推理
+        with torch.no_grad():
+            bert_outputs = self.bert(**inputs)
         pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
-        
-        # [新增] 检查 BERT 投影后的输出
-        # self.check_nan_inf(pooled, "_encode_text BERT projected [CLS] (pooled)")
 
+        # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)
         max_chunks = max((m['n'] for m in mapping_info), default=1)
         final_embeddings = torch.zeros(batch_size, max_chunks, self.embed_dim, device=self.device)
         final_mask = torch.zeros(batch_size, max_chunks, device=self.device).bool()
 
         chunk_idx = 0
         for i in range(batch_size):
+            # 查找索引为 i 的批次项有多少个 chunk
             num_chunks = next((m['n'] for m in mapping_info if m['index'] == i), 0)
             
             if num_chunks > 0:
+                # 从 'pooled' 中提取这些 chunk 的 embedding
                 patient_chunks = pooled[chunk_idx : chunk_idx + num_chunks]
+                # 放入最终的张量
                 final_embeddings[i, :num_chunks] = patient_chunks
                 final_mask[i, :num_chunks] = True
+                # 移动指针
                 chunk_idx += num_chunks
         
-        # [新增] 检查最终的文本 embedding
-        # self.check_nan_inf(final_embeddings, "_encode_text Final Embeddings")
-        
-        return final_embeddings, final_mask
-
+        return final_embeddings, final_mask.bool()
+    
+    
     def encode(self, batch: Dict[str, Any]) -> Dict:
         """Dynamically encodes modalities based on what's present in the batch."""
         
@@ -343,6 +353,14 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             all_embeddings.append(embeds)
             all_masks.append(mask)
             present_modalities.append("text-pathology")
+
+        if 'text-treatment' in self.active_modalities and batch['text-treatment']:
+            # _encode_text 期望一个 (B,) 的列表
+            embeds, mask = self._encode_text(batch['text-treatment'])
+
+            all_embeddings.append(embeds)
+            all_masks.append(mask)
+            present_modalities.append("text-treatment")
 
         # --- 4. Tabular Branch ---
         for mod_name in self.active_modalities:
