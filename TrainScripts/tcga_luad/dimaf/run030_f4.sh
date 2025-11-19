@@ -5,11 +5,19 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
+<<<<<<< Updated upstream
 GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
 RUN_ID="tcga_luad_run030_SplitSeed=0_stratified_time_event"
+=======
+GPU_ID=0
+export CUDA_VISIBLE_DEVICES=${GPU_ID}
+
+
+RUN_ID="tcga_luad_run030_seed=0"
+>>>>>>> Stashed changes
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.

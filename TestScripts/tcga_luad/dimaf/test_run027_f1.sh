@@ -9,7 +9,11 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
+<<<<<<< Updated upstream
 RUN_ID="tcga_luad_run027_SplitSeed=0_stratified_time_event"
+=======
+RUN_ID="tcga_luad_run027_seed=0"
+>>>>>>> Stashed changes
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -35,8 +39,13 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
     --num_epochs ${NUM_EPOCHS} \
+<<<<<<< Updated upstream
     --optimizer "Adam" \
     --weight_decay 0.1 \
+=======
+    --optimizer "AdamW" \
+    --weight_decay 1e-4 \
+>>>>>>> Stashed changes
     --scheduler "CosineAnnealingLR"  \
     --modalities "image-pathology,genomics-genomics" \
     --fold 1

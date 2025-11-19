@@ -9,7 +9,11 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
+<<<<<<< Updated upstream
 RUN_ID="tcga_luad_run027_SplitSeed=0_stratified_time_event_adam"
+=======
+RUN_ID="tcga_luad_run027_seed=0"
+>>>>>>> Stashed changes
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.

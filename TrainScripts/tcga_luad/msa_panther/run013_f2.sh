@@ -12,9 +12,16 @@ export CUDA_VISIBLE_DEVICES=${GPU_ID}
 RUN_ID="tcga_luad_run013"
 
 # --- Training Hyperparameters ---
+<<<<<<< Updated upstream
 BATCH_SIZE=32          # Number of samples per batch.
 ACC_STEP=2           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
 LR=3e-5               # Learning rate for the model head.
+=======
+BATCH_SIZE=64          # Number of samples per batch.
+ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+LR=3e-5               # Learning rate for the model head.
+BACKBONE_LR=5e-7        # Learning rate for the model backbone.
+>>>>>>> Stashed changes
 NUM_EPOCHS=50        # Total number of training epochs.
 
 
@@ -36,7 +43,11 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_train.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
+<<<<<<< Updated upstream
     --modalities "image-pathology,tabular-clinical-9,genomics-genomics" \
+=======
+    --modalities "image-pathology,genomics-genomics" \
+>>>>>>> Stashed changes
     --fold 2
 
 

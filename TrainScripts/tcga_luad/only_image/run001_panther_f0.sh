@@ -9,12 +9,20 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
+<<<<<<< Updated upstream
 RUN_ID="tcga_luad_run001_seed=0_DFSNewSplit_stratified_time_event_512ps_n128"
+=======
+RUN_ID="tcga_luad_run001_seed=0_DFS_NewDFSSplit"
+>>>>>>> Stashed changes
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+<<<<<<< Updated upstream
 LR=3e-5               # Learning rate for the model head.
+=======
+LR=1e-5               # Learning rate for the model head.
+>>>>>>> Stashed changes
 BACKBONE_LR=5e-7        # Learning rate for the model backbone.
 NUM_EPOCHS=50        # Total number of training epochs.
 
