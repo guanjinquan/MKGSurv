@@ -693,10 +693,15 @@ class HGCNFusionModule(nn.Module):
 
         # Generate random mask (True = Masked)
         # (1, 1, M) -> broadcasts to (B, 1, M)
-        mae_bool_mask = generate_mae_mask(
-            self.max_modalities, self.mae_mask_ratio
-        ).to(_dev) 
-        
+        # 1) 训练时：用随机 mask 做 MAE
+        if self.training and self.mae_mask_ratio > 0:
+            mae_bool_mask = generate_mae_mask(
+                self.max_modalities, self.mae_mask_ratio
+            ).to(_dev)
+        else:
+            # 2) eval 时：不 mask，全部可见
+            mae_bool_mask = torch.zeros(1, 1, self.max_modalities, dtype=torch.bool, device=_dev)
+            
         # reconstructed_features: (B, M, D)
         reconstructed_features = self.mae(stacked_features, mae_bool_mask)
         
@@ -751,9 +756,17 @@ class HGCNFusionModule(nn.Module):
         final_loss_mask = loss_mask & patient_modality_mask
         
         # Calculate MSE loss against original pooled features (H)
-        reconstruction_loss_all = F.mse_loss(
-            reconstructed_features, stacked_features, reduction='none'
-        ) # (B, M, D)
+        reconstruction_loss = torch.tensor(0.0, device=_dev)
+
+        if self.training and self.mae_loss_weight > 0:
+            loss_mask = mae_bool_mask.squeeze().expand_as(patient_modality_mask)  # (B, M)
+            final_loss_mask = loss_mask & patient_modality_mask
+            reconstruction_loss_all = F.mse_loss(
+                reconstructed_features, stacked_features, reduction='none'
+            )  # (B, M, D)
+            if final_loss_mask.sum() > 0:
+                reconstruction_loss = reconstruction_loss_all[final_loss_mask].mean()
+
         
         if final_loss_mask.sum() > 0:
             # Select only the losses for tokens that were present AND masked
@@ -775,129 +788,10 @@ class HGCNFusionModule(nn.Module):
                 loss_ds += supervision_output_text['loss']
 
         # Apply loss weight
-        loss_dict['total_loss'] = reconstruction_loss * self.mae_loss_weight + loss_ds
+        loss_dict['total_loss'] = reconstruction_loss * self.mae_loss_weight + 5 * loss_ds
         
         return {
             "fused_embedding": fused_embedding, # (B, D)
             "loss_dict": loss_dict,
         }
     
-
-
-if __name__ == "__main__":
-    # --- 1. 定义测试参数 ---
-    B = 4      # 批处理大小 (Batch size)
-    D = 64     # 嵌入维度 (Embedding dimension)
-    M = 3      # 最大模态数 (Max modalities)
-    N_list = [10, 20, 5] # 每个模态的节点数 (Nodes per modality)
-    
-    _dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"--- 正在设备上运行 HGCN_FUSION 测试: {_dev} ---")
-    print(f"参数: B={B}, D={D}, M={M}, N_list={N_list}")
-
-    # --- 2. 实例化模型 ---
-    model = HGCN_FUSION(
-        embed_dim=D,
-        max_modalities=M,
-        mae_encoder_depth=2,
-        mae_decoder_depth=1,
-        mae_attn_heads=4,
-        mae_mask_ratio=0.5,
-        dropout=0.1
-    ).to(_dev)
-    
-    model.train() # 设置为训练模式以激活 dropout 等
-
-    # --- 3. 创建虚拟输入数据 ---
-    
-    # --- 测试用例 1: 提供所有模态 (带有填充/缺失) ---
-    print("\n--- 测试用例 1: 提供所有模态 (带有填充/缺失) ---")
-    
-    embeddings = []
-    masks = []
-
-    # 模态 0: 所有患者都拥有所有节点
-    emb0 = torch.randn(B, N_list[0], D).to(_dev)
-    mask0 = torch.ones(B, N_list[0], 1).to(_dev)
-    embeddings.append(emb0)
-    masks.append(mask0)
-
-    # 模态 1: 所有患者都存在, 但最后5个节点是填充
-    emb1 = torch.randn(B, N_list[1], D).to(_dev)
-    mask1 = torch.ones(B, N_list[1], 1).to(_dev)
-    mask1[:, -5:, :] = 0 # 将最后5个节点设置为填充
-    emb1 = emb1 * mask1 # 将填充嵌入置零
-    embeddings.append(emb1)
-    masks.append(mask1)
-
-    # 模态 2: 患者 1 和 3 完全缺失此模态
-    emb2 = torch.randn(B, N_list[2], D).to(_dev)
-    mask2 = torch.ones(B, N_list[2], 1).to(_dev)
-    mask2[1, :, :] = 0 # 患者 1 没有节点
-    mask2[3, :, :] = 0 # 患者 3 没有节点
-    emb2 = emb2 * mask2 # 置零
-    embeddings.append(emb2)
-    masks.append(mask2)
-
-    try:
-        # --- 4. 前向传播 ---
-        outputs = model(embeddings, masks)
-        fused_emb = outputs["fused_embedding"]
-        loss_dict = outputs["loss_dict"]
-
-        # --- 5. 打印结果 ---
-        print(f"输入形状 (emb, mask):")
-        for i in range(M):
-            print(f"  模态 {i}: {embeddings[i].shape}, {masks[i].shape}")
-        
-        print(f"\n输出 融合嵌入 形状: {fused_emb.shape}")
-        print(f"预期形状: {(B, D)}")
-        assert fused_emb.shape == (B, D)
-        
-        print(f"输出 损失字典: {loss_dict}")
-        assert 'total_loss' in loss_dict
-        assert loss_dict['total_loss'].item() >= 0, f"loss = {loss_dict['total_loss'].item()}" # 损失应为非负
-        
-        # 测试反向传播
-        loss_dict['total_loss'].backward()
-        print("反向传播成功。")
-
-    except Exception as e:
-        print(f"测试用例 1 失败: {e}")
-        import traceback
-        traceback.print_exc()
-
-    # --- 测试用例 2: 模态 1 完全为 None ---
-    print("\n--- 测试用例 2: 模态 1 为 None ---")
-    
-    model.zero_grad() # 清除之前的梯度
-
-    # 使用之前的数据, 但将模态 1 设置为 None
-    embeddings_miss = [emb0, None, emb2]
-    masks_miss = [mask0, None, mask2]
-
-    try:
-        # --- 4. 前向传播 ---
-        outputs_miss = model(embeddings_miss, masks_miss)
-        fused_emb_miss = outputs_miss["fused_embedding"]
-        loss_dict_miss = outputs_miss["loss_dict"]
-
-        # --- 5. 打印结果 ---
-        print(f"输入形状 (emb, mask):")
-        print(f"  模态 0: {embeddings_miss[0].shape}, {masks_miss[0].shape}")
-        print(f"  模态 1: None, None")
-        print(f"  模态 2: {embeddings_miss[2].shape}, {masks_miss[2].shape}")
-        
-        print(f"\n输出 融合嵌入 形状: {fused_emb_miss.shape}")
-        print(f"预期形状: {(B, D)}")
-        assert fused_emb_miss.shape == (B, D)
-        
-        print(f"输出 损失字典: {loss_dict_miss}")
-        assert 'total_loss' in loss_dict_miss
-        
-        print("测试用例 2 成功。")
-
-    except Exception as e:
-        print(f"测试用例 2 失败: {e}")
-        import traceback
-        traceback.print_exc()

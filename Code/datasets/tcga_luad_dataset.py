@@ -1,7 +1,8 @@
 import os
 import json
 from typing import Dict, Any, List, Tuple
-
+import sys
+sys.path.append("/home/Guanjq/NewWork/MedAlignFusion/Code")
 import h5py
 import numpy as np
 import pandas as pd
@@ -10,21 +11,30 @@ from torch.utils.data import Dataset, DataLoader
 import random
 import copy
 import joblib # 导入 joblib
+from sklearn.cluster import KMeans # <-- 新增导入
+from datasets.dataset_base import MultiModalDataset
+from modules.common_modules.prototypes import cluster
 
 
 
-try:
-    from torch_geometric.data import Data
-except ImportError:
-    print("警告: 无法导入 'torch_geometric.data.Data'。")
-    print("请确保已安装 torch_geometric。")
-    # 定义一个占位符，以防万一
-    class Data:
-        pass
+class TCGA_LUAD_Dataset(MultiModalDataset):
 
+    TREATMENT_OPTIONS = None
 
+    PRE_OP_MODALITIES = [
+        "tabular-clinical-9", 
+        "genomics-genomics",
+        "image-pathology", 
+    ]
 
-class TCGA_LUAD_Dataset(Dataset):
+    POST_OP_MODALITIES = [
+        "text-pathology", 
+        "text-treatment",
+        "tabular-treatment-8", 
+    ]
+
+    VALID_MODALITIES = PRE_OP_MODALITIES + POST_OP_MODALITIES
+
 
     def _read_pickle(self, path: str) -> Any:
         """
@@ -44,6 +54,38 @@ class TCGA_LUAD_Dataset(Dataset):
             # --- 在 __init__ 中重新引发错误 ---
             raise
 
+    def _read_h5_features(self, pid: str):
+        """
+        Reads image features from an .h5 file for a specific patient ID.
+        """
+        # 1. Get the file path from the dictionary created in __init__
+        file_path = self.pid_to_image_feat.get(pid)
+        
+        if file_path is None:
+            print(f"Warning: No H5 file found for PID: {pid}. Returning zeros or raising error.")
+            # Option A: Raise error (Recommended if data integrity is strict)
+            raise FileNotFoundError(f"Image feature file not found for patient {pid}")
+            # Option B: Return empty tensor (Only if you have a strategy to handle missing modalities)
+            # return torch.zeros((1, 1024)) 
+
+        try:
+            # 2. Open the H5 file
+            with h5py.File(file_path, 'r') as f:
+                # Check if the key exists (it's usually 'features', 'feats', or 'coords')
+                if 'features' not in f:
+                    raise KeyError(f"Key 'features' not found in {file_path}. Available keys: {list(f.keys())}")
+                
+                # 3. Load data into memory
+                # [:] copies the data from disk to numpy array
+                features = f['features'][:] 
+                
+            # 4. Convert to PyTorch Tensor
+            return torch.from_numpy(features).float()
+
+        except Exception as e:
+            print(f"Error reading H5 file for {pid} at {file_path}: {e}")
+            raise e
+
     def __init__(self, mode: str = "train", modalities: str = "all", fold: int = None):
         """
         Initializes the dataset.
@@ -60,93 +102,46 @@ class TCGA_LUAD_Dataset(Dataset):
         random.seed(42)
         assert fold is not None, f"Fold ID must be specified."
         self.mode = mode
+        self.fold = fold
+
         """
         Data(x_img=[633, 1024], x_rna=[5, 1024], x_cli=[11, 1024],  data_type=[3], edge_index_image=[2, 4606], edge_index_rna=[2, 20], edge_index_cli=[2, 110])
         如何访问 (示例): data.x_img (访问图像特征)
-                          data.edge_index_rna (访问RNA边)
-                          data.sur_type (访问生存类型)
+                              data.edge_index_rna (访问RNA边)
+                              data.sur_type (访问生存类型)
         """
-        # !!! 注意：这里的路径是基于您提供的示例的相对路径
-        # !!! 您可能需要将其修改为绝对路径或正确的相对路径
         self.dataset_dir = os.path.join(os.getcwd(), "../Data/TCGA-LUAD") 
         print(f"Warning: Using dataset directory: {self.dataset_dir}")
         print("Please ensure this path is correct or modify as needed.")
 
-        self.data_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_data.pkl")) # DICT ID:torch_geometric.data.data.Data, 
+        # Load Gene Features
+        gene_pkl_file = os.path.join(self.dataset_dir, "processed", "hallmarks_tokens_pid_map.pkl")
+        self.gene_dict = self._read_pickle(gene_pkl_file)  # PID -> Tokens
 
         # 加载 5 折交叉验证数据
         # [fold] 会选择是第 0, 1, 2, 3, 还是 4 折
-        split_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_split.pkl"))[fold]
+        split_file = os.path.join(self.dataset_dir, "processed", "luad_patients_5fold.json") 
+        with open(split_file, 'r') as f:
+            self.patient_ids = json.load(f)['folds'][fold][mode]
 
-        # Target Patient List
-        # 根据之前的分析: 0=train, 1=valid, 2=test
-        split_id = 0 if mode == 'train' else (1 if mode == 'valid' else 2)
-        self.patient_ids = split_pickle[split_id].tolist()
+        # Load Image Features
+        self.image_feat_path = os.path.join(self.dataset_dir, "h5_files")
+        self.pid_to_image_feat = {}
+        for file in os.listdir(self.image_feat_path):
+            if file.endswith(".h5"):
+                try:
+                    patient_id = [pid for pid in self.patient_ids if pid in file][0]
+                    self.pid_to_image_feat[patient_id] = os.path.join(self.image_feat_path, file)
+                except Exception as e:
+                    continue  # 训练集/验证集/测试集
 
         # --- Parse modalities ---
-        self.modalities = self._parse_modalities(modalities)
+        self.modalities = self.parse_modalities(modalities)
         print(f"Dataset will be initialized for modalities: {self.modalities}")
 
         # --- Load and preprocess all data sources ---
         self._load_data()
         print(f"Dataset for mode '{self.mode}' initialized. Found {len(self.patient_ids)} patients.")
-
-    def _get_survival_bins(self):
-        """
-        Returns a list of all labels (time bins) in the dataset.
-        This is used by the SurvivalBalancedBatchSampler.
-        """
-        self.observed_years = 20 * 365.0
-        self.num_time_bins = 20
-        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
-
-        labels_y = []
-        for patient_id in self.patient_ids:
-            try:
-                survival_info = self.patient_labels[patient_id]
-                time_days = float(survival_info['DFS_time'])  
-
-                event_time = min(time_days, self.observed_years)
-                time_bin = np.digitize(event_time, self.time_bins) - 1
-                
-                # 确保索引在 [0, num_bins-1]
-                time_bin = max(0, min(time_bin, self.num_time_bins - 1))
-                
-                labels_y.append(int(time_bin))
-
-            except Exception as e:
-                print(f"Error processing label for {patient_id}: {e}. Assigning time_bin = 0 (default).")
-                labels_y.append(0) # 附加一个默认 bin (0)
-                
-        return labels_y
-
-    def _parse_modalities(self, modalities_str: str) -> List[str]:
-        """Parses the modalities string into a list of valid modality keys."""
-
-        valid_modalities = {
-            "image-pathology", 
-            "text-pathology", 
-            "text-treatment",
-            "tabular-clinical-29", 
-            "tabular-treatment-8", 
-            "genomics-genomics",
-        }
-
-        if modalities_str == "all":
-            # 返回所有有效的模态
-            return sorted(list(valid_modalities))
-        
-        # 解析逗号分隔的字符串
-        requested_modalities = modalities_str.split(',')
-        parsed_list = []
-        for mod in requested_modalities:
-            mod = mod.strip() # 清理空格
-            if mod in valid_modalities:
-                parsed_list.append(mod)
-            else:
-                raise ValueError(f"Warning: Modality '{mod}' not recognized and will be skipped.")
-        
-        return parsed_list
 
     def _load_data(self):
         # 定义 processed 目录的路径
@@ -159,7 +154,9 @@ class TCGA_LUAD_Dataset(Dataset):
 
         reports_path = os.path.join(processed_dir, "tcga_luad_reports.csv")
         labels_path = os.path.join(processed_dir, "luad_patient_labels.csv")  
-        
+
+
+        # Read CSV files   
         try:
             # --- 更新：加载时明确指定 dtype=str，以防止 pandas 自动转换 ---
             # 这样可以确保 '1.0' 和 '1' 都被视为字符串，直到 _process_row 处理
@@ -167,9 +164,9 @@ class TCGA_LUAD_Dataset(Dataset):
             print(f"Loaded clinical data with shape: {self.clinical_df.shape}")
             self.treatment_df = pd.read_csv(treatment_path, dtype=str)
             print(f"Loaded treatment data with shape: {self.treatment_df.shape}")
-            self.reports_df = pd.read_csv(reports_path, dtype=str)  
+            self.reports_df = pd.read_csv(reports_path, dtype=str) 
             print(f"Loaded reports data with shape: {self.reports_df.shape}")
-            self.labels_df = pd.read_csv(labels_path, dtype=str)  
+            self.labels_df = pd.read_csv(labels_path, dtype=str) 
             print(f"Loaded reports data with shape: {self.labels_df.shape}")
             # -----------------------------------------------------------
         except FileNotFoundError as e:
@@ -205,7 +202,6 @@ class TCGA_LUAD_Dataset(Dataset):
                     # 否则，存储为浮点数
                     tabular_data.append(float(numeric_val))
             return tabular_data
-        # --- 函数更新完毕 ---
 
         # --- 处理 Clinical (临床) 数据 ---
         print("Processing clinical_df...")
@@ -230,8 +226,6 @@ class TCGA_LUAD_Dataset(Dataset):
             # 提取表格数据
             self.treatment_tabular_dict[patient_key] = _process_row(row, tabular_cols_treat)
 
-
-
         # --- 处理 Reports (报告) 数据 ---
         print("Processing reports_df...")
         self.report_pathology = {}
@@ -245,10 +239,10 @@ class TCGA_LUAD_Dataset(Dataset):
             
             if full_text:
                 self.report_pathology[patient_key] = full_text
-            else:
-                print(f"No found report for patient {patient_key}")
 
         # --- 处理标签 ---
+        # Load treatments.treatment_type
+        self.TREATMENT_OPTIONS = []
         self.patient_labels = {}
         for idx, row in self.labels_df.iterrows():
             patient_key = row['cases.submitter_id']
@@ -256,8 +250,13 @@ class TCGA_LUAD_Dataset(Dataset):
             self.patient_labels[patient_key] = {
                 "DFS_time": float(row["DFS_time"]),
                 "DFS_event": float(row["DFS_event"]),
-                "Treatment_type": str(row['treatments.treatment_type'])
+                "Treatment_type": str(row['treatments.treatment_type']),
+                "Treatment_type_id": str(row["5_classes"])
             }
+            self.TREATMENT_OPTIONS.append(str(row['treatments.treatment_type']))
+
+        self.TREATMENT_OPTIONS = list(set(self.TREATMENT_OPTIONS))
+        print("Load self.TREATMENT_OPTIONS length = ", len(self.TREATMENT_OPTIONS))
 
         print("Finished processing all CSV files.")
 
@@ -278,38 +277,71 @@ class TCGA_LUAD_Dataset(Dataset):
         # --- 时间单位是 *days* ---
         try:
             survival_info = self.patient_labels[patient_id]
-            event = int(survival_info['DFS_event'])         # 0 = 审查 (censored), 1 = 事件 (death)
+            event = int(survival_info['DFS_event'])      # 0 = 审查 (censored), 1 = 事件 (death)
             time_days = float(survival_info['DFS_time'])    # 生存时间（days）
             treatment = str(survival_info['Treatment_type'])
+            treatment_type_id = str(survival_info['Treatment_type_id'])
         except Exception as e:
             print(f"Error: {e}")
             return self.__getitem__((idx + 1) % len(self))
         
         output_dict['labels'] = {
             'label_time': time_days,
-            'label_event': event  # 1 means event happen!!, 0 means censored
+            'label_event': event,      # 1 means event happen!!, 0 means censored
+            'treatment_type': treatment,
+            'treatment_type_onehot': [1 if str(i) in treatment_type_id else 0 for i in range(5)],
         }
 
-        # 3. 获取图数据 (来自 luad_data.pkl)
-        try:
-            # 这应该是一个 torch_geometric.data.Data 对象
-            graph_data = copy.deepcopy(self.data_pickle[patient_id])
-            output_dict["graph_data"] = graph_data
-        except KeyError:
-            print(f"Error: Patient ID {patient_id} not found in data_pickle (luad_data.pkl).")
-            # 这是一个关键错误，这个 patient_id 没有图数据
-            return self.__getitem__((idx + 1) % len(self))
+        # # 3. 获取图数据 (来自 luad_data.pkl)
+        # try:
+        #     # 这应该是一个 torch_geometric.data.Data 对象
+        #     graph_data = self.data_pickle[patient_id]
+        # except KeyError:
+        #     print(f"Error: Patient ID {patient_id} not found in data_pickle (luad_data.pkl).")
+        #     # 这是一个关键错误，这个 patient_id 没有图数据
+        #     return self.__getitem__((idx + 1) % len(self))
 
         # 4. 根据 self.modalities 动态加载其他数据
         # --- (PyG) 图像特征 ---
         if "image-pathology" in self.modalities:
-            # 图像特征已经包含在 graph_data.x_img 中
-            output_dict["image-pathology"] = graph_data.x_img
+    
+            # 1. 默认使用原始数据 (适用于 'eval', 'test' 模式)
+            # x_img_to_output = graph_data.x_img
+            x_img_to_output = self._read_h5_features(patient_id)
+            
+            # 32. 仅在 'train' 模式下应用数据增强
+            if self.mode == 'train':
+                x_img_aug = x_img_to_output
+                
+                # --- 增强 1: 随机 Shuffle ---
+                # 50% 的概率打乱 token 顺序
+                if random.random() < 0.5:
+                    idxs = torch.randperm(x_img_aug.size(0))
+                    x_img_aug = x_img_aug[idxs]
+
+                # --- 增强 2: 随机 Mask ---
+                if random.random() < 0.5:
+                    num_tokens = x_img_aug.size(0)
+                    num_to_mask = int(num_tokens * 0.2)
+
+                    if num_to_mask > 0:
+                        # 随机选择要 mask 的 token 索引
+                        mask_indices = torch.randperm(num_tokens)[:num_to_mask].to(x_img_aug.device)
+                        x_img_aug[mask_indices] = 0.0
+                
+                # 训练模式下, 输出增强后的 tensor
+                x_img_to_output = x_img_aug
+                
+            # 3. 将最终的 tensor (原始的 或 增强的) 放入输出字典
+            output_dict["image-pathology"] = x_img_to_output
 
         # --- (PyG) 基因组特征 ---
         if "genomics-genomics" in self.modalities:
             # 基因组特征已经包含在 graph_data.x_rna 中
-            output_dict["genomics-genomics"] = graph_data.x_rna
+            if patient_id in self.gene_dict:
+                output_dict["genomics-genomics"] = self.gene_dict[patient_id]
+            else:
+                print(f"Not found genomics data for {patient_id}")
 
         # --- 病理报告文本 ---
         if "text-pathology" in self.modalities:
@@ -321,9 +353,9 @@ class TCGA_LUAD_Dataset(Dataset):
             output_dict["text-treatment"] = treatment
 
         # --- 各种表格数据 ---
-        if "tabular-clinical-29" in self.modalities:
+        if "tabular-clinical-9" in self.modalities:
             data = self.clinical_tabular_dict.get(patient_id, None)
-            output_dict["tabular-clinical-29"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
+            output_dict["tabular-clinical-9"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
 
         if "tabular-treatment-8" in self.modalities:
             data = self.treatment_tabular_dict.get(patient_id, None)
@@ -363,9 +395,9 @@ class TCGA_LUAD_Dataset(Dataset):
         def aug_text(text):
             # random shuffle after split '.' or '+'
             for tag in ['.', '+']:
-                text = text.split(tag)
-                random.shuffle(text)
-                text = tag.join(text)
+                text_parts = text.split(tag)
+                random.shuffle(text_parts)
+                text = tag.join(text_parts)
             return text.strip()
 
         for key in treatment_keys:
@@ -387,8 +419,127 @@ class TCGA_LUAD_Dataset(Dataset):
                         output_dict[key] = aug_tabular(output_dict[key])
 
         return output_dict
+    
+    def get_survival_bins(self):
+        """
+        Returns a list of all labels (time bins) in the dataset.
+        This is used by the SurvivalBalancedBatchSampler.
+        """
+        self.num_time_bins = 4  # bin设置得小一点
+        self.observed_years = 20 * 365.0
+        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
 
+        labels_y = []
+        for patient_id in self.patient_ids:
+            survival_info = self.patient_labels[patient_id]
+            time_days = float(survival_info['DFS_time']) 
+            event_status = int(survival_info['DFS_event'])  # 未使用
 
+            event_time = min(time_days, self.observed_years)
+            time_bin = np.digitize(event_time, self.time_bins) - 1
+            
+            # 确保索引在 [0, num_bins-1]
+            time_bin = max(0, min(time_bin, self.num_time_bins - 1))
+            
+            labels_y.append((int(time_bin), event_status))
+
+        return labels_y
+
+    def parse_modalities(self, modalities_str: str) -> List[str]:
+        """Parses the modalities string into a list of valid modality keys."""
+
+        if modalities_str == "all":
+            # 返回所有有效的模态
+            return sorted(list(self.VALID_MODALITIES))
+        
+        # 解析逗号分隔的字符串
+        requested_modalities = modalities_str.split(',')
+        parsed_list = []
+        for mod in requested_modalities:
+            mod = mod.strip() # 清理空格
+            if mod in self.VALID_MODALITIES:
+                parsed_list.append(mod)
+            else:
+                raise ValueError(f"Warning: Modality '{mod}' not recognized and will be skipped.")
+        
+        return parsed_list
+
+    def get_active_modalities(self):
+        return self.modalities
+    
+    def get_training_image_embeddings_prototypes(self, num_prototypes=64):
+        cache_dir = os.path.join(os.getcwd(), "../Cache")
+        cache_file = os.path.join(cache_dir, f"TCGA_LUAD_Fold={self.fold}_Prototypes={num_prototypes}.npy")
+        
+        # 检查缓存是否存在
+        if os.path.exists(cache_file):
+            print(f"Loading cached prototypes from: {cache_file}")
+            try:
+                prototypes_np = np.load(cache_file)
+                # 验证加载的原型数量是否匹配
+                if prototypes_np.shape[0] == num_prototypes:
+                    print("Cache hit. Returning cached prototypes.")
+                    return prototypes_np # 返回 NumPy 数组
+                else:
+                    print(f"Cache mismatch. Expected {num_prototypes} prototypes, found {prototypes_np.shape[0]}. Recalculating...")
+            except Exception as e:
+                print(f"Error loading cache file {cache_file}: {e}. Recalculating...")
+
+        all_embeddings = []
+        print(f"Aggregating image embeddings from {len(self)} patients in '{self.mode}' split...")
+
+        for idx in range(len(self)):
+            patient_id = self.patient_ids[idx]
+            x_image = self._read_h5_features(patient_id)
+            all_embeddings.append(x_image.cpu().numpy())
+
+        if not all_embeddings:
+            print("Error: No image embeddings found to cluster. Returning None.")
+            return None
+
+        # 将所有找到的嵌入连接成一个大的 NumPy 数组
+        try:
+            all_embeddings_np = np.concatenate(all_embeddings, axis=0)
+        except ValueError as e:
+            print(f"Error concatenating embeddings: {e}. Check if all x_img have the same feature dimension.")
+            return None
+
+        print(f"Total image patches (embeddings) found: {all_embeddings_np.shape[0]}")
+
+        # 处理边角情况: 嵌入数量少于要求的原型数量
+        if all_embeddings_np.shape[0] < num_prototypes:
+            print(f"Warning: Found only {all_embeddings_np.shape[0]} embeddings, which is less than num_prototypes ({num_prototypes}).")
+            print("Returning the unique embeddings themselves as prototypes.")
+            # 使用 np.unique 确保返回的至少是唯一的嵌入
+            unique_embeddings = np.unique(all_embeddings_np, axis=0)
+            print("This edge-case result will not be cached.")
+            return unique_embeddings # <-- 返回 NumPy 数组
+
+        # 将 NumPy 数组转换为 PyTorch Tensor (cluster 函数期望 Tensor)
+        all_embeddings_tensor = torch.from_numpy(all_embeddings_np).float()
+
+        try:
+            # 调用导入的 cluster 函数
+            prototypes_np = cluster(
+                patches=all_embeddings_tensor,
+                n_proto=num_prototypes
+            )
+            
+            print("Prototypes Shape : ", prototypes_np.shape)
+
+            try:
+                os.makedirs(cache_dir, exist_ok=True)
+                np.save(cache_file, prototypes_np)
+                print(f"Saved prototypes to cache: {cache_file}")
+            except Exception as e:
+                print(f"Warning: Could not save cache file to {cache_file}: {e}")
+
+            print("Clustering complete.")
+            return prototypes_np   # <-- 返回 NumPy 数组
+        
+        except Exception as e:
+            print(f"Error during clustering: {e}. Returning None.")
+            return None
 
 
 if __name__ == "__main__":
@@ -421,12 +572,15 @@ if __name__ == "__main__":
         print(f"Patient ID: {data_item['pid']}")
         
         print("\nLabels:")
-        print(f"  Discrete (bin): {data_item['labels']['label_Y']}")
-        print(f"  Censorship (1=censored, 0=event): {data_item['labels']['label_c']}")
-        print(f"  Continuous (months): {data_item['original_labels']['label_Y']}")
+        # --- 已修复: 使用 __getitem__ 中定义的正确键 ---
+        print(f"  Continuous Time (days): {data_item['labels']['label_time']}")
+        print(f"  Event (1=event, 0=censored): {data_item['labels']['label_event']}")
+        print(f"  Treatment Type: {data_item['labels']['treatment_type']}")
+        print(f"  Treatment One-Hot: {data_item['labels']['treatment_type_onehot']}")
+        # ------------------------------------------------
 
-        print("\nGraph Data:")
-        print(f"  {data_item['graph_data']}")
+        # print("\nGraph Data:")
+        # print(f"  {data_item['graph_data']}")
 
         print("\nModalities:")
         for mod in dataset.modalities:
@@ -441,16 +595,27 @@ if __name__ == "__main__":
                 else:
                     print(f"  [{mod}]: {type(data)}")
             else:
-                 print(f"  [{mod}]: Not loaded (was not in data_item dict)")
+                print(f"  [{mod}]: Not loaded (was not in data_item dict)")
 
         # 检查一个表格模态的示例值
-        if "tabular-clinical-56" in data_item and data_item["tabular-clinical-56"] is not None:
-            print("\nExample tabular-clinical-56 data (first 5 values):")
-            print(f"  {data_item['tabular-clinical-56'][:5]}")
+        # --- 已修复: 使用 'tabular-clinical-9' ---
+        if "tabular-clinical-9" in data_item and data_item["tabular-clinical-9"] is not None:
+            print("\nExample tabular-clinical-9 data (first 5 values):")
+            print(f"  {data_item['tabular-clinical-9'][:5]}")
             # 检查是否有 -1.0
-            if -1.0 in data_item["tabular-clinical-56"]:
+            if -1.0 in data_item["tabular-clinical-9"]:
                 print("  -> Found -1.0 (imputed value) in the data.")
             else:
                 print("  -> No -1.0 (imputed value) found in this sample.")
+        # ----------------------------------------
+        
+        # --- 新增: 测试原型函数 ---
+        print("\n--- Testing prototype generation ---")
+        prototypes = dataset.get_training_image_embeddings_prototypes(num_prototypes=16)
+        if prototypes is not None:
+            print(f"Successfully generated prototypes with shape: {prototypes.shape}")
+        else:
+            print("Prototype generation failed or returned None.")
+        # ----------------------------
 
     print("\n--- Test Complete ---")

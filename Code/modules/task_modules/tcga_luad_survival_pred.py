@@ -1,5 +1,7 @@
 import os
 import sys
+
+import torch.utils
 # 假设这个文件在 'modules/models' 目录下，调整路径以导入同级 'common_modules'
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 import torch
@@ -10,138 +12,55 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
-from modules.common_modules.surv_loss import CustomCoxPHLoss
-from training_utils.metrics import survival_metrics
-
-
-# ==========================================================================================
-# TransMIL Components (Copied from HANCOCK/OSCC Model)
-# ==========================================================================================
-class TransLayer(nn.Module):
-    def __init__(self, norm_layer=nn.LayerNorm, dim=512):
-        super().__init__()
-        self.norm = norm_layer(dim)
-        self.attn = NystromAttention(
-            dim = dim,
-            dim_head = dim//8,
-            heads = 8,
-            num_landmarks = dim//2,
-            pinv_iterations = 6,
-            residual = True,
-            dropout=0.1
-        )
-
-    def forward(self, x):
-        x = x + self.attn(self.norm(x))
-        return x
-
-class PPEG(nn.Module):
-    def __init__(self, num_aggregated_tokens=128, dim=512):
-        super(PPEG, self).__init__()
-        self.num_aggregated_tokens = num_aggregated_tokens
-        self.proj = nn.Conv2d(dim, dim, 7, 1, 7//2, groups=dim)
-        self.proj1 = nn.Conv2d(dim, dim, 5, 1, 5//2, groups=dim)
-        self.proj2 = nn.Conv2d(dim, dim, 3, 1, 3//2, groups=dim)
-
-    def forward(self, x, H, W):
-        B, _, C = x.shape
-        cls_token, feat_token = x[:, :self.num_aggregated_tokens], x[:, self.num_aggregated_tokens:]
-        cnn_feat = feat_token.transpose(1, 2).view(B, C, H, W)
-        x = self.proj(cnn_feat) + cnn_feat + self.proj1(cnn_feat) + self.proj2(cnn_feat)
-        x = x.flatten(2).transpose(1, 2)
-        x = torch.cat((cls_token, x), dim=1)
-        return x
-
-
-class AggregatingTransMIL(nn.Module):
-    """
-    一个通用的 MIL 聚合器，将 (B, N, input_dim) 聚合成 (B, num_aggregated_tokens, embed_dim)
-    """
-    def __init__(self, input_dim=1024, embed_dim=512, num_aggregated_tokens: int = 16):
-        super(AggregatingTransMIL, self).__init__()
-        self.num_aggregated_tokens = num_aggregated_tokens
-        self.pos_layer = PPEG(num_aggregated_tokens=num_aggregated_tokens, dim=embed_dim) # 确保 PPEG 知道有多少 token
-        self._fc1 = nn.Sequential(nn.Linear(input_dim, embed_dim), nn.ReLU())
-        self.cls_token = nn.Parameter(torch.randn(1, self.num_aggregated_tokens, embed_dim)) # K 个 tokens
-        self.layer1 = TransLayer(dim=embed_dim)
-        self.layer2 = TransLayer(dim=embed_dim)
-        self.norm = nn.LayerNorm(embed_dim)
-
-    def forward(self, h):
-        # 检查输入
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL Input (h)")
-
-        h = self._fc1(h)  # [B, n, embed_dim]
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL After _fc1")
-        
-        #---->pad
-        H = h.shape[1]
-        _H, _W = int(np.ceil(np.sqrt(H))), int(np.ceil(np.sqrt(H)))
-        add_length = _H * _W - H
-        if add_length > 0:
-            h = torch.cat([h, h[:, :add_length, :]], dim=1)
-
-        #---->cls_token
-        B = h.shape[0]
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        h = torch.cat((cls_tokens, h), dim=1)
-
-        h = self.layer1(h) #---->Translayer x1
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL After layer1")
-
-        h = self.pos_layer(h, _H, _W)  #---->PPEG
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL After pos_layer")
-        
-        h = self.layer2(h)  #---->Translayer x2
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL After layer2")
-
-        h = self.norm(h)  #---->Return K aggregated token embeddings
-        # TCGA_LUAD_SurvivalPred.check_nan_inf(h, "AggregatingTransMIL After norm (Output)")
-        
-        return h[:, 0:self.num_aggregated_tokens, :]
-
-
+from modules.common_modules.surv_loss import CustomCoxPHLoss, mean_by_event
+from training_utils.metrics import survival_metrics, multiple_classification_metrics
+from modules.common_modules import GetImageAggregater
+from modules.common_modules.init_weights import init_kaiming_norm
 
 
 # ==========================================================================================
 # Main Encoder-Decoder Model for TCGA-LUAD Dataset
 # ==========================================================================================
 class TCGA_LUAD_SurvivalPred(nn.Module):
-    
-    METRICS_FN = staticmethod(survival_metrics)
 
     def __init__(
         self,
-        modalities: List[str],  # 来自 TCGA_LUAD_Dataset 的模态列表
-        # tabular_dims: Dict[str, int] = None # <-- 不再需要
+        args,
+        decode_task: str,
+        dataset: torch.utils.data.Dataset
     ):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
         self.embed_dim = 512
 
         # --- Modality Setup ---
-        self.active_modalities = modalities
+        self.active_modalities = dataset.get_active_modalities()
         self.max_modalities_num = len(self.active_modalities)
         print(f"Model initialized for modalities: {self.active_modalities}")
 
         # ----- 1. (Graph) Image Branch (image-pathology) -----
         if 'image-pathology' in self.active_modalities:
             print("Initializing Image MIL (AggregatingTransMIL)")
-            self.image_mil = AggregatingTransMIL(
-                input_dim=1024,
-                embed_dim=self.embed_dim,
-                num_aggregated_tokens=16 # 16 tokens for image
+            self.num_image_tokens = 128
+
+            self.image_mil = GetImageAggregater(
+                args.image_aggregater,
+                InputDim=1024,
+                OutputDim=self.embed_dim,
+                OutputTokenNum=self.num_image_tokens,
+                PrototypesData=dataset.get_training_image_embeddings_prototypes(self.num_image_tokens)
             )
-            self.num_image_tokens = self.image_mil.num_aggregated_tokens
+            init_kaiming_norm(self.image_mil)
 
         # ----- 2. (Graph) Genomics Branch (genomics-genomics) -----
         # --- MODIFIED: Per user request, use simple Linear for N=5 tokens, not MIL ---
         if 'genomics-genomics' in self.active_modalities:
             print("Initializing Genomics Encoder (Linear layer for N=5 tokens)")
             self.genomics_encoder = nn.Sequential(
-                        nn.LayerNorm(1024),
-                        nn.Linear(1024, self.embed_dim)
-                    )
+                nn.LayerNorm(512),
+                nn.Linear(512, self.embed_dim)
+            )
+            init_kaiming_norm(self.genomics_encoder)
 
         # ----- 3. Text Branch (text-pathology) -----
         if any('text' in modal for modal in self.active_modalities):
@@ -151,6 +70,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             self.bert = AutoModel.from_pretrained(self.text_model_name)
             bert_hidden_size = self.bert.config.hidden_size
             self.bert_proj = nn.Linear(bert_hidden_size, self.embed_dim) if bert_hidden_size != self.embed_dim else nn.Identity()
+            init_kaiming_norm(self.bert_proj)
 
         # ----- 4. Tabular Branch (from CSVs) -----
         self.tabular_encoder = nn.ModuleDict()
@@ -164,14 +84,33 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                         nn.LayerNorm(in_dim),
                         nn.Linear(in_dim, self.embed_dim)
                     )
+                    init_kaiming_norm(self.tabular_encoder[mod_name])
                 except (ValueError, IndexError):
                     print(f"ERROR: Could not parse dimension from tabular modality name: '{mod_name}'")
                     print("Expected format: 'tabular-type-DIMENSION' (e.g., 'tabular-clinical-56')")
 
-
         # ----- Prediction Head (for Decode step) -----
-        self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
-        self.loss_fn = CustomCoxPHLoss(reduction='none')
+        self.decode_task = decode_task
+        if decode_task == 'surv_pred':
+            self.out_dim = 1
+            self.loss_fn = CustomCoxPHLoss(reduction='none')
+            self.METRICS_FN = survival_metrics
+        elif decode_task == 'treatment_pred':
+            self.out_dim = 5
+            self.loss_fn = nn.BCEWithLogitsLoss(reduction='none')
+            self.METRICS_FN = multiple_classification_metrics
+        else:
+            raise ValueError(f"Unsupport task = {decode_task}")
+
+        self.prediction_head = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim // 4),
+            nn.ReLU(),
+            nn.LayerNorm(self.embed_dim // 4),
+            nn.Dropout(0.3),
+
+            nn.Linear(self.embed_dim // 4, self.out_dim)
+        )
+        init_kaiming_norm(self.prediction_head)
 
     def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
         """Splits a list of token ids into chunks."""
@@ -270,28 +209,54 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         present_modalities = []
         batch_size = len(batch.get('labels', []))
 
-        # --- 1. (Graph) Image Branch ---
         if 'image-pathology' in self.active_modalities:
             wsi_tensors = batch['image-pathology'] # List[Optional[Tensor(N, D)]]
             valid_tensors = [t for t in wsi_tensors if t is not None]
             
             if valid_tensors:
+                # Find max patches
                 max_patches = max(t.shape[0] for t in valid_tensors)
-                padded_wsi, is_valid_wsi = [], []
+                # Get the embedding dimension from the first valid tensor
+                input_dim = valid_tensors[0].shape[1]
+                
+                padded_wsi, is_valid_wsi, patch_masks = [], [], []
+                device = self.device # Assuming 'device' is accessible via 'self'
                 
                 for tensor in wsi_tensors:
                     if tensor is not None:
-                        pad_len = max_patches - tensor.shape[0]
+                        num_patches = tensor.shape[0]
+                        pad_len = max_patches - num_patches
+                        
+                        # Pad the tensor data
                         padded = F.pad(tensor, (0, 0, 0, pad_len), 'constant', 0)
                         padded_wsi.append(padded.to(device))
                         is_valid_wsi.append(True)
+                        
+                        # Create a mask of 1s for real patches
+                        mask = torch.ones(num_patches, device=device)
+                        # Pad the mask with 0s for the padding
+                        mask_padded = F.pad(mask, (0, pad_len), 'constant', 0)
+                        patch_masks.append(mask_padded)    
                     else:
-                        padded_wsi.append(torch.zeros(max_patches, 1024, device=device)) # 1024 = input_dim
+                        # Append a zero tensor for the WSI
+                        padded_wsi.append(torch.zeros(max_patches, input_dim, device=device))
                         is_valid_wsi.append(False)
+            
+                        # Append a mask of all 0s for the absent WSI
+                        patch_masks.append(torch.zeros(max_patches, device=device))
 
                 wsi_batch = torch.stack(padded_wsi).to(device)
-                wsi_token_embeds = self.image_mil(wsi_batch) # (B, num_image_tokens, D)
-                wsi_mask = torch.tensor(is_valid_wsi, device=device).unsqueeze(1).expand(-1, self.num_image_tokens)
+                
+                # Stack the individual patch masks into a batch mask
+                # This 'mask' will have shape (B, max_patches)
+                mask = torch.stack(patch_masks).to(device)
+                
+                # Pass the calculated padding mask to the image_mil module
+                wsi_token_embeds = self.image_mil(wsi_batch, mask) # (B, p (TransMIL) or p (PANTHER), D)
+                
+                # This mask (wsi_mask) is for *after* MIL, to mask out entire
+                # absent slides, based on your original logic.
+                wsi_mask = torch.tensor(is_valid_wsi, device=device).unsqueeze(1).expand(-1, wsi_token_embeds.shape[1])
                 
                 all_embeddings.append(wsi_token_embeds)
                 all_masks.append(wsi_mask)
@@ -303,7 +268,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             
             max_nodes = max(tensor.shape[0] for tensor in rna_tensors if tensor is not None) if any(t is not None for t in rna_tensors) else 0
             
-            # [修改] 修复了当 rna_tensors 为空或全为 None 时的 max_nodes=0 错误
             if max_nodes == 0:
                 raise ValueError("Error genomics")
 
@@ -312,11 +276,11 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             
             assert len(rna_tensors) > 0, f"Must have rna_tensors"
             for tensor in rna_tensors:
-                if tensor is not None:
 
+                if tensor is not None:
                     n_nodes = tensor.shape[0]
-                    # 我们将截断/填充到 max_nodes
-                    if n_nodes > max_nodes:
+         
+                    if n_nodes >= max_nodes:
                         padded = tensor[:max_nodes].to(device)
                         mask = torch.ones(max_nodes, device=device).bool()
                     else:
@@ -333,9 +297,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                     rna_mask_list.append(torch.zeros(max_nodes, device=device).bool())
 
             rna_batch = torch.stack(padded_rna).to(device) # (B, N, 1024)
-            # [新增] 检查填充后的 Genomics batch
-            # self.check_nan_inf(rna_batch, "encode Genomics Padded Batch")
-
             rna_mask = torch.stack(rna_mask_list).to(device) # (B, N)
 
             # 应用 Linear Encoder: (B, n, 1024) -> (B, n, 512)
@@ -364,7 +325,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         # --- 4. Tabular Branch ---
         for mod_name in self.active_modalities:
-            if "tabular" in mod_name and mod_name in self.tabular_encoder:
+            if "tabular" in mod_name and mod_name in self.tabular_encoder and batch[mod_name]: 
                 
                 table_features = []
                 table_masks = []
@@ -390,9 +351,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
                 # 堆叠 (B, 1, D)
                 table_features_batch = torch.cat(table_features, dim=0)
-                # [新增] 检查 Tabular encoder 的输出
-                # self.check_nan_inf(table_features_batch, f"encode {mod_name} Encoder Output")
-                
+
                 table_masks_batch = torch.cat(table_masks, dim=0)
                 
                 all_embeddings.append(table_features_batch)
@@ -401,16 +360,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         # --- Define Alignment Pairs ---
         align_pairs = []
-        # (在此处定义您的模态对齐逻辑)
-        # e.g.,
-        # if "image-pathology" in present_modalities and "text-pathology" in present_modalities:
-        #     img_idx = present_modalities.index("image-pathology")
-        #     txt_idx = present_modalities.index("text-pathology")
-        #     align_pairs.append((img_idx, txt_idx))
-
-        # [新增] 最终检查所有 embedding
-        # for i, emb in enumerate(all_embeddings):
-        #     self.check_nan_inf(emb, f"encode Final all_embeddings[{i}] ({present_modalities[i]})")
 
         return {
             "embeddings": all_embeddings,
@@ -418,7 +367,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             "align_pairs": align_pairs
         }
 
-    def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    def _surv_decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
         Args:
             pooled_embeddings: (B, embed_dim)
@@ -428,8 +377,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         batch_size = pooled_embeddings.shape[0]
         device = pooled_embeddings.device
 
-        out_dim = self.prediction_head.out_features
-        logits = torch.zeros(batch_size, out_dim, device=device)
+        logits = torch.zeros(batch_size, self.out_dim, device=device)
         loss = torch.tensor(0.0, device=device)
         
         # 1. 创建患者掩码
@@ -459,7 +407,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
         loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c)
-        loss = loss_tensor_unreduced.mean()
+        loss = mean_by_event(loss_tensor_unreduced, valid_c)
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
         logits[patient_mask] = valid_logits
@@ -470,6 +418,61 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
 
+    def _treatment_decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            pooled_embeddings: (B, embed_dim)
+            pooled_mask: (B,)
+            batch: 包含 batch['labels'] = {'label_time': [y1, y2,...], 'label_event': [c1, c2,...]}
+        """
+        batch_size = pooled_embeddings.shape[0]
+        device = pooled_embeddings.device
+
+        logits = torch.zeros(batch_size, self.out_dim, device=device)
+        loss = torch.tensor(0.0, device=device)
+        
+        # 1. 创建患者掩码
+        patient_mask = pooled_mask.bool().to(device) if pooled_mask is not None else torch.ones(batch_size, dtype=torch.bool, device=device)
+
+        # 2. 如果没有有效患者，立即返回
+        if not patient_mask.any():
+            return {"logits": logits, "loss": loss}
+
+        # 3. 过滤有效的嵌入
+        valid_embeddings = pooled_embeddings[patient_mask]
+        
+        if valid_embeddings.shape[0] == 0:
+             print("Warning: decode valid_embeddings is empty.")
+             return {"logits": logits, "loss": loss}
+
+        # 4. batch['labels'] 是 {'treatment_type_onehot': [..]}
+        label_onehot_list = [batch['labels'][i]['treatment_type_onehot'] for i in range(batch_size)]
+        Y_full = torch.tensor(label_onehot_list, device=device, dtype=torch.float32)
+        valid_Y = Y_full[patient_mask]
+
+        # 5. 仅在有效子集上进行预测和损失计算
+        valid_logits = self.prediction_head(valid_embeddings)
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y)
+        loss = loss_tensor_unreduced.mean()
+
+        # 6. 将 logits 映射回原始 (B, out_dim) 张量
+        logits[patient_mask] = valid_logits
+
+        # 创建一个 (B,) 的 loss_tensor 以保持一致性 (可选)
+        full_loss_tensor = torch.zeros(batch_size, device=device)
+        full_loss_tensor[patient_mask] = loss_tensor_unreduced.mean(1) if loss_tensor_unreduced.dim() == 2 else loss_tensor_unreduced
+
+        return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
+
+    def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        
+        if self.decode_task == 'surv_pred':
+            return self._surv_decode(pooled_embeddings, pooled_mask, batch)
+        elif self.decode_task == 'treatment_pred':
+            return self._treatment_decode(pooled_embeddings, pooled_mask, batch)
+        else:
+            raise ValueError("Unsupport decode")
+        
     def get_backbone_params(self) -> List[nn.Parameter]:
         try:
             parms_in_clinical_bert = [p for p in self.bert.parameters()]
@@ -478,7 +481,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             # text-pathology (bert) 未被激活
             return []
     
-    def get_others_params(self) -> List[nn.Parameter]:
-        backbone_params = set(self.get_backbone_params())
-        parms_in_others = [p for p in self.parameters() if p not in backbone_params]
+    def get_params(self) -> List[nn.Parameter]:
+        backbone_params_ids = {id(p) for p in self.get_backbone_params()}
+        parms_in_others = [p for p in self.parameters() if id(p) not in backbone_params_ids]
         return parms_in_others

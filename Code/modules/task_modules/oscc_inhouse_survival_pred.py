@@ -25,8 +25,8 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
 from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
-from modules.common_modules.surv_loss import CustomCoxPHLoss
-from modules.training_utils.metrics import survival_metrics
+from modules.common_modules.surv_loss import CustomCoxPHLoss, mean_by_event
+from modules.training_utils.metrics import survival_metrics, multiple_classification_metrics
 
 import math
 from collections import deque
@@ -38,6 +38,7 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image
 from transformers import AutoTokenizer, AutoModel
+from modules.common_modules.init_weights import init_kaiming_norm
 
 
 
@@ -100,11 +101,11 @@ class OSCCSurvivalPred(nn.Module):
     - decode() accepts pooled embeddings (B, embed_dim) and labels to compute logits & loss.
     """
 
-    METRICS_FN = staticmethod(survival_metrics)
-
     def __init__(
         self,
-        modalities: List[str]  # list of modalities to use according to the dataset class
+        args,
+        decode_task: str,
+        dataset: torch.utils.data.Dataset
     ):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
@@ -112,8 +113,8 @@ class OSCCSurvivalPred(nn.Module):
         self.embed_dim = 512
 
         # 保留原始输入，用于解析
-        self.modalities = modalities
-        self.max_modalities_num = len(modalities)
+        self.modalities = dataset.get_active_modalities()
+        self.max_modalities_num = len(self.modalities)
 
         # ----- Vision backbone (vit small) -----
         vit_model, vit_emb = get_vit_small_pathology(pretrained=True, progress=True, key="DINO_p16")
@@ -139,7 +140,7 @@ class OSCCSurvivalPred(nn.Module):
 
         # ----- Tabular -----
         self.tabular_encoder = nn.ModuleDict()
-        for i, modality in enumerate(modalities):
+        for i, modality in enumerate(self.modalities):
             if "tabular" in modality:
                 tabular_dim = int(modality.split("-")[-1])
                 self.tabular_encoder[modality] = nn.Sequential(
@@ -148,14 +149,31 @@ class OSCCSurvivalPred(nn.Module):
                     )
 
         # ----- Prediction Head (for Decode step) -----
-        self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
-        self.loss_fn = CustomCoxPHLoss(reduction='none')
+        self.decode_task = decode_task
+        if decode_task == 'surv_pred':
+            self.out_dim = 1
+            self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
+            self.loss_fn = CustomCoxPHLoss(reduction='none')
+            self.METRICS_FN = survival_metrics
+        elif decode_task == 'treatment_pred':
+            self.out_dim = 12
+            self.prediction_head = nn.Linear(self.embed_dim, 12)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]
+            self.loss_fn = nn.BCEWithLogitsLoss(reduction='none')
+            self.METRICS_FN = multiple_classification_metrics
+        else:
+            raise ValueError(f"Unsupport task = {decode_task}")
 
-        # optional: small history for weight norms (if desired)
-        self._weight_norm_history = deque()
-        self.weight_change_records = []
-        self.weight_check_threshold = 1e-6
-        self.weight_check_steps = 3
+        self.prediction_head = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim // 4),
+            nn.ReLU(),
+            nn.LayerNorm(self.embed_dim // 4),
+            nn.Dropout(0.3),
+
+            nn.Linear(self.embed_dim // 4, self.out_dim)
+        )
+        init_kaiming_norm(self.prediction_head)
+
+
 
     def get_backbone_params(self):
         backbone_params = []
@@ -354,7 +372,7 @@ class OSCCSurvivalPred(nn.Module):
             "align_pairs": strong_related_pairs,
         }
     
-    def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    def _surv_decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
         Args:
             pooled_embeddings: (B, embed_dim)
@@ -365,8 +383,7 @@ class OSCCSurvivalPred(nn.Module):
         device = pooled_embeddings.device
 
         
-        out_dim = self.prediction_head.out_features
-        logits = torch.zeros(batch_size, out_dim, device=device)
+        logits = torch.zeros(batch_size, self.out_dim, device=device)
         loss = torch.tensor(0.0, device=device)
         
         # 1. 创建患者掩码
@@ -396,8 +413,7 @@ class OSCCSurvivalPred(nn.Module):
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
         loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c)
-        loss = loss_tensor_unreduced.mean()
-
+        loss = mean_by_event(loss_tensor_unreduced, valid_c)
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
         logits[patient_mask] = valid_logits
@@ -408,13 +424,71 @@ class OSCCSurvivalPred(nn.Module):
 
         return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
 
+    def _treatment_decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            pooled_embeddings: (B, embed_dim)
+            pooled_mask: (B,)
+            batch: 包含 batch['labels'] = {'label_time': [y1, y2,...], 'label_event': [c1, c2,...]}
+        """
+        batch_size = pooled_embeddings.shape[0]
+        device = pooled_embeddings.device
+
+        
+        out_dim = self.prediction_head.out_features
+        logits = torch.zeros(batch_size, out_dim, device=device)
+        loss = torch.tensor(0.0, device=device)
+        
+        # 1. 创建患者掩码
+        patient_mask = pooled_mask.bool().to(device) if pooled_mask is not None else torch.ones(batch_size, dtype=torch.bool, device=device)
+
+        # 2. 如果没有有效患者，立即返回
+        if not patient_mask.any():
+            return {"logits": logits, "loss": loss}
+
+        # 3. 过滤有效的嵌入
+        valid_embeddings = pooled_embeddings[patient_mask]
+        
+        if valid_embeddings.shape[0] == 0:
+             print("Warning: decode valid_embeddings is empty.")
+             return {"logits": logits, "loss": loss}
+
+        # 4. batch['labels'] 是 {'treatment_type_onehot': [..]}
+        label_onehot_list = [batch['labels'][i]['treatment_type_onehot'] for i in range(batch_size)]
+        Y_full = torch.tensor(label_onehot_list, device=device, dtype=torch.float32)
+        valid_Y = Y_full[patient_mask]
+
+        # 5. 仅在有效子集上进行预测和损失计算
+        valid_logits = self.prediction_head(valid_embeddings)
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y)
+        loss = loss_tensor_unreduced.mean()
+
+        # 6. 将 logits 映射回原始 (B, out_dim) 张量
+        logits[patient_mask] = valid_logits
+
+        # 创建一个 (B,) 的 loss_tensor 以保持一致性 (可选)
+        full_loss_tensor = torch.zeros(batch_size, device=device)
+        full_loss_tensor[patient_mask] = loss_tensor_unreduced.mean(1) if loss_tensor_unreduced.dim() == 2 else loss_tensor_unreduced
+
+        return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
+
+    def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        
+        if self.decode_task == 'surv_pred':
+            return self._surv_decode(pooled_embeddings, pooled_mask, batch)
+        elif self.decode_task == 'treatment_pred':
+            return self._treatment_decode(pooled_embeddings, pooled_mask, batch)
+        else:
+            raise ValueError("Unsupport decode")
 
     def get_backbone_params(self) -> List[nn.Parameter]:
-        parms_in_clinical_bert = [p for p in self.bert.parameters()]
-        return parms_in_clinical_bert
+        params_in_clinical_bert = [p for p in self.bert.parameters()]
+        params_in_vit = [p for p in self.vit.parameters()]
+        backbone_params = params_in_clinical_bert + params_in_vit
+        return backbone_params
     
-    def get_others_params(self) -> List[nn.Parameter]:
-        backbone_params = set(self.get_backbone_params())
-        parms_in_others = [p for p in self.parameters() if p not in backbone_params]
+    def get_params(self) -> List[nn.Parameter]:
+        backbone_params_ids = {id(p) for p in self.get_backbone_params()}
+        parms_in_others = [p for p in self.parameters() if id(p) not in backbone_params_ids]
         return parms_in_others
 

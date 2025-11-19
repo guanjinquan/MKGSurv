@@ -12,6 +12,7 @@ from torchvision.transforms import Compose, RandomVerticalFlip, RandomHorizontal
 import pandas as pd 
 from typing import List, Dict, Any
 import re
+from datasets.dataset_base import MultiModalDataset
 
 
 # ==========================================================================================
@@ -47,7 +48,29 @@ def InferTransforms():
 
 
 
-class OSCCSurvInHouseDataset(Dataset):
+class OSCCSurvInHouseDataset(MultiModalDataset):
+
+    TREATMENT_OPTIONS = None
+
+    PRE_OP_MODALITIES = [
+        "image-pathology",               # pre-treatment
+        "text-clinical",                 # pre-treatment
+        "tabular-metadata-4",            # pre-treatment
+        "tabular-history-9",             # pre-treatment
+        "tabular-blood-5",               # pre-treatment
+    ]
+
+    POST_OP_MODALITIES = [
+        "text-pathology",                # with-treat
+        "text-treatment",                # with-treat
+        "tabular-pathology-16",          # with-treat
+        "tabular-immunohistochemic-5",   # with-treat
+        "tabular-posop-blood-4",         # with-treat
+    ]
+
+    VALID_MODALITIES = PRE_OP_MODALITIES + POST_OP_MODALITIES
+
+
     """
     Updated Dataset class that dynamically loads data based on requested modalities.
     - It loads pre-processed images from .npy files.
@@ -67,7 +90,7 @@ class OSCCSurvInHouseDataset(Dataset):
         self.clinical_df = None
 
         # --- MODIFIED: Parse and store the list of required modalities ---
-        self.modalities = self._parse_modalities(modalities)
+        self.modalities = self.parse_modalities(modalities)
         print(f"Dataset will be initialized for modalities!!: {self.modalities}")
 
         # --- Initialization logic ---
@@ -90,6 +113,7 @@ class OSCCSurvInHouseDataset(Dataset):
         """
         item_info = self.items[index]
         pid_int = int(item_info['pid'])  # Clinical_DF.inedx 是 Int64, 因此转成int访问
+        patient_series = self.clinical_df.loc[pid_int]  # ALL Value in clinical df is STRING
         output_dict = {"pid": pid_int}
 
         # --- Survival Labels (Y and c) ---
@@ -110,10 +134,14 @@ class OSCCSurvInHouseDataset(Dataset):
             event_flag = 0
             event_time = time_to_last_info  # We observe them until their last follow-up or the end of the study, whichever comes first.
         
+        # Treatment String and IDS
+
         # --- Labels ---
         output_dict['labels'] = {
             'label_time': event_time,
-            'label_event': event_flag
+            'label_event': event_flag,
+            "treatment_type": patient_series['12_treatment_type'],
+            "treatment_type_onehot": [1 if str(i) in patient_series['12_treatment_type_id'] else 0 for i in range(12)],
         }
 
         # -- Dynamically build the output dictionary ---
@@ -138,7 +166,6 @@ class OSCCSurvInHouseDataset(Dataset):
         # --- Text modalities ---
         if any("text" in modal for modal in self.modalities):
             if self.clinical_df is not None and pid_int in self.clinical_df.index:
-                patient_series = self.clinical_df.loc[pid_int]  # ALL Value in clinical df is STRING
                 texts, texts_modalities = self._generate_clinical_text(patient_series)
 
                 for modality in self.modalities:
@@ -222,36 +249,6 @@ class OSCCSurvInHouseDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
-    def _parse_modalities(self, modalities_str: str) -> List[str]:
-        """Parses the modalities string into a list of valid modality keys."""
-        valid_set = {
-            # image
-            "image-pathology", 
-
-            # text
-            "text-clinical", 
-            "text-pathology",        # with-treat
-            "text-treatment",        # with-treat
-
-            # tabular
-            "tabular-pathology-16",  # with-treat
-            "tabular-metadata-4",
-            "tabular-history-9",
-            "tabular-blood-5",
-            "tabular-immunohistochemic-5",
-        }
-
-        if modalities_str == "all":
-            return valid_set
-
-        # Allow for ',' as separators
-        parsed = [m.strip() for m in modalities_str.split(',')]
-        
-        for m in parsed:
-            if m not in valid_set:
-                raise ValueError(f"Invalid modality '{m}' specified. Must be one of {valid_set}")
-        return parsed
-
     def _load_clinical_data(self):
         """Loads the clinical data CSV into a pandas DataFrame."""
         clinical_data_path = os.path.join(self.dataset_dir, "clinical_data.csv")
@@ -260,45 +257,14 @@ class OSCCSurvInHouseDataset(Dataset):
             if 'PID' in self.clinical_df.columns:
                 self.clinical_df.set_index('PID', inplace=True)
             print("Successfully loaded clinical data.")
+
+            # Load TREATMENT_OPTIONS
+            self.TREATMENT_OPTIONS = list(set(self.clinical_df['12_treatment_type'].tolist()))
+            print("Load TREATMENT_OPTIONS Length = ", len(self.TREATMENT_OPTIONS))
+
         except FileNotFoundError:
             print(f"Warning: Clinical data file not found at {clinical_data_path}. Text modalities will be unavailable.")
             self.clinical_df = None # Ensure it's None if file not found
-
-    def _get_survival_bins(self):  # bins balance!!!
-        """
-        Returns a list of all labels (time bins) in the dataset.
-        This is used by the SurvivalBalancedBatchSampler.
-        """
-        self.observed_years = 20 * 365.0
-        self.num_time_bins = 20
-        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
-
-        labels_y = []
-        for index in range(len(self.items)):
-            label_info = self.items[index]
-            
-            has_recurrence = label_info.get('recurrence') == 'yes'
-            time_to_recurrence = label_info.get('days_to_recurrence')
-            time_to_last_info = label_info.get('days_to_last_information')
-
-            event_time = -1.0
-            
-            if has_recurrence and pd.notna(time_to_recurrence):
-                if time_to_recurrence < self.observed_years:
-                    event_time = time_to_recurrence
-                else:
-                    event_time = self.observed_years
-            elif pd.notna(time_to_last_info):
-                event_time = min(time_to_last_info, self.observed_years)
-            
-            time_bin = -1
-            if event_time >= 0:
-                time_bin = np.digitize(event_time, self.time_bins) - 1
-                time_bin = min(time_bin, self.num_time_bins - 1)
-            
-            labels_y.append(int(time_bin))
-            
-        return labels_y
 
     def _load_and_filter_items(self):
         """Loads dataset items and filters them based on modality availability."""
@@ -336,16 +302,22 @@ class OSCCSurvInHouseDataset(Dataset):
                 "PreoperativeHistoryDetails",
             ],
             "treatment": [   # 对应原本的 text-3 (part-2)
+                # 没有整理的信息，更加详细
                 "SurgicalMethod",
-                "Flap",
-                "PD_L1", 
                 "Radiotherapy(0no/1yes)", 
                 "Chemotherapy(0no/1yes)", 
             ],
             "pathology": [   # 对应原本的 text-2
                 "Pathology",
+                "Flap",
+                "PD_L1", 
             ]
         }
+        
+        # Use formatted Treatment String
+        if random.random() < 0.8:
+            assert '12_treatment_type' in patient_series, "Treatment Type Must be in dataframe"
+            sources_with_columns['treatment'] = ['12_treatment_type']
 
         texts = []
         texts_modalities = []
@@ -354,6 +326,7 @@ class OSCCSurvInHouseDataset(Dataset):
             if pd.isna(value) or str(value).strip() in ['/', '']: return
             if isinstance(value, float) and value.is_integer(): value = int(value)
             sentence = ""
+            
             if column_name == "TumorT": sentence = f"The primary tumor stage (T stage) is {value}."
             elif column_name == "TumorN": sentence = f"The regional lymph node stage (N stage) is {value}."
             elif column_name == "TumorM": sentence = f"The distant metastasis stage (M stage) is {value}."
@@ -372,8 +345,14 @@ class OSCCSurvInHouseDataset(Dataset):
                 sentence = f"The patient has a record of {feature_name}: {status}."
             elif column_name == "Age(Y)": sentence = f"The patient's age is {value} years."
             elif column_name == "Gender(0male/1female)": sentence = f"The patient is {'female' if value == 1 else 'male'}."
-            elif column_name in ["Pathology", "SurgicalMethod", "TumorLocation", "Ki-67", "PD_L1"]:
-                sentence = f"The {column_name.lower()} is recorded as: {value}."
+            elif column_name in ["Pathology", "SurgicalMethod", "TumorLocation", "Ki-67", "PD_L1", "PreoperativeHistoryDetails", "Flap"]:
+                if len(value) > 1:
+                    sentence = f"The {column_name.lower()} is recorded as: {value}."
+            elif column_name == "12_treatment_type":
+                sentence = f"{value}"
+            else:
+                raise ValueError(f"Unrecognized column name: {column_name}")
+
             if sentence: text_list.append(sentence)
 
         for key, columns in sources_with_columns.items():
@@ -399,9 +378,11 @@ class OSCCSurvInHouseDataset(Dataset):
                 "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
                 "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
             ],
-            "blood": [             # length = 5 对应原本的 text-4
+            "blood": [             # length = 5 对应原本的 text-4 (part-1)
                 "PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD",
-                # "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"  # 手术后的治疗结果都不能出现
+            ],
+            "blood_posop": [
+                "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"  # 手术后的治疗结果都不能出现
             ],
             "pathology": [         # length = 16 对应原本的 text-2
                 "TumorT", "TumorN", "TumorM", "TumorDifferentiation(1high/2med/3low)",
@@ -445,3 +426,61 @@ class OSCCSurvInHouseDataset(Dataset):
 
         return tabular_datas, tabular_modalities
 
+    def parse_modalities(self, modalities_str: str) -> List[str]:
+        """Parses the modalities string into a list of valid modality keys."""
+
+        valid_set = self.VALID_MODALITIES
+
+        if modalities_str == "all":
+            return valid_set
+
+        # Allow for ',' as separators
+        parsed = [m.strip() for m in modalities_str.split(',')]
+        
+        for m in parsed:
+            if m not in valid_set:
+                raise ValueError(f"Invalid modality '{m}' specified. Must be one of {valid_set}")
+        return parsed
+
+    def get_survival_bins(self):
+        """
+        Returns a list of all labels (time bins) in the dataset.
+        This is used by the SurvivalBalancedBatchSampler.
+        """
+        self.num_time_bins = 4
+        self.observed_years = 20 * 365.0
+        self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
+
+
+        labels_y = []
+        for index in range(len(self.items)):
+            label_info = self.items[index]
+            
+            has_recurrence = label_info.get('recurrence') == 'yes'
+            time_to_recurrence = label_info.get('days_to_recurrence')
+            time_to_last_info = label_info.get('days_to_last_information')
+            event_time = -1.0
+            
+            if has_recurrence and pd.notna(time_to_recurrence):
+                if time_to_recurrence < self.observed_years:
+                    event_time = time_to_recurrence
+                else:
+                    event_time = self.observed_years
+            elif pd.notna(time_to_last_info):
+                event_time = min(time_to_last_info, self.observed_years)
+            
+            time_bin = -1
+            if event_time >= 0:
+                time_bin = np.digitize(event_time, self.time_bins) - 1
+                time_bin = min(time_bin, self.num_time_bins - 1)
+            
+            labels_y.append((int(time_bin), (1 if has_recurrence else 0)))
+            
+        return labels_y
+
+    def get_active_modalities(self):
+        return self.modalities
+    
+    def get_training_image_embeddings_prototypes(self, num_prototypes=64):
+        # Support for Panther modal
+        return np.zeros((num_prototypes, 384))

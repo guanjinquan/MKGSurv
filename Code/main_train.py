@@ -31,27 +31,30 @@ if __name__ == '__main__':
     # start work
     trainer = Trainer(args=args)
         
-    if trainer.local_rank == 0:
-        swanlab.init(
-            project="NewMedAlignFusion",
-            name=f"{args.model_task}-{args.fusion_type}-{args.runs_id}",
-            config={
-                'batch_size': args.batch_size * args.acc_step,
-                'num_epochs': args.num_epochs,
-                'learning_rate': args.learning_rate,
-                'backbone_lr': args.backbone_lr,
-                'weight_decay': args.weight_decay,
-                'backbones': args.model_task,
-                "fusion_type": args.fusion_type,
-                'optimizer': args.optimizer,
-                'scheduler': args.scheduler,
-                'seed': args.seed,
-                "modalities": args.modalities,
-            },
-            settings=swanlab.Settings(_service_wait=300)
-        )
+    # if trainer.local_rank == 0:
+    #     swanlab.init(
+    #         project="NewMedAlignFusion",
+    #         name=f"{args.model_task}-{args.fusion_type}-{args.runs_id}",
+    #         config={
+    #             'batch_size': args.batch_size * args.acc_step,
+    #             'model_task': args.model_task, 
+    #             'decode_task': args.decode_task, 
+    #             'dataset': args.dataset, 
+    #             'num_epochs': args.num_epochs,
+    #             'learning_rate': args.learning_rate,
+    #             'backbone_lr': args.backbone_lr,
+    #             'weight_decay': args.weight_decay,
+    #             'backbones': args.model_task,
+    #             "fusion_type": args.fusion_type,
+    #             'optimizer': args.optimizer,
+    #             'scheduler': args.scheduler,
+    #             'seed': args.seed,
+    #             "modalities": args.modalities,
+    #         },
+    #         settings=swanlab.Settings(_service_wait=300)
+    #     )
         
     trainer.run()
     
-    if trainer.local_rank == 0:
-        swanlab.finish()
+    # if trainer.local_rank == 0:
+    #     swanlab.finish()

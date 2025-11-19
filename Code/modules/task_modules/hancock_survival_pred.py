@@ -134,9 +134,9 @@ class HANCOCKSurvivalPred(nn.Module):
             if "tabular" in modality:
                 tabular_dim = int(modality.split("-")[-1])
                 self.tabular_encoder[modality] = nn.Sequential(
-                        nn.LayerNorm(tabular_dim),
-                        nn.Linear(tabular_dim, self.embed_dim)
-                    )
+                    nn.LayerNorm(tabular_dim),
+                    nn.Linear(tabular_dim, self.embed_dim)
+                )
 
         # ----- Prediction Head (for Decode step) -----
         self.prediction_head = nn.Linear(self.embed_dim, 1)   # Predicts risk [0 means low risk to death/recurrence, 1 means high risk]

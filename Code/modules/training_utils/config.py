@@ -17,6 +17,8 @@ def parse_arguments():
     
     # models settings 
     parser.add_argument('--model_task', type=str, default='multi_oscc', help="model_task: [multi_oscc]")
+    parser.add_argument('--decode_task', type=str, default='surv_pred', help="decode_task: only support [surv_pred, treatment_pred]")
+    parser.add_argument('--image_aggregater', type=str, default='transmil', help="image_aggregater: only support [transmil, panther]")
     parser.add_argument('--fusion_type', type=str, default='hier_align', help="fusion_block: [hier_align, concat, LMF, gated, msa, i2moe, healnet]")
     parser.add_argument('--with_multimodal_align', action='store_true')
     parser.add_argument('--with_multimodal_vib', action='store_true')
@@ -27,7 +29,6 @@ def parse_arguments():
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument('--seed', type=int, default=109, help='random seed')
     parser.add_argument('--learning_rate', type=float, help='learning rate')
-    parser.add_argument('--backbone_lr', type=float, help='learning rate')
     parser.add_argument('--weight_decay', type=float, default=0.01, help='weight decay')
     parser.add_argument('--num_epochs', type=int, default=200, help='number of epochs')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch Size')

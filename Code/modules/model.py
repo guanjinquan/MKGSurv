@@ -8,29 +8,25 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+from torch.utils.data import Dataset
+
 
 # --- Task Modules ---
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
 from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
-
-# from modules.task_modules.multi_oscc_rec_pred import MultiOSCCRecPred
-# from modules.task_modules.hancock_survival_pred_it import HANCOCKSurvivalPred_IT
-# from modules.task_modules.hancock_survival_pred_128 import HANCOCKSurvivalPred_128
-# from modules.task_modules.multi_oscc_rec_pred_it import MultiOSCCRecPred_IT
-# from modules.task_modules.multi_oscc_rec_pred_split import MultiOSCCRecPred_Split
-# from modules.task_modules.oscc_inhouse_survival_pred_it import OSCCSurvivalPred_IT
-
-
+from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
 
 # --- Fusion Modules
 from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
 from modules.fusion_modules.hier_align_fusion import HierAlignFusionModule
 from modules.fusion_modules.simple_fusion import SimpleFusion
 from modules.fusion_modules.healnet_fusion import HealNetFusionModule
-from modules.fusion_modules.KL_gated_fusion import KLGatedFusion
+from modules.fusion_modules.js_gated_mas_fusion import KLGatedFusion
 from modules.fusion_modules.MIBF_fusion import MIBF_fusion
 from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
+from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
+from modules.fusion_modules.surv_path import SurvPath
 
 # --- Common Modules ---
 from modules.common_modules.align_utils import AlignmentModule
@@ -38,33 +34,51 @@ from modules.common_modules.aggregation_utils import masked_mean_pool
 from modules.common_modules.multimodal_vib import TokenWiseMultiModalVIB
 
 
-def GetModel(args, modalities_of_dataset: List[str] = []):
+def GetModel(args, dataset):
 
     if args.fusion_type == 'kl_gated':
         return ModelInterfaceWithDeepSupervision(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
     
     if args.fusion_type == "mibf_fusion":
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
     
+    if args.fusion_type == "dimaf_fusion":
+        return ModelInterface(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
+            model_task=args.model_task, 
+            fusion_type=args.fusion_type
+        )
+
+    
     if args.with_multimodal_vib:
         return ModelInterfaceWithMultimodalVIB(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
     
     if args.fusion_type == "hgcn_fusion":
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
@@ -72,16 +86,20 @@ def GetModel(args, modalities_of_dataset: List[str] = []):
     # with_multimodal_align
     if args.with_multimodal_align:
         return ModelInterfaceWithAlign(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
     # fusion_type in ['concat', 'msa', 'lmf', 'gated', 'moe', 'i2moe', 'hier_align', 'healnet']
     else:
         return ModelInterface(
+            args, 
+            dataset,
+            decode_task=args.decode_task,
             model_task=args.model_task, 
-            modalities=modalities_of_dataset, 
             fusion_type=args.fusion_type
         )
 
@@ -90,15 +108,17 @@ def GetModel(args, modalities_of_dataset: List[str] = []):
 
 class ModelInterface(nn.Module):
 
-    def __init__(self, model_task: str = "multi_oscc", modalities: List[str] = [], fusion_type: str = 'moe'):
+    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
         super(ModelInterface, self).__init__()
 
         assert model_task in [  # Tasks that the model can handle
             "hancock",
             "oscc_inhouse",
             "tcga_luad",
+            "tcga_lusc",
         ], f"Unknown model task: {model_task}"
 
+        modalities = dataset.get_active_modalities()
         assert len(modalities) > 0, f"Want at least one modality, but got no modalities passed in."
         self.modalities = modalities
         self.fusion_type = fusion_type
@@ -108,11 +128,13 @@ class ModelInterface(nn.Module):
         #   1. self.task_head.embed_dim, 
         #   2. self.task_head.max_modalities_num
         if model_task == "hancock":
-            self.task_head = HANCOCKSurvivalPred(modalities=modalities)
+            self.task_head = HANCOCKSurvivalPred(args, decode_task, dataset=dataset)
         elif model_task == "oscc_inhouse":
-            self.task_head = OSCCSurvivalPred(modalities=modalities)
+            self.task_head = OSCCSurvivalPred(args, decode_task, dataset=dataset)
         elif model_task == "tcga_luad":
-            self.task_head = TCGA_LUAD_SurvivalPred(modalities=modalities)
+            self.task_head = TCGA_LUAD_SurvivalPred(args, decode_task, dataset=dataset)
+        elif model_task == "tcga_lusc":
+            self.task_head = TCGA_LUSC_SurvivalPred(args, decode_task, dataset=dataset)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 
@@ -135,6 +157,10 @@ class ModelInterface(nn.Module):
             self.fusion_module = MIBF_fusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'hgcn_fusion':
             self.fusion_module = HGCNFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == "dimaf_fusion":
+            self.fusion_module = DIMAFFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == "surv_path":
+            self.fusion_module = SurvPath(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
@@ -179,7 +205,7 @@ class ModelInterface(nn.Module):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.1 * total_fusion_loss
+        total_loss = multimodal_task_loss + total_fusion_loss
         # all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss}
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
@@ -197,8 +223,8 @@ class ModelInterface(nn.Module):
 
 
 class ModelInterfaceWithAlign(ModelInterface):
-    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
-        super(ModelInterfaceWithAlign, self).__init__(model_task, modalities, fusion_type)
+    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithAlign, self).__init__(args, dataset, decode_task, model_task, fusion_type)
         self.align_module = AlignmentModule(embed_dim=self.embed_dim)
     
     def forward(self, batch_size, data_dicts: List[Dict]):
@@ -253,7 +279,7 @@ class ModelInterfaceWithAlign(ModelInterface):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.5 * total_align_loss + 0.1 * total_fusion_loss
+        total_loss = multimodal_task_loss + total_align_loss + total_fusion_loss
         # all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss}
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
@@ -264,9 +290,8 @@ class ModelInterfaceWithAlign(ModelInterface):
 
 
 class ModelInterfaceWithDeepSupervision(ModelInterface):
-    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
-        super(ModelInterfaceWithDeepSupervision, self).__init__(model_task, modalities, fusion_type)
-        
+    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithDeepSupervision, self).__init__(args, dataset, decode_task, model_task, fusion_type)
 
     def forward(self, batch_size, data_dicts: List[Dict]):
         device = next(self.parameters()).device
@@ -274,8 +299,7 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
         all_embeddings, all_masks, _ = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
-        assert len(all_embeddings) == 2, "KLfusion requires two modalities"
-
+   
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
         all_masks = [m.to(torch.bool) if m is not None else None for m in all_masks]
@@ -309,7 +333,7 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.5 * total_fusion_loss
+        total_loss = multimodal_task_loss + total_fusion_loss
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss,  'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         
@@ -318,8 +342,8 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
 
 
 class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
-    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
-        super(ModelInterfaceWithDeepSupervisionWeightedLoss, self).__init__(model_task, modalities, fusion_type)
+    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithDeepSupervisionWeightedLoss, self).__init__(args, dataset, decode_task, model_task, fusion_type)
 
     def forward(self, batch_size, data_dicts: List[Dict]):
         device = next(self.parameters()).device
@@ -364,7 +388,7 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.5 * total_fusion_loss
+        total_loss = multimodal_task_loss + total_fusion_loss
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss,  'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         
@@ -372,11 +396,10 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
 
 
 
-
-
 class ModelInterfaceWithMultimodalVIB(ModelInterface):
-    def __init__(self, model_task: str = "multi_oscc", modalities: str = 'all', fusion_type: str = 'moe'):
-        super(ModelInterfaceWithMultimodalVIB, self).__init__(model_task, modalities, fusion_type)
+    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithMultimodalVIB, self).__init__(args, dataset, decode_task, model_task, fusion_type)
+
         self.vib_module = TokenWiseMultiModalVIB(
             num_modalities=self.max_modalities,
             embed_dim=self.embed_dim
@@ -437,7 +460,7 @@ class ModelInterfaceWithMultimodalVIB(ModelInterface):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.5 * vib_loss + 0.1 * total_fusion_loss
+        total_loss = multimodal_task_loss + 0.5 * vib_loss + total_fusion_loss
 
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'vib_loss': vib_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})

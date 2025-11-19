@@ -6,6 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from datasets.hancock_dataset import HANCOCKDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
 from datasets.tcga_luad_dataset import TCGA_LUAD_Dataset
+from datasets.tcga_lusc_dataset import TCGA_LUSC_Dataset
 
 from datasets.dataset_sampler import BalancedBatchSampler, DistributedBalancedBatchSampler
 import torch
@@ -47,18 +48,19 @@ def GetDataLoader(args):
         num_gpus = torch.cuda.device_count()
         assert args.batch_size % num_gpus == 0, "Batch size should be divisible by number of GPUs"
         train_loader = DataLoader(train_set, batch_size=args.batch_size // num_gpus,
-            sampler=DistributedBalancedBatchSampler(train_set), num_workers=8, pin_memory=True, collate_fn=custom_collate_fn)
+            sampler=DistributedBalancedBatchSampler(train_set), num_workers=2, pin_memory=True, collate_fn=custom_collate_fn, persistent_workers=True)
         print("Using DDP with batch size: ", args.batch_size // num_gpus)
     else:
         train_loader = DataLoader(train_set, batch_size=args.batch_size, 
-            sampler=BalancedBatchSampler(train_set), num_workers=8, pin_memory=True, collate_fn=custom_collate_fn)
+            sampler=BalancedBatchSampler(train_set), num_workers=2, pin_memory=True, collate_fn=custom_collate_fn, persistent_workers=True)
+            # num_workers=2, pin_memory=True, collate_fn=custom_collate_fn, persistent_workers=True)
         print("Using batch size: ", args.batch_size)
+        
+    valid_loader = DataLoader(valid_set, batch_size=8,
+        num_workers=2, persistent_workers=True, pin_memory=True, collate_fn=custom_collate_fn)
 
-
-    valid_loader = DataLoader(valid_set, batch_size=args.batch_size,
-        num_workers=8, pin_memory=True, collate_fn=custom_collate_fn)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size,
-        num_workers=8, pin_memory=True, collate_fn=custom_collate_fn)
+    test_loader = DataLoader(test_set, batch_size=8,
+        num_workers=2, persistent_workers=True, pin_memory=True, collate_fn=custom_collate_fn)
 
     return train_loader, valid_loader, test_loader
 
@@ -72,5 +74,7 @@ def GetDataset(mode, args):
         return OSCCSurvInHouseDataset(mode=mode, modalities=args.modalities)
     elif dataset == "tcga_luad":
         return TCGA_LUAD_Dataset(mode=mode, modalities=args.modalities, fold=args.fold)
+    elif dataset == 'tcga_lusc':
+        return TCGA_LUSC_Dataset(mode=mode, modalities=args.modalities, fold=args.fold)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

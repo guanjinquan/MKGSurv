@@ -1,5 +1,10 @@
-conda env create -f  BuildEnv/env.yaml
-source activate medfusion
-pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+# conda env create -f  BuildEnv/env.yaml
+
+conda create -n surv_pred python=3.11 -y 
+source activate surv_pred
+pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+conda install -c pytorch faiss-gpu
 pip install -r BuildEnv/requirements.txt
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.3.1+cu121.html
+pip install torch_geometric
 
