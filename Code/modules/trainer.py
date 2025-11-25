@@ -11,9 +11,10 @@ from torch.utils.data.distributed import DistributedSampler
 
 from datasets import GetDataLoader
 from modules.model import GetModel
-from modules.training_utils.optims import GetOptimizer, GetScheduler
-from modules.training_utils import Logger, save_trainer, save_model, load_model, load_trainer
+from modules.general_utils.optims import GetOptimizer, GetScheduler
+from modules.general_utils import Logger, save_trainer, save_model, load_model, load_trainer
 from typing import Dict, List, Any
+import random
 
 try:
     import swanlab
@@ -37,6 +38,17 @@ class Trainer:
     def __init__(self, args):
         assert args is not None, 'Please input args!!!'
         self.args = args
+
+            
+        # 固定种子
+        seed = int(args.seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(seed)
+        random.seed(seed)
+    
 
         # --- DDP ADDITION: 初始化分布式环境 ---
         self.local_rank = 0
@@ -64,7 +76,7 @@ class Trainer:
         self.scheduler = GetScheduler(self.args, self.optimizer)
         
         self.epoch = 0
-        self.save_epoch_limit = max(20, self.args.num_epochs // 5)
+        self.save_epoch_limit = max(10, self.args.num_epochs // 5)
         self.iters = 0
         self.acc_step = self.args.acc_step
             
@@ -107,13 +119,17 @@ class Trainer:
         
         # --- 只有主进程 (rank 0) 才进行日志记录和文件保存 ---
         if self.local_rank == 0:
-            run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type]
+            if self.args.fold is not None:
+                run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type, f"Fold{self.args.fold}"]
+            else:
+                run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type]
+ 
             self.log_path = os.path.join(self.args.log_path, *run_path)
             self.ckpt_path = os.path.join(self.args.ckpt_path, *run_path) 
             print("log_path : ", self.log_path, flush=True)
             print("ckpt_path : ", self.ckpt_path, flush=True)
             
-            if os.path.exists(os.path.join(self.ckpt_path, 'Final_Trainer.pkl')):
+            if os.path.exists(os.path.join(self.ckpt_path, 'valid_Best.pth')):
                 raise ValueError("Trainer already exists!!!")
             
             os.makedirs(self.log_path, exist_ok=True)

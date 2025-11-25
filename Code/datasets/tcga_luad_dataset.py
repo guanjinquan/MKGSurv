@@ -1,25 +1,27 @@
 import os
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import sys
-sys.path.append("/home/Guanjq/NewWork/MedAlignFusion/Code")
-import h5py
+
+# specific path as requested
+sys.path.append("/home/Guanjq/NewWork/MedAlignFusion/Code") 
+
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataloader import default_collate
 import random
-import copy
-import joblib # 导入 joblib
-from sklearn.cluster import KMeans # <-- 新增导入
+import joblib
 from datasets.dataset_base import MultiModalDataset
-from modules.common_modules.prototypes import cluster
+import copy 
 
 
 
 class TCGA_LUAD_Dataset(MultiModalDataset):
-
     TREATMENT_OPTIONS = None
+    TREATMENT_OPTIONS_ONEHOT = None
+    TREATMENT_OPTIONS_FEAT = None
 
     PRE_OP_MODALITIES = [
         "tabular-clinical-9", 
@@ -31,591 +33,398 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         "text-pathology", 
         "text-treatment",
         "tabular-treatment-8", 
+        "tabular-pathology-21", 
     ]
 
     VALID_MODALITIES = PRE_OP_MODALITIES + POST_OP_MODALITIES
 
-
     def _read_pickle(self, path: str) -> Any:
         """
-        辅助函数，用于加载 pickle/joblib 文件。
+        Helper to load pickle/joblib files.
         """
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Pickle file not found at: {path}")
-        
-        print(f"Loading data file from: {path}")
+            print(f"Warning: Pickle file not found at: {path}")
+            # Do not raise here, allow soft failure (returns None implicitly)
+            return None
+ 
         try:
-            # --- 使用 joblib.load ---
             data = joblib.load(path)
-            # ---------------------------
             return data
         except Exception as e:
             print(f"Error loading data file {path}: {e}")
-            # --- 在 __init__ 中重新引发错误 ---
             raise
 
-    def _read_h5_features(self, pid: str):
+    def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
         """
-        Reads image features from an .h5 file for a specific patient ID.
-        """
-        # 1. Get the file path from the dictionary created in __init__
-        file_path = self.pid_to_image_feat.get(pid)
-        
-        if file_path is None:
-            print(f"Warning: No H5 file found for PID: {pid}. Returning zeros or raising error.")
-            # Option A: Raise error (Recommended if data integrity is strict)
-            raise FileNotFoundError(f"Image feature file not found for patient {pid}")
-            # Option B: Return empty tensor (Only if you have a strategy to handle missing modalities)
-            # return torch.zeros((1, 1024)) 
-
-        try:
-            # 2. Open the H5 file
-            with h5py.File(file_path, 'r') as f:
-                # Check if the key exists (it's usually 'features', 'feats', or 'coords')
-                if 'features' not in f:
-                    raise KeyError(f"Key 'features' not found in {file_path}. Available keys: {list(f.keys())}")
-                
-                # 3. Load data into memory
-                # [:] copies the data from disk to numpy array
-                features = f['features'][:] 
-                
-            # 4. Convert to PyTorch Tensor
-            return torch.from_numpy(features).float()
-
-        except Exception as e:
-            print(f"Error reading H5 file for {pid} at {file_path}: {e}")
-            raise e
-
-    def __init__(self, mode: str = "train", modalities: str = "all", fold: int = None):
-        """
-        Initializes the dataset.
-
         Args:
-            mode (str): The dataset mode, one of 'train', 'valid', or 'test'.
-            modalities (str): A comma-separated string of modalities to load,
-                                e.g., "image,strong_related_text". "all" loads all available.
-                                Supported: 'image', 'strong_related_text', 'weak_related_text'.
+            mode (str): 'train', 'valid', or 'test'.
+            modalities (str): Comma-separated string or "all".
+            fold (int): The fold index (0-4).
         """
         super().__init__()
         assert mode in ["train", "valid", "test"], "mode must be one of 'train', 'valid', or 'test'"
+        assert fold is not None, "Fold ID must be specified."
+        assert 0 <= fold <= 4, "Fold ID must be between 0 and 4"
 
         random.seed(42)
-        assert fold is not None, f"Fold ID must be specified."
+        self.args = args
         self.mode = mode
         self.fold = fold
-
-        """
-        Data(x_img=[633, 1024], x_rna=[5, 1024], x_cli=[11, 1024],  data_type=[3], edge_index_image=[2, 4606], edge_index_rna=[2, 20], edge_index_cli=[2, 110])
-        如何访问 (示例): data.x_img (访问图像特征)
-                              data.edge_index_rna (访问RNA边)
-                              data.sur_type (访问生存类型)
-        """
-        self.dataset_dir = os.path.join(os.getcwd(), "../Data/TCGA-LUAD") 
-        print(f"Warning: Using dataset directory: {self.dataset_dir}")
-        print("Please ensure this path is correct or modify as needed.")
-
-        # Load Gene Features
-        gene_pkl_file = os.path.join(self.dataset_dir, "processed", "hallmarks_tokens_pid_map.pkl")
-        self.gene_dict = self._read_pickle(gene_pkl_file)  # PID -> Tokens
-
-        # 加载 5 折交叉验证数据
-        # [fold] 会选择是第 0, 1, 2, 3, 还是 4 折
-        split_file = os.path.join(self.dataset_dir, "processed", "luad_patients_5fold.json") 
-        with open(split_file, 'r') as f:
-            self.patient_ids = json.load(f)['folds'][fold][mode]
-
-        # Load Image Features
-        self.image_feat_path = os.path.join(self.dataset_dir, "h5_files")
-        self.pid_to_image_feat = {}
-        for file in os.listdir(self.image_feat_path):
-            if file.endswith(".h5"):
-                try:
-                    patient_id = [pid for pid in self.patient_ids if pid in file][0]
-                    self.pid_to_image_feat[patient_id] = os.path.join(self.image_feat_path, file)
-                except Exception as e:
-                    continue  # 训练集/验证集/测试集
-
-        # --- Parse modalities ---
-        self.modalities = self.parse_modalities(modalities)
-        print(f"Dataset will be initialized for modalities: {self.modalities}")
-
-        # --- Load and preprocess all data sources ---
-        self._load_data()
-        print(f"Dataset for mode '{self.mode}' initialized. Found {len(self.patient_ids)} patients.")
-
-    def _load_data(self):
-        # 定义 processed 目录的路径
-        processed_dir = os.path.join(self.dataset_dir, "processed")
-        print(f"Loading data from processed directory: {processed_dir}")
-
-        # 定义文件路径
-        clinical_path = os.path.join(processed_dir, "clinical_data_aggregated.csv")
-        treatment_path = os.path.join(processed_dir, "treatment_data_aggregated.csv")
-
-        reports_path = os.path.join(processed_dir, "tcga_luad_reports.csv")
-        labels_path = os.path.join(processed_dir, "luad_patient_labels.csv")  
-
-
-        # Read CSV files   
-        try:
-            # --- 更新：加载时明确指定 dtype=str，以防止 pandas 自动转换 ---
-            # 这样可以确保 '1.0' 和 '1' 都被视为字符串，直到 _process_row 处理
-            self.clinical_df = pd.read_csv(clinical_path, dtype=str)
-            print(f"Loaded clinical data with shape: {self.clinical_df.shape}")
-            self.treatment_df = pd.read_csv(treatment_path, dtype=str)
-            print(f"Loaded treatment data with shape: {self.treatment_df.shape}")
-            self.reports_df = pd.read_csv(reports_path, dtype=str) 
-            print(f"Loaded reports data with shape: {self.reports_df.shape}")
-            self.labels_df = pd.read_csv(labels_path, dtype=str) 
-            print(f"Loaded reports data with shape: {self.labels_df.shape}")
-            # -----------------------------------------------------------
-        except FileNotFoundError as e:
-            print(f"!!! 错误: 文件未找到 !!!")
-            print(f"加载 CSV 文件时出错: {e}")
-            print(f"请确保文件存在于: {processed_dir}")
-            raise
-        except Exception as e:
-            print(f"!!! 错误: 加载 CSV 文件时发生未知错误 !!!")
-            print(f"错误详情: {e}")
-            raise
-
-        case_id_to_submitter = {}
-        self.clinical_tabular_dict = {}  # patient key -> tabular
         
-        # --- 更新后的辅助函数 ---
-        # 定义一个辅助函数来处理行
-        # 将所有非数字值 (NaN, 空值, 文本) 转换为 -1.0
+        # --- Path Construction ---
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(current_file_dir, "../../")) 
+        
+        self.dataset_dir = os.path.join(project_root, "Data", "TCGA-LUAD")
+        self.processed_dir = os.path.join(self.dataset_dir, "processed")
+        
+        print(f"Path Debugging:")
+        print(f"  - Script Location: {current_file_dir}")
+        print(f"  - Calculated Dataset Dir: {self.dataset_dir}")
+
+        if not os.path.exists(self.processed_dir):
+            raise FileNotFoundError(f"Processed directory does not exist: {self.processed_dir}")
+        
+        
+        # --- 0. Parse Modalities ---
+        self.modalities = self.parse_modalities(modalities)
+        self.do_mixup = (args.do_mixup or args.do_mixup_only_treatment) and len(self.modalities) > 1 and self.mode == "train"
+        print(f"Active modalities: {self.modalities}")
+
+        # --- 1. Load Treatment Options ---
+        self._load_treatment_options()
+
+        # --- 2. Load Patient Split ---
+        split_file = os.path.join(self.processed_dir, "luad_patients_5fold.json") 
+        if not os.path.exists(split_file):
+            raise FileNotFoundError(f"Split file not found: {split_file}")
+
+        with open(split_file, 'r') as f:
+            splits = json.load(f)
+            if 'folds' not in splits:
+                 raise KeyError(f"JSON structure error: 'folds' key missing in {split_file}")
+            self.patient_ids = splits['folds'][fold][mode]
+        
+        print(f"Mode: {mode} | Fold: {fold} | Patients: {len(self.patient_ids)}")
+
+        # --- 3. Load Data Sources (Pickles & CSVs) ---
+        self.loaded_features = {} 
+
+        self.pickle_map = {
+            "genomics-genomics": "features_rna.pkl",
+            "text-pathology": "features_text_pathology.pkl",
+            "text-treatment": "features_text_treatment.pkl",
+        }
+
+        for mod in self.modalities:
+            if mod == "image-pathology":
+                fold_idx_for_file = self.fold + 1 
+                pkl_name = f"features_image_pathology_fold{fold_idx_for_file}.pkl"
+                pkl_path = os.path.join(self.processed_dir, pkl_name)
+                # Note: If file doesn't exist, _read_pickle returns None
+                data = self._read_pickle(pkl_path)
+                if data is not None:
+                    self.loaded_features[mod] = data
+            
+            elif mod in self.pickle_map:
+                pkl_name = self.pickle_map[mod]
+                pkl_path = os.path.join(self.processed_dir, pkl_name)
+                data = self._read_pickle(pkl_path)
+                if data is not None:
+                    self.loaded_features[mod] = data
+
+        # Load CSVs (Tabular Data & Labels)
+        self._load_tabular_and_labels()
+
+    def _load_treatment_options(self) -> None:
+        # Load Features
+        trt_opt_path = os.path.join(self.processed_dir, "features_all_treatment_options.pkl")
+        if os.path.exists(trt_opt_path):
+            try:
+                trt_data = joblib.load(trt_opt_path)
+                self.TREATMENT_OPTIONS = trt_data.get("ALL_TREATMENT_OPTIONS_STR", [])
+                self.TREATMENT_OPTIONS_FEAT = trt_data.get("ALL_TREATMENT_OPTIONS_FEAT", [])
+                print(f"Loaded {len(self.TREATMENT_OPTIONS)} treatment options.")
+            except Exception as e:
+                print(f"Warning: Failed to load treatment options from {trt_opt_path}: {e}")
+                self.TREATMENT_OPTIONS = []
+                self.TREATMENT_OPTIONS_FEAT = []
+        else:
+            print(f"Warning: Treatment options file not found at {trt_opt_path}. Proceeding without it.")
+            self.TREATMENT_OPTIONS = []
+            self.TREATMENT_OPTIONS_FEAT = []
+
+        # Load OneHot Encoding
+        labels_df_path = os.path.join(self.processed_dir, "luad_patient_labels.csv")
+        labels_df = pd.read_csv(labels_df_path)
+        option_to_onehot = {}
+        for idx, row in labels_df.iterrows():
+            option = row['treatments.treatment_type']
+            onehot = np.zeros((5, ))
+            for id in row['5_classes'].split(','):
+                onehot[int(id)] = 1
+            option_to_onehot[option] = onehot
+        
+        self.TREATMENT_OPTIONS_ONEHOT = [option_to_onehot[option] for option in self.TREATMENT_OPTIONS]
+
+    def _load_tabular_and_labels(self):
+        try:
+            self.clinical_df = pd.read_csv(os.path.join(self.processed_dir, "clinical_data_aggregated.csv"), dtype=str)
+            self.treatment_df = pd.read_csv(os.path.join(self.processed_dir, "treatment_data_aggregated.csv"), dtype=str)
+            self.pathology_df = pd.read_csv(os.path.join(self.processed_dir, "pathology_aggregated.csv"), dtype=str)
+            self.labels_df = pd.read_csv(os.path.join(self.processed_dir, "luad_patient_labels.csv"), dtype=str)
+        except Exception as e:
+            print(f"Error loading CSV files: {e}")
+            raise
+
         def _process_row(row, columns):
             tabular_data = []
             columns = sorted(columns)
             for col in columns:
                 value = row[col]
-                # 尝试将值转换为数字。
-                # 'coerce' 会将所有无效值 (如 "", None, "NA", NaN) 转换为 NaT/NaN
                 numeric_val = pd.to_numeric(value, errors='coerce')
-                
-                # 检查结果是否为 NaN
                 if pd.isna(numeric_val):
-                    # 按照要求，将 NaN、空值或非数字文本填充为 -1.0
                     tabular_data.append(-1.0)
                 else:
-                    # 否则，存储为浮点数
                     tabular_data.append(float(numeric_val))
             return tabular_data
 
-        # --- 处理 Clinical (临床) 数据 ---
-        print("Processing clinical_df...")
-        exclude_cols_cli = ['cases.case_id', 'cases.submitter_id']
-        tabular_cols_cli = [col for col in self.clinical_df.columns if col not in exclude_cols_cli]
-        for idx, row in self.clinical_df.iterrows():
-            patient_key = row['cases.submitter_id']
-            case_id = row['cases.case_id']
-            case_id_to_submitter[case_id] = patient_key
-            
-            # 提取表格数据
-            self.clinical_tabular_dict[patient_key] = _process_row(row, tabular_cols_cli)
+        # Process Clinical Tabular
+        self.clinical_tabular_dict = {}
+        exclude_cols = ['cases.case_id', 'cases.submitter_id']
+        
+        if "tabular-clinical-9" in self.modalities:
+            cols = [c for c in self.clinical_df.columns if c not in exclude_cols]
+            for _, row in self.clinical_df.iterrows():
+                pid = row['cases.submitter_id']
+                self.clinical_tabular_dict[pid] = _process_row(row, cols)
 
-        # --- 处理 Treatment 数据 ---
+        # Process Treatment Tabular
         self.treatment_tabular_dict = {}
-        tabular_cols_treat = [col for col in self.treatment_df.columns if col not in exclude_cols_cli]
-        for idx, row in self.treatment_df.iterrows():
-            patient_key = row['cases.submitter_id']
-            case_id = row['cases.case_id']
-            case_id_to_submitter[case_id] = patient_key
-            
-            # 提取表格数据
-            self.treatment_tabular_dict[patient_key] = _process_row(row, tabular_cols_treat)
+        if "tabular-treatment-8" in self.modalities:
 
-        # --- 处理 Reports (报告) 数据 ---
-        print("Processing reports_df...")
-        self.report_pathology = {}
-        for idx, row in self.reports_df.iterrows():
-            patient_key = row['patient_id'].strip()
+            cols = [c for c in self.treatment_df.columns if c not in exclude_cols]
+            for _, row in self.treatment_df.iterrows():
+                pid = row['cases.submitter_id']
+                self.treatment_tabular_dict[pid] = _process_row(row, cols)
 
-            # 合并报告文本
-            report_text = str(row["report_text"]) if pd.notna(row["report_text"]) else ""
-            annotation_text = str(row["annotation_text"]) if pd.notna(row["annotation_text"]) else ""
-            full_text = (report_text + " " + annotation_text).strip()
-            
-            if full_text:
-                self.report_pathology[patient_key] = full_text
+        self.pathology_tabular_dict = {}
+        if "tabular-pathology-21" in self.modalities:
+            cols = [c for c in self.pathology_df.columns if c not in exclude_cols]
+            for _, row in self.pathology_df.iterrows():
+                pid = row['cases.submitter_id']
+                self.pathology_tabular_dict[pid] = _process_row(row, cols)
 
-        # --- 处理标签 ---
-        # Load treatments.treatment_type
-        self.TREATMENT_OPTIONS = []
+        # Process Labels
         self.patient_labels = {}
-        for idx, row in self.labels_df.iterrows():
-            patient_key = row['cases.submitter_id']
-            case_id = row['cases.case_id']
-            self.patient_labels[patient_key] = {
+        for _, row in self.labels_df.iterrows():
+            pid = row['cases.submitter_id']
+            self.patient_labels[pid] = {
                 "DFS_time": float(row["DFS_time"]),
                 "DFS_event": float(row["DFS_event"]),
                 "Treatment_type": str(row['treatments.treatment_type']),
                 "Treatment_type_id": str(row["5_classes"])
             }
-            self.TREATMENT_OPTIONS.append(str(row['treatments.treatment_type']))
-
-        self.TREATMENT_OPTIONS = list(set(self.TREATMENT_OPTIONS))
-        print("Load self.TREATMENT_OPTIONS length = ", len(self.TREATMENT_OPTIONS))
-
-        print("Finished processing all CSV files.")
 
     def __len__(self) -> int:
         return len(self.patient_ids)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        """
-        获取单个患者的数据。
-        参考了 OSCCSurvInHouseDataset 的 __getitem__ 来实现生存标签逻辑。
-        """
-        # 1. 获取患者 ID (e.g., 'TCGA-LN-A49R')
+        return self.get_sample(idx)
+
+    def get_sample(self, requested_idx: int) -> Dict[str, Any]:
+        do_mixup = requested_idx >= len(self) and self.do_mixup   # if idx >= len(self), then we're doing mixup augmentation
+        # print("Request IDX", requested_idx, "Do Mixup:", do_mixup, "Dataset length = ", len(self))
+        idx = requested_idx % len(self) 
+
         patient_id = self.patient_ids[idx]
-        
         output_dict = {"pid": patient_id}
 
-        # 2. 获取并处理生存标签 (来自 luad_sur_and_time.pkl)
-        # --- 时间单位是 *days* ---
+        # --- 1. Labels ---
         try:
             survival_info = self.patient_labels[patient_id]
-            event = int(survival_info['DFS_event'])      # 0 = 审查 (censored), 1 = 事件 (death)
-            time_days = float(survival_info['DFS_time'])    # 生存时间（days）
+            event = int(survival_info['DFS_event'])
+            time_days = float(survival_info['DFS_time'])
             treatment = str(survival_info['Treatment_type'])
             treatment_type_id = str(survival_info['Treatment_type_id'])
-        except Exception as e:
-            print(f"Error: {e}")
-            return self.__getitem__((idx + 1) % len(self))
-        
+        except KeyError:
+            # Skip patient if labels are missing
+            # print(f"Warning: Labels missing for {patient_id}, skipping...")
+            return self.get_sample((idx + 1) % len(self))
+
         output_dict['labels'] = {
+            'do_mixup': do_mixup,  
             'label_time': time_days,
-            'label_event': event,      # 1 means event happen!!, 0 means censored
+            'label_event': event,
             'treatment_type': treatment,
-            'treatment_type_onehot': [1 if str(i) in treatment_type_id else 0 for i in range(5)],
+            'treatment_type_onehot': torch.tensor([1 if str(i) in treatment_type_id else 0 for i in range(5)], dtype=torch.float32),
         }
 
-        # # 3. 获取图数据 (来自 luad_data.pkl)
-        # try:
-        #     # 这应该是一个 torch_geometric.data.Data 对象
-        #     graph_data = self.data_pickle[patient_id]
-        # except KeyError:
-        #     print(f"Error: Patient ID {patient_id} not found in data_pickle (luad_data.pkl).")
-        #     # 这是一个关键错误，这个 patient_id 没有图数据
-        #     return self.__getitem__((idx + 1) % len(self))
-
-        # 4. 根据 self.modalities 动态加载其他数据
-        # --- (PyG) 图像特征 ---
-        if "image-pathology" in self.modalities:
-    
-            # 1. 默认使用原始数据 (适用于 'eval', 'test' 模式)
-            # x_img_to_output = graph_data.x_img
-            x_img_to_output = self._read_h5_features(patient_id)
-            
-            # 32. 仅在 'train' 模式下应用数据增强
-            if self.mode == 'train':
-                x_img_aug = x_img_to_output
-                
-                # --- 增强 1: 随机 Shuffle ---
-                # 50% 的概率打乱 token 顺序
-                if random.random() < 0.5:
-                    idxs = torch.randperm(x_img_aug.size(0))
-                    x_img_aug = x_img_aug[idxs]
-
-                # --- 增强 2: 随机 Mask ---
-                if random.random() < 0.5:
-                    num_tokens = x_img_aug.size(0)
-                    num_to_mask = int(num_tokens * 0.2)
-
-                    if num_to_mask > 0:
-                        # 随机选择要 mask 的 token 索引
-                        mask_indices = torch.randperm(num_tokens)[:num_to_mask].to(x_img_aug.device)
-                        x_img_aug[mask_indices] = 0.0
-                
-                # 训练模式下, 输出增强后的 tensor
-                x_img_to_output = x_img_aug
-                
-            # 3. 将最终的 tensor (原始的 或 增强的) 放入输出字典
-            output_dict["image-pathology"] = x_img_to_output
-
-        # --- (PyG) 基因组特征 ---
-        if "genomics-genomics" in self.modalities:
-            # 基因组特征已经包含在 graph_data.x_rna 中
-            if patient_id in self.gene_dict:
-                output_dict["genomics-genomics"] = self.gene_dict[patient_id]
-            else:
-                print(f"Not found genomics data for {patient_id}")
-
-        # --- 病理报告文本 ---
-        if "text-pathology" in self.modalities:
-            output_dict["text-pathology"] = self.report_pathology.get(patient_id, None)
-            if patient_id not in self.report_pathology:
-                print(f"Not found report for patient : {patient_id}")
-
-        if "text-treatment" in self.modalities:
-            output_dict["text-treatment"] = treatment
-
-        # --- 各种表格数据 ---
-        if "tabular-clinical-9" in self.modalities:
-            data = self.clinical_tabular_dict.get(patient_id, None)
-            output_dict["tabular-clinical-9"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
-
-        if "tabular-treatment-8" in self.modalities:
-            data = self.treatment_tabular_dict.get(patient_id, None)
-            output_dict["tabular-treatment-8"] = torch.tensor(data, dtype=torch.float32) if data is not None else None
-
-        # 5. 数据完整性检查 
+        # --- 2. Load Modalities ---
         modalities_found = 0
-        for mod_key in self.modalities:
-            if mod_key in output_dict and output_dict[mod_key] is not None:
-                # 特殊处理: 检查 tensor 是否为空 (尽管 _process_row 应该总是返回 -1)
-                if isinstance(output_dict[mod_key], torch.Tensor):
-                    if output_dict[mod_key].numel() > 0:
+
+        for mod in self.modalities:
+            feature_data = None
+
+            # Case A: Tabular
+            if mod == "tabular-clinical-9":
+                feature_data = self.clinical_tabular_dict.get(patient_id)
+                if feature_data is not None:
+                    feature_data = torch.tensor(feature_data, dtype=torch.float32)
+
+            elif mod == "tabular-treatment-8":
+                feature_data = self.treatment_tabular_dict.get(patient_id)
+                if feature_data is not None:
+                    feature_data = torch.tensor(feature_data, dtype=torch.float32)
+
+            elif mod == "tabular-pathology-21":
+                feature_data = self.pathology_tabular_dict.get(patient_id)
+                if feature_data is not None:
+                    feature_data = torch.tensor(feature_data, dtype=torch.float32)
+
+            # Case B: Pickles
+            elif mod in self.loaded_features:
+                data_dict = self.loaded_features[mod]
+                if patient_id in data_dict:
+                    raw_feat = data_dict[patient_id]
+                    
+                    if isinstance(raw_feat, list) and len(raw_feat) > 0 and torch.is_tensor(raw_feat[0]):
+                        if self.mode == 'train':  # Select one of the augmented feature
+                            feature_data = random.choice(raw_feat)
+                        else:
+                            feature_data = raw_feat[0]
+                    elif isinstance(raw_feat, (np.ndarray, list)):
+                        feature_data = torch.tensor(raw_feat, dtype=torch.float32)
+                    elif isinstance(raw_feat, torch.Tensor):
+                        feature_data = raw_feat.float()
+                    else:
+                        raise ValueError(f"Unsupported feature type: {type(raw_feat)}")
+                else:
+                    feature_data = None
+
+            # Assign to output
+            output_dict[mod] = feature_data
+            
+            # Count valid
+            if feature_data is not None:
+                if isinstance(feature_data, torch.Tensor):
+                    if feature_data.numel() > 0:
                         modalities_found += 1
                 else:
                     modalities_found += 1
         
+        # --- 3. Integrity Check ---
         if modalities_found == 0:
-            return self.__getitem__((idx + 1) % len(self))
+            # print(f"Warning: No valid modalities found for {patient_id}, skipping...")
+            return self.get_sample((idx + 1) % len(self))
 
-        if self.mode == 'train' and random.random() < 0.5:
-            output_dict = self.aug_treatment_data(output_dict)
+        if do_mixup:
+            other_item_idx = random.randint(0, len(self) - 1)
+            if other_item_idx == idx: 
+                other_item_idx = (idx + 1) % len(self)
+            output_dict = self.mixup_data(output_dict, self.get_sample(other_item_idx))
 
         return output_dict
-    
-    def aug_treatment_data(self, output_dict):
-        treatment_keys = [
-            "text-pathology", 
-            "text-treatment",
-            "tabular-treatment-8", 
-        ]
 
-        def aug_tabular(tabular_data):
-            for i in range(len(tabular_data)):
-                tabular_data[i] += random.gauss() * 0.1
-            return tabular_data
-        
-        def aug_text(text):
-            # random shuffle after split '.' or '+'
-            for tag in ['.', '+']:
-                text_parts = text.split(tag)
-                random.shuffle(text_parts)
-                text = tag.join(text_parts)
-            return text.strip()
+    def mixup_data(self, ori_data, other_data):
+        """
+        Performs multimodal mixup by swapping a subset of modalities from 'other_data' to 'ori_data'.
+        Critically, it assigns the labels corresponding to the higher risk patient.
+        """
+        # 1. Determine which modalities to swap
+        mixup_modalities = set()
 
-        for key in treatment_keys:
-            if key not in output_dict:
-                continue
+        if not self.args.do_mixup_only_treatment:
+            # Handle edge case where only 1 modality exists (randint(1, 0) would fail)
+            max_k = max(1, len(self.modalities) - 1)
+            k = random.randint(1, max_k)
+            # Select k modalities to swap from other_data -> ori_data
+            mixup_modalities.update(random.sample(self.modalities, k=k))
+        elif "text-treatment" in self.modalities:
+            mixup_modalities.add("text-treatment")
 
-            # 20% possibility to drop!
-            random_prob = random.random()
-            if random_prob < 0.5:
-                if sum([1 for val in output_dict.values() if val is not None]) > 3 and len(self.modalities) > 1:  # labels, pids, + one column
-                    output_dict[key] = None
-
+        # 2. Swap Features
+        for mod in mixup_modalities:
+            # Only swap if the other patient actually has data for this modality
+            if other_data.get(mod) is not None:
+                ori_data[mod] = other_data[mod].clone()
             else:
-                # process text
-                if output_dict[key] is not None:
-                    if "text" in key:
-                        output_dict[key] = aug_text(output_dict[key])
-                    elif "tabular" in key:
-                        output_dict[key] = aug_tabular(output_dict[key])
+                ori_data[mod] = None  # Drop the data for this modality
+        
+        # 3. Swap Labels (Risk-Based Selection)
+        # Definition of Higher Risk:
+        #   1. Event (1) > Censored (0)
+        #   2. If events are same, Shorter Time > Longer Time
+        
+        t1 = ori_data['labels']['label_time']
+        e1 = ori_data['labels']['label_event']
+        
+        t2 = other_data['labels']['label_time']
+        e2 = other_data['labels']['label_event']
+        
+        use_other_labels = False
 
-        return output_dict
-    
+        if e1 == 1 and e2 == 0:
+            # Patient 1 has event, Patient 2 censored. 1 is riskier. Keep 1.
+            use_other_labels = False
+        elif e1 == 0 and e2 == 1:
+            # Patient 2 has event, Patient 1 censored. 2 is riskier. Swap.
+            use_other_labels = True
+        elif e1 == e2:
+            # Both Event or Both Censored. 
+            # The one with SHORTER time is considered higher risk (died sooner) 
+            # or more conservative for censored (less info, assume riskier).
+            if t2 < t1:
+                use_other_labels = True
+            else:
+                use_other_labels = False
+        else:
+            raise ValueError("Invalid label combination")
+        
+        if use_other_labels:
+            ori_data['labels'] = copy.deepcopy(other_data['labels'])
+            
+        ori_data['labels']['do_mixup'] = True
+        return ori_data
+
     def get_survival_bins(self):
         """
         Returns a list of all labels (time bins) in the dataset.
-        This is used by the SurvivalBalancedBatchSampler.
         """
-        self.num_time_bins = 4  # bin设置得小一点
+        self.num_time_bins = 4 
         self.observed_years = 20 * 365.0
         self.time_bins = np.linspace(0, self.observed_years, self.num_time_bins + 1)
 
         labels_y = []
         for patient_id in self.patient_ids:
+            if patient_id not in self.patient_labels:
+                continue
             survival_info = self.patient_labels[patient_id]
             time_days = float(survival_info['DFS_time']) 
-            event_status = int(survival_info['DFS_event'])  # 未使用
+            event_status = int(survival_info['DFS_event']) 
 
             event_time = min(time_days, self.observed_years)
             time_bin = np.digitize(event_time, self.time_bins) - 1
-            
-            # 确保索引在 [0, num_bins-1]
             time_bin = max(0, min(time_bin, self.num_time_bins - 1))
             
             labels_y.append((int(time_bin), event_status))
 
-        return labels_y
+        return labels_y 
 
     def parse_modalities(self, modalities_str: str) -> List[str]:
-        """Parses the modalities string into a list of valid modality keys."""
-
         if modalities_str == "all":
-            # 返回所有有效的模态
             return sorted(list(self.VALID_MODALITIES))
         
-        # 解析逗号分隔的字符串
         requested_modalities = modalities_str.split(',')
         parsed_list = []
         for mod in requested_modalities:
-            mod = mod.strip() # 清理空格
+            mod = mod.strip()
             if mod in self.VALID_MODALITIES:
                 parsed_list.append(mod)
             else:
-                raise ValueError(f"Warning: Modality '{mod}' not recognized and will be skipped.")
-        
+                print(f"Warning: Modality '{mod}' not recognized and will be skipped.")
         return parsed_list
 
     def get_active_modalities(self):
         return self.modalities
     
-    def get_training_image_embeddings_prototypes(self, num_prototypes=64):
-        cache_dir = os.path.join(os.getcwd(), "../Cache")
-        cache_file = os.path.join(cache_dir, f"TCGA_LUAD_Fold={self.fold}_Prototypes={num_prototypes}.npy")
-        
-        # 检查缓存是否存在
-        if os.path.exists(cache_file):
-            print(f"Loading cached prototypes from: {cache_file}")
-            try:
-                prototypes_np = np.load(cache_file)
-                # 验证加载的原型数量是否匹配
-                if prototypes_np.shape[0] == num_prototypes:
-                    print("Cache hit. Returning cached prototypes.")
-                    return prototypes_np # 返回 NumPy 数组
-                else:
-                    print(f"Cache mismatch. Expected {num_prototypes} prototypes, found {prototypes_np.shape[0]}. Recalculating...")
-            except Exception as e:
-                print(f"Error loading cache file {cache_file}: {e}. Recalculating...")
-
-        all_embeddings = []
-        print(f"Aggregating image embeddings from {len(self)} patients in '{self.mode}' split...")
-
-        for idx in range(len(self)):
-            patient_id = self.patient_ids[idx]
-            x_image = self._read_h5_features(patient_id)
-            all_embeddings.append(x_image.cpu().numpy())
-
-        if not all_embeddings:
-            print("Error: No image embeddings found to cluster. Returning None.")
-            return None
-
-        # 将所有找到的嵌入连接成一个大的 NumPy 数组
-        try:
-            all_embeddings_np = np.concatenate(all_embeddings, axis=0)
-        except ValueError as e:
-            print(f"Error concatenating embeddings: {e}. Check if all x_img have the same feature dimension.")
-            return None
-
-        print(f"Total image patches (embeddings) found: {all_embeddings_np.shape[0]}")
-
-        # 处理边角情况: 嵌入数量少于要求的原型数量
-        if all_embeddings_np.shape[0] < num_prototypes:
-            print(f"Warning: Found only {all_embeddings_np.shape[0]} embeddings, which is less than num_prototypes ({num_prototypes}).")
-            print("Returning the unique embeddings themselves as prototypes.")
-            # 使用 np.unique 确保返回的至少是唯一的嵌入
-            unique_embeddings = np.unique(all_embeddings_np, axis=0)
-            print("This edge-case result will not be cached.")
-            return unique_embeddings # <-- 返回 NumPy 数组
-
-        # 将 NumPy 数组转换为 PyTorch Tensor (cluster 函数期望 Tensor)
-        all_embeddings_tensor = torch.from_numpy(all_embeddings_np).float()
-
-        try:
-            # 调用导入的 cluster 函数
-            prototypes_np = cluster(
-                patches=all_embeddings_tensor,
-                n_proto=num_prototypes
-            )
-            
-            print("Prototypes Shape : ", prototypes_np.shape)
-
-            try:
-                os.makedirs(cache_dir, exist_ok=True)
-                np.save(cache_file, prototypes_np)
-                print(f"Saved prototypes to cache: {cache_file}")
-            except Exception as e:
-                print(f"Warning: Could not save cache file to {cache_file}: {e}")
-
-            print("Clustering complete.")
-            return prototypes_np   # <-- 返回 NumPy 数组
-        
-        except Exception as e:
-            print(f"Error during clustering: {e}. Returning None.")
-            return None
-
-
-if __name__ == "__main__":
-    # 确保 __main__ 中的路径正确
-    # 假设 Code 目录是: /home/Guanjq/NewWork/MedAlignFusion/Code
-    # 那么 self.dataset_dir 将是: /home/Guanjq/NewWork/MedAlignFusion/Code/../Data/TCGA-LUAD
-    # 看起来是正确的
-    
-    # 切换工作目录到 'Code' 目录 (如果需要)
-    code_dir = "/home/Guanjq/NewWork/MedAlignFusion/Code"
-    if os.path.exists(code_dir) and os.getcwd() != code_dir:
-        try:
-            os.chdir(code_dir)
-            print(f"Changed working directory to: {os.getcwd()}")
-        except Exception as e:
-            print(f"Could not change directory to {code_dir}: {e}")
-    else:
-        print(f"Already in correct directory or {code_dir} not found.")
-
-
-    print("Initializing dataset...")
-    # 'all' 会加载所有已定义的模态
-    dataset = TCGA_LUAD_Dataset(mode='train', modalities='all', fold=0)
-    
-    print(f"\n--- Total dataset length: {len(dataset)} ---")
-
-    if len(dataset) > 0:
-        print("\n--- Testing dataset[0] ---")
-        data_item = dataset[0]
-        print(f"Patient ID: {data_item['pid']}")
-        
-        print("\nLabels:")
-        # --- 已修复: 使用 __getitem__ 中定义的正确键 ---
-        print(f"  Continuous Time (days): {data_item['labels']['label_time']}")
-        print(f"  Event (1=event, 0=censored): {data_item['labels']['label_event']}")
-        print(f"  Treatment Type: {data_item['labels']['treatment_type']}")
-        print(f"  Treatment One-Hot: {data_item['labels']['treatment_type_onehot']}")
-        # ------------------------------------------------
-
-        # print("\nGraph Data:")
-        # print(f"  {data_item['graph_data']}")
-
-        print("\nModalities:")
-        for mod in dataset.modalities:
-            if mod in data_item:
-                data = data_item[mod]
-                if isinstance(data, torch.Tensor):
-                    print(f"  [{mod}]: torch.Tensor of shape {data.shape}")
-                elif isinstance(data, str):
-                    print(f"  [{mod}]: str of length {len(data)}")
-                elif data is None:
-                    print(f"  [{mod}]: None (Data not found for this patient)")
-                else:
-                    print(f"  [{mod}]: {type(data)}")
-            else:
-                print(f"  [{mod}]: Not loaded (was not in data_item dict)")
-
-        # 检查一个表格模态的示例值
-        # --- 已修复: 使用 'tabular-clinical-9' ---
-        if "tabular-clinical-9" in data_item and data_item["tabular-clinical-9"] is not None:
-            print("\nExample tabular-clinical-9 data (first 5 values):")
-            print(f"  {data_item['tabular-clinical-9'][:5]}")
-            # 检查是否有 -1.0
-            if -1.0 in data_item["tabular-clinical-9"]:
-                print("  -> Found -1.0 (imputed value) in the data.")
-            else:
-                print("  -> No -1.0 (imputed value) found in this sample.")
-        # ----------------------------------------
-        
-        # --- 新增: 测试原型函数 ---
-        print("\n--- Testing prototype generation ---")
-        prototypes = dataset.get_training_image_embeddings_prototypes(num_prototypes=16)
-        if prototypes is not None:
-            print(f"Successfully generated prototypes with shape: {prototypes.shape}")
-        else:
-            print("Prototype generation failed or returned None.")
-        # ----------------------------
-
-    print("\n--- Test Complete ---")

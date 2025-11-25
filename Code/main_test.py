@@ -3,7 +3,7 @@ import sys
 # Add the root directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 
-from modules.training_utils.config import parse_arguments
+from modules.general_utils.config import parse_arguments
 from modules.tester import Tester
 import torch
 
@@ -27,6 +27,7 @@ if __name__ == '__main__':
 
     # Initialize and run the tester
     tester = Tester(args=args)
+    tester.valid()
     tester.test()
 
     print("\nTesting finished.", flush=True)

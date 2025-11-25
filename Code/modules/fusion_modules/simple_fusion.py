@@ -205,6 +205,23 @@ class MSAFusionBlock(nn.Module):
             
         return masked_mean_pool(fused_sequence, pool_mask)
 
+
+
+class MeanFusion(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): A tensor of concatenated sequences of shape (B, N_total, D).
+        """
+        assert x.dim() == 3, f"Expected input shape (B, N, D), but got {x.shape}"
+        assert mask is None or mask.shape[1] == x.shape[1], f"Mask shape (B, N) does not match input shape (B, N, D)"
+        return masked_mean_pool(x, mask)
+
+
+
 #==============================================================================
 # MAIN FUSION WRAPPER
 #==============================================================================
@@ -239,6 +256,10 @@ class SimpleFusion(nn.Module):
             return LowRankFusionBlock(dim, dim)
         elif self.fusion_type == 'gated':
             return GatedFusionBlock(dim, dim)
+        elif self.fusion_type == 'low_rank':
+            return LowRankFusionBlock(dim, dim)
+        elif self.fusion_type == 'mean':
+            return MeanFusion(dim, dim)
         else:
             # This case is already handled in __init__, but included for safety
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")

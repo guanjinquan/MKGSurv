@@ -1,28 +1,25 @@
 import os
 import sys
-
-import torch.utils
-# 假设这个文件在 'modules/models' 目录下，调整路径以导入同级 'common_modules'
-sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 import torch
 from torch import nn
 import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel
-from typing import Dict, Any, List, Tuple, Optional, Union
-import numpy as np
-import pandas as pd
-from nystrom_attention import NystromAttention
-from modules.common_modules.surv_loss import CustomCoxPHLoss, mean_by_event
-from training_utils.metrics import survival_metrics, multiple_classification_metrics
-from modules.common_modules import GetImageAggregater
-from modules.common_modules.init_weights import init_kaiming_norm
+from typing import Dict, Any, List, Tuple, Optional
+
+# Add parent directory to path for module imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
+
+from modules.base_modules.surv_loss import CustomCoxPHLoss, mean_by_event
+from general_utils.metrics import survival_metrics, multiple_classification_metrics
+from modules.base_modules.init_weights import init_kaiming_norm
 
 
 
-# ==========================================================================================
-# Main Encoder-Decoder Model for TCGA-LUAD Dataset
-# ==========================================================================================
 class TCGA_LUSC_SurvivalPred(nn.Module):
+
+    # Required Class Atributes
+    METRICS_FN = None
+    embed_dim = None
+    max_modalities_num = None
 
     def __init__(
         self,
@@ -33,64 +30,85 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
         self.embed_dim = 512
+        self.dropout_rate = 0.25
 
         # --- Modality Setup ---
         self.active_modalities = dataset.get_active_modalities()
         self.max_modalities_num = len(self.active_modalities)
         print(f"Model initialized for modalities: {self.active_modalities}")
 
-        # ----- 1. (Graph) Image Branch (image-pathology) -----
+        # ======================================================================
+        # 1. Encoders / Projection Layers
+        # ======================================================================
+
+        # ----- Image Branch (image-pathology) -----
         if 'image-pathology' in self.active_modalities:
-            print("Initializing Image MIL (AggregatingTransMIL)")
-            self.num_image_tokens = 16
-
-            self.image_mil = GetImageAggregater(
-                args.image_aggregater,
-                InputDim=1024,
-                OutputDim=self.embed_dim,
-                OutputTokenNum=self.num_image_tokens,
-                PrototypesData=dataset.get_training_image_embeddings_prototypes(self.num_image_tokens)
+            print("Initializing Image Projection")
+            image_input_dim = 1024 * 2 + 1
+            self.image_proj = nn.Sequential(
+                nn.Linear(image_input_dim, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                nn.Linear(self.embed_dim, self.embed_dim),
+                
+                nn.ReLU(),
+                nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.image_mil)
+            init_kaiming_norm(self.image_proj)
 
-        # ----- 2. (Graph) Genomics Branch (genomics-genomics) -----
-        # --- MODIFIED: Per user request, use simple Linear for N=5 tokens, not MIL ---
+        # ----- Genomics Branch (genomics-genomics) -----
         if 'genomics-genomics' in self.active_modalities:
-            print("Initializing Genomics Encoder (Linear layer for N=5 tokens)")
+            print("Initializing Genomics Encoder")
             self.genomics_encoder = nn.Sequential(
-                nn.LayerNorm(512),
-                nn.Linear(512, self.embed_dim)
+                nn.Linear(512, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                
+                nn.Linear(self.embed_dim, self.embed_dim),
+                nn.ReLU(),
+                nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate)
             )
             init_kaiming_norm(self.genomics_encoder)
 
-        # ----- 3. Text Branch (text-pathology) -----
+        # ----- Text Branch (text-pathology / text-treatment) -----
+        # Assuming inputs are pre-extracted BERT features (768 dim)
         if any('text' in modal for modal in self.active_modalities):
-            print("Initializing Text Encoder (ClinicalBERT)")
-            self.text_model_name = "medicalai/ClinicalBERT"
-            self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_name, use_fast=True)
-            self.bert = AutoModel.from_pretrained(self.text_model_name)
-            bert_hidden_size = self.bert.config.hidden_size
-            self.bert_proj = nn.Linear(bert_hidden_size, self.embed_dim) if bert_hidden_size != self.embed_dim else nn.Identity()
-            init_kaiming_norm(self.bert_proj)
+            print("Initializing Text Encoder (Linear Projector)")
+            self.text_proj = nn.Sequential(
+                nn.Linear(768, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
 
-        # ----- 4. Tabular Branch (from CSVs) -----
-        self.tabular_encoder = nn.ModuleDict()
+                nn.Linear(self.embed_dim, self.embed_dim),
+                nn.ReLU(),
+                nn.LayerNorm(self.embed_dim),
+            )
+            init_kaiming_norm(self.text_proj)
+
+        # ----- Tabular Branch (from CSVs) -----
+        self.tabular_encoders = nn.ModuleDict()
         for mod_name in self.active_modalities:
             if "tabular" in mod_name:
                 try:
-                    # 从 "tabular-clinical-56" 中提取 "56"
+                    # Parse dimension from name "tabular-clinical-9" -> 9
                     in_dim = int(mod_name.split('-')[-1])
                     print(f"Initializing Tabular Encoder for '{mod_name}' (In: {in_dim}, Out: {self.embed_dim})")
-                    self.tabular_encoder[mod_name] = nn.Sequential(
-                        nn.LayerNorm(in_dim),
-                        nn.Linear(in_dim, self.embed_dim)
+                    
+                    self.tabular_encoders[mod_name] = nn.Sequential(
+                        nn.Linear(in_dim, self.embed_dim),
+                        nn.LayerNorm(self.embed_dim),
+
+                        nn.Linear(self.embed_dim, self.embed_dim),
+                        nn.ReLU(),
+                        nn.LayerNorm(self.embed_dim),
+                        nn.Dropout(self.dropout_rate)
                     )
-                    init_kaiming_norm(self.tabular_encoder[mod_name])
+                    init_kaiming_norm(self.tabular_encoders[mod_name])
                 except (ValueError, IndexError):
                     print(f"ERROR: Could not parse dimension from tabular modality name: '{mod_name}'")
-                    print("Expected format: 'tabular-type-DIMENSION' (e.g., 'tabular-clinical-56')")
 
-        # ----- Prediction Head (for Decode step) -----
+        # ======================================================================
+        # 2. Prediction Head
+        # ======================================================================
         self.decode_task = decode_task
         if decode_task == 'surv_pred':
             self.out_dim = 1
@@ -101,272 +119,133 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             self.loss_fn = nn.BCEWithLogitsLoss(reduction='none')
             self.METRICS_FN = multiple_classification_metrics
         else:
-            raise ValueError(f"Unsupport task = {decode_task}")
+            raise ValueError(f"Unsupported task = {decode_task}")
 
         self.prediction_head = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 4),
+            nn.Linear(self.embed_dim, self.embed_dim // 2),
             nn.ReLU(),
-            nn.LayerNorm(self.embed_dim // 4),
-            nn.Dropout(0.3),
-
-            nn.Linear(self.embed_dim // 4, self.out_dim)
+            nn.LayerNorm(self.embed_dim // 2),
+            nn.Dropout(0.5),
+            nn.Linear(self.embed_dim // 2, self.out_dim)
         )
         init_kaiming_norm(self.prediction_head)
 
-
-
-    def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
-        """Splits a list of token ids into chunks."""
-        return [ids[i:i + chunk_size] for i in range(0, len(ids), chunk_size)]
-
-    def _encode_text(self, texts_list: List[Optional[str | List[str]]]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Encodes a batch of texts, handling List[str] as separate items and chunking long inputs."""
-        batch_size = len(texts_list) # <--- 修正了拼写错误 (was text_list)
-        chunk_payload = 510  # 512 - 2 for [CLS] and [SEP]
+    def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Handles padding for a list of variable length tensors.
         
-        all_chunks = []
-        mapping_info = [] # (original_batch_index, num_chunks)
+        Args:
+            data_list: List of length B. Elements are either Tensor(N, D) or None.
         
-        for i, item in enumerate(texts_list):
-            
-            # 存放这个批次项 (item) 最终对应的所有 token 块
-            item_specific_chunks = [] 
-            
-            # --- 这是新的核心逻辑 ---
-            texts_to_process = []
-            if isinstance(item, str) and item.strip():
-                # 1. 如果是单个字符串，将其放入待处理列表
-                texts_to_process.append(item)
-            elif isinstance(item, list):
-                # 2. 如果是列表，过滤掉无效字符串后，全部放入待处理列表
-                texts_to_process.extend([t for t in item if isinstance(t, str) and t.strip()])
-            
-            # 3. 如果 item 是 None, [], 或 ["", " "]，texts_to_process 将为空
-            if not texts_to_process:
-                mapping_info.append({'index': i, 'n': 0})
+        Returns:
+            padded_batch: (B, Max_N, D) on self.device
+            mask_batch: (B, Max_N) on self.device (1 for data, 0 for padding/None)
+        """
+        device = self.device
+        batch_size = len(data_list)
+        
+        # 1. Identify valid tensors and determine dimensions
+        valid_tensors = [t for t in data_list if t is not None]
+        
+        if not valid_tensors:
+            print("WARNING: No valid tensors found in batch. Returning empty tensors.")
+            return None, None
+        # Determine max sequence length in this batch
+        # Note: data_list elements can be (N, D) or just (D,). If (D,), treat as (1, D)
+        max_seq_len = 0
+        input_dim = 0
+        
+        processed_list = []
+        for t in data_list:
+            if t is None:
+                processed_list.append(None)
                 continue
             
-            # 4. 统一处理所有待处理的文本
-            # 无论是单个 str 还是 List[str] 中的每个 str，
-            # 它们现在都被同等对待：tokenize -> chunk
-            for text in texts_to_process:
-                token_ids = self.tokenizer.encode(text, add_special_tokens=False)
-                # _chunk_token_ids 会处理长文本和短文本
-                chunks = self._chunk_token_ids(token_ids, chunk_payload) 
-                if chunks:
-                    item_specific_chunks.extend(chunks)
-
-            # 记录这个批次项 (item) 总共产生了多少个 chunk
-            if not item_specific_chunks:
-                mapping_info.append({'index': i, 'n': 0})
-                continue
-                
-            mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
-            all_chunks.extend(item_specific_chunks)
-
-
-        if not all_chunks:
-            # 返回一个 (B, 1, D) 和 (B, 1) 的空张量，与你原始逻辑保持一致
-            return torch.zeros(batch_size, 1, self.embed_dim, device=self.device), torch.zeros(batch_size, 1, device=self.device).bool()
-
-        # 将所有 chunk 转换成 token 字符串（注意：这里有潜在的效率问题，但忠于你的原始代码）
-        inputs = self.tokenizer(
-            [' '.join(self.tokenizer.convert_ids_to_tokens(c)) for c in all_chunks],
-            return_tensors="pt", padding=True, truncation=True, max_length=512
-        ).to(self.device)
-
-        # BERT 批量推理
-        with torch.no_grad():
-            bert_outputs = self.bert(**inputs)
-        pooled = self.bert_proj(bert_outputs.last_hidden_state[:, 0, :]) # Use [CLS] token
-
-        # 重组：将 (TotalChunks, D) 恢复成 (B, max_chunks, D)
-        max_chunks = max((m['n'] for m in mapping_info), default=1)
-        final_embeddings = torch.zeros(batch_size, max_chunks, self.embed_dim, device=self.device)
-        final_mask = torch.zeros(batch_size, max_chunks, device=self.device).bool()
-
-        chunk_idx = 0
-        for i in range(batch_size):
-            # 查找索引为 i 的批次项有多少个 chunk
-            num_chunks = next((m['n'] for m in mapping_info if m['index'] == i), 0)
+            # Ensure tensor is on device and float
+            t = t.to(device).float()
+            if t.dim() == 1:
+                t = t.unsqueeze(0) # (D,) -> (1, D)
             
-            if num_chunks > 0:
-                # 从 'pooled' 中提取这些 chunk 的 embedding
-                patient_chunks = pooled[chunk_idx : chunk_idx + num_chunks]
-                # 放入最终的张量
-                final_embeddings[i, :num_chunks] = patient_chunks
-                final_mask[i, :num_chunks] = True
-                # 移动指针
-                chunk_idx += num_chunks
-        
-        return final_embeddings, final_mask.bool()
-    
-    
+            current_len = t.shape[0]
+            if current_len > max_seq_len:
+                max_seq_len = current_len
+            
+            input_dim = t.shape[1]
+            processed_list.append(t)
+
+        # 2. Create Padded Tensor and Mask
+        padded_batch = torch.zeros(batch_size, max_seq_len, input_dim, device=device)
+        mask_batch = torch.zeros(batch_size, max_seq_len, device=device) # Float or Bool
+
+        for i, t in enumerate(processed_list):
+            if t is not None:
+                length = t.shape[0]
+                # Fill data
+                padded_batch[i, :length, :] = t
+                # Fill mask
+                mask_batch[i, :length] = 1.0
+            # else: Leave as zeros (masked out)
+
+        return padded_batch, mask_batch
+
     def encode(self, batch: Dict[str, Any]) -> Dict:
-        """Dynamically encodes modalities based on what's present in the batch."""
+        """
+        Encodes all modalities in the batch into aligned embedding spaces.
         
-        device = next(self.parameters()).device
-        all_embeddings, all_masks = [], []
-        present_modalities = []
-        batch_size = len(batch.get('labels', []))
-
-        if 'image-pathology' in self.active_modalities:
-            wsi_tensors = batch['image-pathology'] # List[Optional[Tensor(N, D)]]
-            valid_tensors = [t for t in wsi_tensors if t is not None]
-            
-            if valid_tensors:
-                # Find max patches
-                max_patches = max(t.shape[0] for t in valid_tensors)
-                # Get the embedding dimension from the first valid tensor
-                input_dim = valid_tensors[0].shape[1]
-                
-                padded_wsi, is_valid_wsi, patch_masks = [], [], []
-                device = self.device # Assuming 'device' is accessible via 'self'
-                
-                for tensor in wsi_tensors:
-                    if tensor is not None:
-                        num_patches = tensor.shape[0]
-                        pad_len = max_patches - num_patches
-                        
-                        # Pad the tensor data
-                        padded = F.pad(tensor, (0, 0, 0, pad_len), 'constant', 0)
-                        padded_wsi.append(padded.to(device))
-                        is_valid_wsi.append(True)
-                        
-                        # Create a mask of 1s for real patches
-                        mask = torch.ones(num_patches, device=device)
-                        # Pad the mask with 0s for the padding
-                        mask_padded = F.pad(mask, (0, pad_len), 'constant', 0)
-                        patch_masks.append(mask_padded)    
-                    else:
-                        # Append a zero tensor for the WSI
-                        padded_wsi.append(torch.zeros(max_patches, input_dim, device=device))
-                        is_valid_wsi.append(False)
-            
-                        # Append a mask of all 0s for the absent WSI
-                        patch_masks.append(torch.zeros(max_patches, device=device))
-
-                wsi_batch = torch.stack(padded_wsi).to(device)
-                
-                # Stack the individual patch masks into a batch mask
-                # This 'mask' will have shape (B, max_patches)
-                mask = torch.stack(patch_masks).to(device)
-                
-                # Pass the calculated padding mask to the image_mil module
-                wsi_token_embeds = self.image_mil(wsi_batch, mask) # (B, p (TransMIL) or 2 * p + 1 (PANTHER), D)
-                
-                # This mask (wsi_mask) is for *after* MIL, to mask out entire
-                # absent slides, based on your original logic.
-                wsi_mask = torch.tensor(is_valid_wsi, device=device).unsqueeze(1).expand(-1, wsi_token_embeds.shape[1])
-                
-                all_embeddings.append(wsi_token_embeds)
-                all_masks.append(wsi_mask)
-                present_modalities.append("image-pathology")
-
-        # --- 2.  Genomics Branch ---
-        if 'genomics-genomics' in self.active_modalities:
-            rna_tensors = batch['genomics-genomics'] # List[Optional[Tensor(N, D)]]
-            
-            max_nodes = max(tensor.shape[0] for tensor in rna_tensors if tensor is not None) if any(t is not None for t in rna_tensors) else 0
-            
-            # [修改] 修复了当 rna_tensors 为空或全为 None 时的 max_nodes=0 错误
-            if max_nodes == 0:
-                raise ValueError("Error genomics")
-
-            padded_rna = []
-            rna_mask_list = []
-            
-            assert len(rna_tensors) > 0, f"Must have rna_tensors"
-            for tensor in rna_tensors:
-                if tensor is not None:
-
-                    n_nodes = tensor.shape[0]
-                    # 我们将截断/填充到 max_nodes
-                    if n_nodes > max_nodes:
-                        padded = tensor[:max_nodes].to(device)
-                        mask = torch.ones(max_nodes, device=device).bool()
-                    else:
-                        pad_len = max_nodes - n_nodes
-                        padded = F.pad(tensor, (0, 0, 0, pad_len), 'constant', 0).to(device)
-                        mask = torch.zeros(max_nodes, device=device).bool()
-                        mask[:n_nodes] = True
-                    
-                    padded_rna.append(padded)
-                    rna_mask_list.append(mask)
-                else:
-                    # 缺少此模态的患者
-                    padded_rna.append(torch.zeros(max_nodes, 1024, device=device)) # 1024 = input_dim
-                    rna_mask_list.append(torch.zeros(max_nodes, device=device).bool())
-
-            rna_batch = torch.stack(padded_rna).to(device) # (B, N, 1024)
-            rna_mask = torch.stack(rna_mask_list).to(device) # (B, N)
-
-            # 应用 Linear Encoder: (B, n, 1024) -> (B, n, 512)
-            rna_token_embeds = self.genomics_encoder(rna_batch) 
-
-            all_embeddings.append(rna_token_embeds)
-            all_masks.append(rna_mask)
-            present_modalities.append("genomics-genomics")
-
-        # --- 3. Text Branch ---
-        if 'text-pathology' in self.active_modalities and batch['text-pathology']:
-            # _encode_text 期望一个 (B,) 的列表
-            embeds, mask = self._encode_text(batch['text-pathology'])
-
-            all_embeddings.append(embeds)
-            all_masks.append(mask)
-            present_modalities.append("text-pathology")
-
-        if 'text-treatment' in self.active_modalities and batch['text-treatment']:
-            # _encode_text 期望一个 (B,) 的列表
-            embeds, mask = self._encode_text(batch['text-treatment'])
-
-            all_embeddings.append(embeds)
-            all_masks.append(mask)
-            present_modalities.append("text-treatment")
-
-        # --- 4. Tabular Branch ---
+        Returns:
+            Dict containing:
+            - "embeddings": List[Tensor(B, N_mod, Embed_Dim)]
+            - "masks": List[Tensor(B, N_mod)]
+        """
+        all_embeddings = []
+        all_masks = []
+        
+        # Iterate through active modalities defined in dataset
         for mod_name in self.active_modalities:
-            if "tabular" in mod_name and mod_name in self.tabular_encoder and batch[mod_name]: 
+            if mod_name not in batch:
+                continue
                 
-                table_features = []
-                table_masks = []
+            raw_data = batch[mod_name]  # List[Tensor | None]
+            
+            # 1. Pad and Mask (Common utility)
+            padded_features, mask = self._pad_and_mask_modality(raw_data)
+            if padded_features is None:
+                print(f"Warning: No valid tensors found in batch for modality '{mod_name}'. Skipping.")
+                continue
+            
+            # 2. Project to Embed Dim based on modality type
+            if mod_name == 'image-pathology':
+                # padded_features: (B, N_patches, D_img)
+                encoded_feat = self.image_proj(padded_features)
                 
-                # batch[mod_name] 是一个 List[Optional[Tensor(L,)]]
-                for table_tensor in batch[mod_name]:
-                    if table_tensor is not None:
-
-                        # 确保它是正确类型和设备
-                        modality_stack_tensor = table_tensor.to(device).float()
-                        
-                        # 编码
-                        tabular_feature = self.tabular_encoder[mod_name](modality_stack_tensor)
-                        tabular_feature = tabular_feature.reshape(1, 1, -1)  # (1, 1, D)
-                        tabular_mask = torch.ones(1, 1, device=device).bool()
-                    else: 
-                        # 某些患者缺少此模态
-                        tabular_feature = torch.zeros((1, 1, self.embed_dim), device=device).float()
-                        tabular_mask = torch.zeros(1, 1, device=device).bool()
-                    
-                    table_features.append(tabular_feature)
-                    table_masks.append(tabular_mask)
-
-                # 堆叠 (B, 1, D)
-                table_features_batch = torch.cat(table_features, dim=0)
-
-                table_masks_batch = torch.cat(table_masks, dim=0)
+            elif mod_name == 'genomics-genomics':
+                # padded_features: (B, N_genes, D_rna)
+                encoded_feat = self.genomics_encoder(padded_features)
                 
-                all_embeddings.append(table_features_batch)
-                all_masks.append(table_masks_batch)
-                present_modalities.append(mod_name)
+            elif 'text' in mod_name:
+                # padded_features: (B, N_tokens, D_bert)
+                encoded_feat = self.text_proj(padded_features)
+                
+            elif 'tabular' in mod_name:
+                # padded_features: (B, 1, D_tab)
+                if mod_name in self.tabular_encoders:
+                    encoded_feat = self.tabular_encoders[mod_name](padded_features)
+                else:
+                    continue # Should not happen given init logic
 
-        # --- Define Alignment Pairs ---
-        align_pairs = []
+            else:
+                print(f"Warning: Modality {mod_name} has no encoder defined.")
+                continue
+
+            # 3. Append to lists
+            # encoded_feat is (B, N, Embed_Dim), mask is (B, N)
+            all_embeddings.append(encoded_feat)
+            all_masks.append(mask)
 
         return {
-            "embeddings": all_embeddings,
-            "masks": all_masks,
-            "align_pairs": align_pairs
+            "embeddings": all_embeddings, # List of (B, N_i, D)
+            "masks": all_masks,           # List of (B, N_i)
+            "align_pairs": []             # Reserved for alignment losses
         }
 
     def _surv_decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
@@ -397,18 +276,21 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
              return {"logits": logits, "loss": loss}
 
         # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
+        do_mixup_list = [batch['labels'][i]['do_mixup'] for i in range(batch_size)]
         label_time_list = [batch['labels'][i]['label_time'] for i in range(batch_size)]
         label_event_list = [batch['labels'][i]['label_event'] for i in range(batch_size)]
 
         Y_full = torch.tensor(label_time_list, device=device, dtype=torch.long)
         c_full = torch.tensor(label_event_list, device=device, dtype=torch.long)
+        m_full = torch.tensor(do_mixup_list, device=device, dtype=torch.bool)
 
         valid_Y = Y_full[patient_mask]
         valid_c = c_full[patient_mask]
+        valid_m = m_full[patient_mask]
 
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
-        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c)
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c, valid_m)
         loss = mean_by_event(loss_tensor_unreduced, valid_c)
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
@@ -474,16 +356,3 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             return self._treatment_decode(pooled_embeddings, pooled_mask, batch)
         else:
             raise ValueError("Unsupport decode")
-        
-    def get_backbone_params(self) -> List[nn.Parameter]:
-        try:
-            parms_in_clinical_bert = [p for p in self.bert.parameters()]
-            return parms_in_clinical_bert
-        except AttributeError:
-            # text-pathology (bert) 未被激活
-            return []
-    
-    def get_params(self) -> List[nn.Parameter]:
-        backbone_params_ids = {id(p) for p in self.get_backbone_params()}
-        parms_in_others = [p for p in self.parameters() if id(p) not in backbone_params_ids]
-        return parms_in_others

@@ -1,7 +1,8 @@
 import os
 import json
 from typing import Dict, Any, List, Tuple
-
+import sys
+sys.path.append("/home/Guanjq/NewWork/MedAlignFusion/Code")
 import h5py
 import numpy as np
 import pandas as pd
@@ -12,7 +13,7 @@ import copy
 import joblib # 导入 joblib
 from sklearn.cluster import KMeans # <-- 新增导入
 from datasets.dataset_base import MultiModalDataset
-from modules.common_modules.prototypes import cluster
+from modules.base_modules.prototypes import cluster
 
 
 
@@ -53,6 +54,38 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             # --- 在 __init__ 中重新引发错误 ---
             raise
 
+    def _read_h5_features(self, pid: str):
+        """
+        Reads image features from an .h5 file for a specific patient ID.
+        """
+        # 1. Get the file path from the dictionary created in __init__
+        file_path = self.pid_to_image_feat.get(pid)
+        
+        if file_path is None:
+            print(f"Warning: No H5 file found for PID: {pid}. Returning zeros or raising error.")
+            # Option A: Raise error (Recommended if data integrity is strict)
+            raise FileNotFoundError(f"Image feature file not found for patient {pid}")
+            # Option B: Return empty tensor (Only if you have a strategy to handle missing modalities)
+            # return torch.zeros((1, 1024)) 
+
+        try:
+            # 2. Open the H5 file
+            with h5py.File(file_path, 'r') as f:
+                # Check if the key exists (it's usually 'features', 'feats', or 'coords')
+                if 'features' not in f:
+                    raise KeyError(f"Key 'features' not found in {file_path}. Available keys: {list(f.keys())}")
+                
+                # 3. Load data into memory
+                # [:] copies the data from disk to numpy array
+                features = f['features'][:] 
+                
+            # 4. Convert to PyTorch Tensor
+            return torch.from_numpy(features).float()
+
+        except Exception as e:
+            print(f"Error reading H5 file for {pid} at {file_path}: {e}")
+            raise e
+
     def __init__(self, mode: str = "train", modalities: str = "all", fold: int = None):
         """
         Initializes the dataset.
@@ -81,9 +114,6 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         print(f"Warning: Using dataset directory: {self.dataset_dir}")
         print("Please ensure this path is correct or modify as needed.")
 
-        # Load Image Features
-        self.data_pickle = self._read_pickle(os.path.join(self.dataset_dir, "source", "luad_data.pkl")) # DICT ID:torch_geometric.data.data.Data, 
-
         # Load Gene Features
         gene_pkl_file = os.path.join(self.dataset_dir, "processed", "hallmarks_tokens_pid_map.pkl")
         self.gene_dict = self._read_pickle(gene_pkl_file)  # PID -> Tokens
@@ -93,6 +123,17 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         split_file = os.path.join(self.dataset_dir, "processed", "luad_patients_5fold.json") 
         with open(split_file, 'r') as f:
             self.patient_ids = json.load(f)['folds'][fold][mode]
+
+        # Load Image Features
+        self.image_feat_path = os.path.join(self.dataset_dir, "h5_files")
+        self.pid_to_image_feat = {}
+        for file in os.listdir(self.image_feat_path):
+            if file.endswith(".h5"):
+                try:
+                    patient_id = [pid for pid in self.patient_ids if pid in file][0]
+                    self.pid_to_image_feat[patient_id] = os.path.join(self.image_feat_path, file)
+                except Exception as e:
+                    continue  # 训练集/验证集/测试集
 
         # --- Parse modalities ---
         self.modalities = self.parse_modalities(modalities)
@@ -113,7 +154,9 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
         reports_path = os.path.join(processed_dir, "tcga_luad_reports.csv")
         labels_path = os.path.join(processed_dir, "luad_patient_labels.csv")  
-        
+
+
+        # Read CSV files   
         try:
             # --- 更新：加载时明确指定 dtype=str，以防止 pandas 自动转换 ---
             # 这样可以确保 '1.0' 和 '1' 都被视为字符串，直到 _process_row 处理
@@ -249,25 +292,26 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             'treatment_type_onehot': [1 if str(i) in treatment_type_id else 0 for i in range(5)],
         }
 
-        # 3. 获取图数据 (来自 luad_data.pkl)
-        try:
-            # 这应该是一个 torch_geometric.data.Data 对象
-            graph_data = self.data_pickle[patient_id]
-        except KeyError:
-            print(f"Error: Patient ID {patient_id} not found in data_pickle (luad_data.pkl).")
-            # 这是一个关键错误，这个 patient_id 没有图数据
-            return self.__getitem__((idx + 1) % len(self))
+        # # 3. 获取图数据 (来自 luad_data.pkl)
+        # try:
+        #     # 这应该是一个 torch_geometric.data.Data 对象
+        #     graph_data = self.data_pickle[patient_id]
+        # except KeyError:
+        #     print(f"Error: Patient ID {patient_id} not found in data_pickle (luad_data.pkl).")
+        #     # 这是一个关键错误，这个 patient_id 没有图数据
+        #     return self.__getitem__((idx + 1) % len(self))
 
         # 4. 根据 self.modalities 动态加载其他数据
         # --- (PyG) 图像特征 ---
         if "image-pathology" in self.modalities:
     
             # 1. 默认使用原始数据 (适用于 'eval', 'test' 模式)
-            x_img_to_output = graph_data.x_img
+            # x_img_to_output = graph_data.x_img
+            x_img_to_output = self._read_h5_features(patient_id)
             
             # 32. 仅在 'train' 模式下应用数据增强
             if self.mode == 'train':
-                x_img_aug = graph_data.x_img.clone()
+                x_img_aug = x_img_to_output
                 
                 # --- 增强 1: 随机 Shuffle ---
                 # 50% 的概率打乱 token 顺序
@@ -446,16 +490,8 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
         for idx in range(len(self)):
             patient_id = self.patient_ids[idx]
-            try:
-                # 注意: 无需 deepcopy，因为我们只读取数据
-                graph_data = self.data_pickle[patient_id]
-            except KeyError:
-                print(f"Warning: Patient ID {patient_id} not found in data_pickle during prototype creation. Skipping.")
-                continue
-            
-            # 检查 x_img 是否存在、非空且有数据
-            if hasattr(graph_data, 'x_img') and graph_data.x_img is not None and graph_data.x_img.shape[0] > 0:
-                all_embeddings.append(graph_data.x_img.cpu().numpy())
+            x_image = self._read_h5_features(patient_id)
+            all_embeddings.append(x_image.cpu().numpy())
 
         if not all_embeddings:
             print("Error: No image embeddings found to cluster. Returning None.")
@@ -484,16 +520,12 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
         try:
             # 调用导入的 cluster 函数
-            prototypes_with_batch_dim = cluster(
+            prototypes_np = cluster(
                 patches=all_embeddings_tensor,
                 n_proto=num_prototypes
             )
             
-            # cluster 函数返回 (1, K, D) 的 NumPy 数组
-            # 我们的缓存逻辑期望 (K, D)，所以执行 squeeze
-            prototypes_np = prototypes_with_batch_dim.squeeze(0)
-            
-            print("Clustering complete.")
+            print("Prototypes Shape : ", prototypes_np.shape)
 
             try:
                 os.makedirs(cache_dir, exist_ok=True)
@@ -502,9 +534,11 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             except Exception as e:
                 print(f"Warning: Could not save cache file to {cache_file}: {e}")
 
+            print("Clustering complete.")
             return prototypes_np   # <-- 返回 NumPy 数组
         
         except Exception as e:
+            print(f"Error during clustering: {e}. Returning None.")
             return None
 
 
@@ -545,8 +579,8 @@ if __name__ == "__main__":
         print(f"  Treatment One-Hot: {data_item['labels']['treatment_type_onehot']}")
         # ------------------------------------------------
 
-        print("\nGraph Data:")
-        print(f"  {data_item['graph_data']}")
+        # print("\nGraph Data:")
+        # print(f"  {data_item['graph_data']}")
 
         print("\nModalities:")
         for mod in dataset.modalities:

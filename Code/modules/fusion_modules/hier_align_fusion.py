@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from copy import deepcopy
 from typing import List, Optional, Dict, Tuple
-from modules.common_modules.align_utils import AlignmentModule
-from modules.common_modules.aggregation_utils import masked_mean_pool
+from modules.base_modules.align_utils import AlignmentModule
+from modules.base_modules.aggregation_utils import masked_mean_pool
 
 
 

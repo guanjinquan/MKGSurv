@@ -29,9 +29,9 @@ from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
 
 # --- Common Modules ---
-from modules.common_modules.align_utils import AlignmentModule
-from modules.common_modules.aggregation_utils import masked_mean_pool
-from modules.common_modules.multimodal_vib import TokenWiseMultiModalVIB
+from modules.base_modules.align_utils import AlignmentModule
+from modules.base_modules.aggregation_utils import masked_mean_pool
+from modules.base_modules.multimodal_vib import TokenWiseMultiModalVIB
 
 
 def GetModel(args, dataset):
@@ -211,14 +211,6 @@ class ModelInterface(nn.Module):
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         
         return {"logits": final_logits, "losses": all_losses}
-
-    def get_backbone_params(self):
-        return self.task_head.get_backbone_params()
-    
-    def get_others_params(self):
-        all_params = list(self.parameters())
-        backbone_params = set(self.get_backbone_params())
-        return [p for p in all_params if p not in backbone_params]
 
 
 

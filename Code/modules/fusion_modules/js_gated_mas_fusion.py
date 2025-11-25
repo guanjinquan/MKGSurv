@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from copy import deepcopy
 from typing import List, Optional, Dict, Tuple, Any
-from modules.common_modules.aggregation_utils import masked_mean_pool
+from modules.base_modules.aggregation_utils import masked_mean_pool
 
 def batch_js_divergence(prob_list: List[torch.Tensor], epsilon: float = 1e-10) -> torch.Tensor:
     """

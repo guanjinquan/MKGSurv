@@ -2,7 +2,7 @@
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__)))
-from modules.training_utils.config import parse_arguments
+from modules.general_utils.config import parse_arguments
 import numpy as np
 import random
 from modules.trainer import Trainer
@@ -18,15 +18,7 @@ if __name__ == '__main__':
 
     import torch
     torch.multiprocessing.set_start_method('spawn')
-    
-    # 固定种子
-    seed = int(args.seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(seed)
-    random.seed(seed)
+ 
     
     # start work
     trainer = Trainer(args=args)

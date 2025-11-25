@@ -4,7 +4,7 @@ from torch import nn, einsum
 from einops import rearrange, reduce
 
 # Import the new masked mean pool function
-from modules.common_modules.aggregation_utils import masked_mean_pool
+from modules.base_modules.aggregation_utils import masked_mean_pool
 from nystrom_attention import NystromAttention
 
 from typing import List, Optional, Dict, Tuple

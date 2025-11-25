@@ -9,8 +9,8 @@ from typing import Dict, Any, List, Tuple, Optional, Union
 import numpy as np
 import pandas as pd
 from nystrom_attention import NystromAttention
-from modules.common_modules.surv_loss import CustomCoxPHLoss
-from modules.training_utils.metrics import survival_metrics
+from modules.base_modules.surv_loss import CustomCoxPHLoss
+from modules.general_utils.metrics import survival_metrics
 
 
 

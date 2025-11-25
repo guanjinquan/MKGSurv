@@ -61,4 +61,4 @@ transformers==4.42.3
 triton==2.3.1
 nystrom_attention==0.0.14
 pycox==0.3.0
-
+pdfplumber==0.11.8
