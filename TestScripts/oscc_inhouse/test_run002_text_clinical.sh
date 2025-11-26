@@ -9,7 +9,7 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="oscc_inhouse_run002"
+RUN_ID="oscc_inhouse_run002_ood"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.

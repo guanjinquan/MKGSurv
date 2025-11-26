@@ -38,20 +38,6 @@ class Tester:
         self.modalities = dataset.get_active_modalities()
         self.model = GetModel(self.args, dataset).to(self.device)
         
-        self.test_treatment = False
-        if "text-treatment" in self.modalities and len(self.modalities) > 2:
-            self.test_treatment = True
-            self.pre_op_modalities = self.test_loader.dataset.PRE_OP_MODALITIES
-            self.post_op_modalities = self.test_loader.dataset.POST_OP_MODALITIES
-            self.treatment_options = self.test_loader.dataset.TREATMENT_OPTIONS
-            self.treatment_options_onehot = self.test_loader.dataset.TREATMENT_OPTIONS_ONEHOT
-            self.treatment_options_embeds = self.test_loader.dataset.TREATMENT_OPTIONS_FEAT
-
-            print("Treatment Length : ", len(self.treatment_options))
-            print("[INFO] Start testing the treatment prediction accuracy.")
-        else:
-            print("[INFO] Don't evaluate the treatment prediction accuracy.")
-
         if self.args.load_pth_path is None:
             if self.args.fold is not None:
                 run_path = [self.args.model_task, self.args.runs_id + "+" + self.args.fusion_type, f"Fold{self.args.fold}"]

@@ -5,11 +5,11 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=1
+GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_luad_run012_rerun"
+RUN_ID="oscc_inhouse_run016_ood"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -22,11 +22,11 @@ NUM_EPOCHS=100        # Total number of training epochs.
 # The command below executes the main training script with the configured parameters.
 echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 
-python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
+python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "tcga_luad" \
-    --dataset "tcga_luad" \
+    --model_task "oscc_inhouse" \
+    --dataset "oscc_inhouse" \
     --image_aggregater "panther" \
     --fusion_type "msa" \
     --batch_size ${BATCH_SIZE} \
@@ -36,9 +36,8 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "image-pathology,genomics-genomics,tabular-clinical-9" \
+    --modalities "image-pathology,text-clinical,tabular-metadata-4,tabular-history-9,tabular-blood-5"  \
     --do_mixup
-
 
 echo "Training run ${RUN_ID} finished."
 
