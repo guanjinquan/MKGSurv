@@ -19,9 +19,6 @@ import copy
 
 
 class TCGA_LUSC_Dataset(MultiModalDataset):
-    TREATMENT_OPTIONS = None
-    TREATMENT_OPTIONS_ONEHOT = None
-    TREATMENT_OPTIONS_FEAT = None
 
     PRE_OP_MODALITIES = [
         "tabular-clinical-9", 
@@ -91,10 +88,6 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
         self.do_mixup = args.do_mixup and len(self.modalities) > 1 and self.mode == "train"
         print(f"Active modalities: {self.modalities}")
 
-        # --- 1. Load Treatment Options ---
-        self._load_treatment_options()
-
-
         # --- 2. Load Patient Split ---
         split_file = os.path.join(self.processed_dir, "lusc_patients_5fold.json") 
         if not os.path.exists(split_file):
@@ -136,37 +129,6 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
 
         # Load CSVs (Tabular Data & Labels)
         self._load_tabular_and_labels()
-
-    def _load_treatment_options(self) -> None:
-        # Load Features
-        trt_opt_path = os.path.join(self.processed_dir, "features_all_treatment_options.pkl")
-        if os.path.exists(trt_opt_path):
-            try:
-                trt_data = joblib.load(trt_opt_path)
-                self.TREATMENT_OPTIONS = trt_data.get("ALL_TREATMENT_OPTIONS_STR", [])
-                self.TREATMENT_OPTIONS_FEAT = trt_data.get("ALL_TREATMENT_OPTIONS_FEAT", [])
-                print(f"Loaded {len(self.TREATMENT_OPTIONS)} treatment options.")
-            except Exception as e:
-                print(f"Warning: Failed to load treatment options from {trt_opt_path}: {e}")
-                self.TREATMENT_OPTIONS = []
-                self.TREATMENT_OPTIONS_FEAT = []
-        else:
-            print(f"Warning: Treatment options file not found at {trt_opt_path}. Proceeding without it.")
-            self.TREATMENT_OPTIONS = []
-            self.TREATMENT_OPTIONS_FEAT = []
-
-        # Load OneHot Encoding
-        labels_df_path = os.path.join(self.processed_dir, "lusc_patient_labels.csv")
-        labels_df = pd.read_csv(labels_df_path)
-        option_to_onehot = {}
-        for idx, row in labels_df.iterrows():
-            option = row['treatments.treatment_type']
-            onehot = np.zeros((5, ))
-            for id in row['5_classes'].split(','):
-                onehot[int(id)] = 1
-            option_to_onehot[option] = onehot
-        
-        self.TREATMENT_OPTIONS_ONEHOT = [option_to_onehot[option] for option in self.TREATMENT_OPTIONS]
 
     def _load_tabular_and_labels(self):
         try:
@@ -221,9 +183,7 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
             pid = row['cases.submitter_id']
             self.patient_labels[pid] = {
                 "DFS_time": float(row["DFS_time"]),
-                "DFS_event": float(row["DFS_event"]),
-                "Treatment_type": str(row['treatments.treatment_type']),
-                "Treatment_type_id": str(row["5_classes"])
+                "DFS_event": float(row["DFS_event"])
             }
 
     def __len__(self) -> int:
@@ -245,8 +205,6 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
             survival_info = self.patient_labels[patient_id]
             event = int(survival_info['DFS_event'])
             time_days = float(survival_info['DFS_time'])
-            treatment = str(survival_info['Treatment_type'])
-            treatment_type_id = str(survival_info['Treatment_type_id'])
         except KeyError:
             # Skip patient if labels are missing
             # print(f"Warning: Labels missing for {patient_id}, skipping...")
@@ -256,8 +214,6 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
             'do_mixup': do_mixup,  
             'label_time': time_days,
             'label_event': event,
-            'treatment_type': treatment,
-            'treatment_type_onehot': torch.tensor([1 if str(i) in treatment_type_id else 0 for i in range(5)], dtype=torch.float32),
         }
 
         # --- 2. Load Modalities ---

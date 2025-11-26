@@ -14,9 +14,6 @@ from typing import List, Dict, Any
 from datasets.dataset_base import MultiModalDataset
 
 class OSCCSurvInHouseDataset(MultiModalDataset):
-    TREATMENT_OPTIONS = None
-    TREATMENT_OPTIONS_ONEHOT = None
-    TREATMENT_OPTIONS_FEAT = None
 
     PRE_OP_MODALITIES = [
         "image-pathology",           # pre-treatment (Feature from PKL)
@@ -80,9 +77,6 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
             "text-treatment": "features_text_treatment.pkl"
         }
 
-        # --- 5. Load Treatment Options (重要：建立标准库) ---
-        self._load_treatment_options()
-
         # Load Feature Files
         for mod in self.modalities:
             if mod in self.pickle_map:
@@ -130,59 +124,6 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
         
         if self.mode == "train":
             random.shuffle(self.items)
-
-    def _load_treatment_options(self):
-        trt_opt_path = os.path.join(self.processed_dir, "features_all_treatment_options.pkl")
-        data = self._read_pickle(trt_opt_path)
-
-        # Load Features mapping: Option String -> Feature
-        options_to_feat_map = {}
-        if data:
-            for option, feat in zip(data.get("ALL_TREATMENT_OPTIONS_STR", []), data.get("ALL_TREATMENT_OPTIONS_FEAT", [])):
-                options_to_feat_map[option.strip()] = feat # Strip keys
-
-        # Build Canonical Mapping from CSV
-        # 我们遍历 CSV 中所有出现的 unique 治疗组合，作为标准库
-        unique_options_map = {} # string -> onehot_vector (numpy)
-
-        for idx, row in self.clinical_df.iterrows():
-            treat_str = str(row['12_treatment_type']).strip()
-            treat_id_str = str(row['12_treatment_type_id']).strip()
-            
-            if pd.isna(treat_str) or treat_str == 'nan' or not treat_str:
-                continue
-            
-            if treat_str in unique_options_map:
-                continue
-            
-            # Construct One-Hot Vector (Fixed Dimension 12)
-            vec = np.zeros((12, ), dtype=np.float32)
-            if treat_id_str and treat_id_str.lower() != 'nan':
-                try:
-                    ids = [int(i) for i in treat_id_str.split(',') if i.strip().isdigit()]
-                    for i in ids:
-                        if 0 <= i < 12:
-                            vec[i] = 1.0
-                except ValueError:
-                    print(f"[Warning] Invalid ID string: {treat_id_str} for {treat_str}")
-
-            unique_options_map[treat_str] = vec
-
-        # Convert to Lists
-        self.TREATMENT_OPTIONS = sorted(list(unique_options_map.keys()))
-        self.TREATMENT_OPTIONS_ONEHOT = [unique_options_map[opt] for opt in self.TREATMENT_OPTIONS]
-        
-        # Fill Features (Use dummy if not in pickle)
-        self.TREATMENT_OPTIONS_FEAT = []
-        for opt in self.TREATMENT_OPTIONS:
-            if opt in options_to_feat_map:
-                self.TREATMENT_OPTIONS_FEAT.append(options_to_feat_map[opt])
-            else:
-                # print(f"[Warning] No embedding found for option '{opt}', using zeros.")
-                self.TREATMENT_OPTIONS_FEAT.append(torch.zeros(768)) # Assuming dim 768
-
-        assert len(self.TREATMENT_OPTIONS) > 0, "No treatment options loaded!"
-        print(f"Loaded {len(self.TREATMENT_OPTIONS)} unique treatment options.")
 
     def _preprocess_tabular_data(self):
         sources_with_columns = {
@@ -274,37 +215,12 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
             event_flag = 0
             event_time = float(time_to_last_info)
 
-        # --- 2. Treatment Labels (关键修正部分) ---
-        try:
-            patient_series = self.clinical_df.loc[pid_str]
-            treat_type_str = str(patient_series['12_treatment_type']).strip()
-            
-            # 【强制对齐】：
-            # 不再解析 CSV 中的 ID string (因为那可能是脏数据)
-            # 而是直接在 Canonical Options List 中查找字符串
-            if treat_type_str in self.TREATMENT_OPTIONS:
-                # 找到标准索引
-                opt_idx = self.TREATMENT_OPTIONS.index(treat_type_str)
-                # 使用标准 One-Hot 向量 (NumPy -> Tensor)
-                onehot_vec = torch.tensor(self.TREATMENT_OPTIONS_ONEHOT[opt_idx], dtype=torch.float32)
-            else:
-                # Fallback (理论上不应发生，如果发生说明 load options 和 get sample 之间数据变了)
-                # print(f"[Warning] Treatment '{treat_type_str}' not in canonical options for PID {pid_str}")
-                # 此时退回到全零，或者根据 CSV 里的 ID 解析
-                onehot_vec = torch.zeros(12, dtype=torch.float32)
-
-        except KeyError:
-            # Skip sample if PID not in CSV
-            return self.get_sample((idx + 1) % len(self))
-
         output_dict = {
             "pid": pid_str,
             "labels": {
                 'do_mixup': do_mixup,
                 'label_time': event_time,
-                'label_event': event_flag,
-                "treatment_type": treat_type_str,
-                "treatment_type_onehot": onehot_vec, # 这里的向量现在绝对干净且正确
+                'label_event': event_flag
             }
         }
 

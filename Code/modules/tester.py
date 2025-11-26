@@ -12,9 +12,6 @@ from datasets import GetDataLoader
 from modules.model import GetModel
 from modules.general_utils import Logger, load_model
 from modules.general_utils.kaplan_meier_plotter import plot_risk_stratified_km, convert_logits_to_risk_scores
-from modules.base_modules.treatment_pred_task_utils import get_treatment_risk, get_best_treamtent
-from modules.general_utils.metrics import multiple_classification_metrics, recall_top_k
-
 
 
 class Tester:
@@ -94,18 +91,11 @@ class Tester:
         
         all_pids, all_logits, all_labels, all_labels = [], [], [], []
         all_losses = {}
-        
-        # Treatment Evaluation Lists
-        all_predicted_treatments = []
-        all_predicted_treatments_onehot = []
-        all_treatment_risks = []      # Store raw risks for Recall@K
-        all_treatment_gt_indices = [] # Store int ground truth for Recall@K
 
         with torch.no_grad():
             pbar = tqdm.tqdm(total=len(dataloader), desc=title)
             for batch_data in dataloader:
                 
-                # --- 1. Standard Survival Forward Pass ---
                 batch_size = len(batch_data['pid'])
                 out = self.model(batch_size, batch_data)
                 
@@ -115,65 +105,6 @@ class Tester:
                 
                 for key, value in out['losses'].items():
                     all_losses.setdefault(key, []).append(value.item())
-                
-                # --- 2. Find Best Treatment ---
-                if self.test_treatment:
-                    batch_data_copy = copy.deepcopy(batch_data)
-                    
-                    # 1. 计算每个治疗方案的 Risk (Batch_size, Num_Treatments)
-                    batch_risks = get_treatment_risk(
-                        self.model,
-                        batch_data_copy,
-                        self.pre_op_modalities,
-                        self.post_op_modalities,
-                        self.treatment_options_embeds
-                    )
-                    
-                    # 2. 根据 Risk 获取最佳治疗文本和 One-Hot
-                    batch_best_treat, batch_best_treat_onehot = get_best_treamtent(
-                        self.treatment_options,
-                        self.treatment_options_onehot,
-                        batch_risks
-                    )
-                    
-                    # 3. 收集数据
-                    all_predicted_treatments.extend(batch_best_treat)
-                    all_predicted_treatments_onehot.extend(batch_best_treat_onehot)
-                    all_treatment_risks.extend(batch_risks)
-                    
-                    # 4. 获取 Ground Truth Index (用于 Recall@K)
-                    gt_indices = [self.treatment_options.index(label['treatment_type']) for label in batch_data['labels']]
-                    all_treatment_gt_indices.extend(gt_indices)
-
-                    for gt_id in gt_indices:
-                        assert 0 <= gt_id < len(self.treatment_options), f"Invalid Ground Truth Index: {gt_id}"
-
-                    # ---【DEBUG START】检查数据一致性 ---
-                    for i, label in enumerate(batch_data['labels']):
-                        # 1. 获取 Recall@1 认为的真值向量 (从你的 Options 列表里查)
-                        gt_id = gt_indices[i]
-                        vec_from_options = self.treatment_options_onehot[gt_id]
-                        
-                        # 2. 获取 Accuracy 认为的真值向量 (从 Label 字典里直接拿)
-                        vec_from_label = label['treatment_type_onehot']
-                        
-                        # 确保转为 list 比较
-                        if isinstance(vec_from_label, torch.Tensor):
-                            vec_from_label = vec_from_label.cpu().numpy().tolist()
-                        if isinstance(vec_from_options, np.ndarray):
-                            vec_from_options = vec_from_options.tolist()
-                            
-                        # 3. 比较
-                        if vec_from_options != vec_from_label:
-                            print(f"\n[CRITICAL MISMATCH FOUND] PID: {batch_data['pid'][i]}")
-                            print(f"Treatment Name: {label['treatment_type']}")
-                            print(f"Option Index  : {gt_id}")
-                            print(f"Vector in Options List: {vec_from_options}")
-                            print(f"Vector in Label Dict  : {vec_from_label}")
-                            
-                            # 找出不一致的位
-                            diff = [k for k in range(len(vec_from_options)) if vec_from_options[k] != vec_from_label[k]]
-                            print(f"Mismatch at indices: {diff}")
 
                 pbar.update(1)
             pbar.close()
@@ -190,10 +121,6 @@ class Tester:
             all_losses, 
             all_logits, 
             all_labels, 
-            all_predicted_treatments, 
-            all_predicted_treatments_onehot, 
-            all_treatment_risks,      # New
-            all_treatment_gt_indices, # New
             title=title,
             save_results=save_results
         )
@@ -203,10 +130,6 @@ class Tester:
         losses, 
         logits, 
         labels, 
-        predicted_treatments, 
-        predicted_treatments_onehot, 
-        treatment_risks, 
-        treatment_gt_indices,
         title, 
         save_results=False
     ):
@@ -259,54 +182,6 @@ class Tester:
                         json.dump(pid_to_data, f, indent=4)
             except Exception as e:
                 print(f"Error saving PID map: {e}")
-
-        # --- 4. Treatment Metrics ---
-        if self.test_treatment:
-            print("\n--- Test Results (Treatment Recommendation) ---", flush=True)
-            self.log.write("\n--- Test Results (Treatment Recommendation) ---")
-
-            if not predicted_treatments or not labels:
-                print("Error: Missing predictions or labels for treatment.", flush=True)
-            else:
-                try:
-                    # A. Multi-label metrics (Precision, F1, etc.)
-                    treatment_metrics = multiple_classification_metrics(
-                        predicted_treatments_onehot, 
-                        labels,
-                        with_sigmoid=False
-                    )
-                    
-                    # B. Recall@K Metrics (using Risks and Int Indices)
-                    if treatment_risks and treatment_gt_indices:
-                        print("Computing Recall@K...")
-
-                        r1 = recall_top_k(treatment_risks, treatment_gt_indices, k=1)
-                        r3 = recall_top_k(treatment_risks, treatment_gt_indices, k=3)
-                        r5 = recall_top_k(treatment_risks, treatment_gt_indices, k=5)
-                        
-                        treatment_metrics["Recall@1"] = r1
-                        treatment_metrics["Recall@3"] = r3
-                        treatment_metrics["Recall@5"] = r5
-                    
-                    ret_metrics_dict.update(treatment_metrics)
-                    
-                    self.log.write("Metrics: " + str(treatment_metrics))
-                    print("Metrics:", flush=True)
-                    print(json.dumps(treatment_metrics, indent=4), flush=True)
-
-                    # Top 5 Predicted Counts
-                    treatment_counter = defaultdict(int)
-                    for pred_str in predicted_treatments:
-                        treatment_counter[pred_str] += 1
-                    
-                    top_5 = sorted(treatment_counter.items(), key=lambda item: item[1], reverse=True)[:5]
-                    print("\nTop 5 Predicted Treatments (Counts):", flush=True)
-                    print(json.dumps(dict(top_5), indent=4), flush=True)
-                        
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    print(f"\nError calculating treatment accuracy: {e}", flush=True)
 
         # --- 5. Kaplan-Meier Plot ---
         if hasattr(self.args, 'draw_kaplan_meier') and self.args.draw_kaplan_meier:
