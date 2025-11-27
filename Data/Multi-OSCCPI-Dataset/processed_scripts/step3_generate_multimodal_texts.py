@@ -165,10 +165,10 @@ def main():
 
     # 3. 构建最终 DataFrame
     df_result = pd.DataFrame({
-        'Clinical': series_clinical,
-        'Treatment': series_treatment,
-        'Pathology': series_pathology,
-        'Genomics': series_genomics
+        'clinical': series_clinical,
+        'treatment': series_treatment,
+        'pathology': series_pathology,
+        'genomics': series_genomics
     }, index=df_clinical.index)
 
     # 4. 保存结果
@@ -188,8 +188,8 @@ def main():
     )
     
     print(">>> 处理完成！")
-    print("生成的列: PID, Clinical, Treatment, Pathology, Genomics")
-    print(f"Pathology列示例 (前50字符): {df_result['Pathology'].iloc[0][:50]}...")
+    print("生成的列: PID, clinical, treatment, pathology, genomics")
+    print(f"Pathology列示例 (前50字符): {df_result['pathology'].iloc[0][:50]}...")
 
 if __name__ == "__main__":
     main()

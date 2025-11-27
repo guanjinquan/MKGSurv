@@ -120,21 +120,21 @@ def augment_text(text: str) -> List[str]:
     
     # Check delimiters
     delimiters = []
-    if '+' in text: delimiters.append('+')
-    if '.' in text: delimiters.append('.')
+    if '+' in text: 
+        delimiters.append('+')
+    if '.' in text: 
+        delimiters.append('.')
     
     # If no delimiters, we can't augment structurally, return original
     if not delimiters:
         return [text]
 
     # Use the first valid delimiter found for splitting logic
-    tag = '+' if '+' in delimiters else '.'
-
-    parts = [p.strip() for p in text.split(tag) if p.strip()]
+    for tag in delimiters:
+        parts = [p.strip() for p in text.split(tag) if p.strip()]
     
-    if len(parts) > 1:
-        # Shuffle logic
         for _ in range(10): # Try 10 times
+            
             shuffled_parts = parts.copy()
             random.shuffle(shuffled_parts)
             

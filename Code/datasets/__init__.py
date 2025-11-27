@@ -56,7 +56,7 @@ def GetDataLoader(args):
         assert args.batch_size % 2 ==0, f"Batch size must be divisible by 2 for data mixup, but got {args.batch_size}"
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, 
-        sampler=MixUpBalancedBatchSampler(args.do_mixup, train_set), num_workers=8, pin_memory=True, collate_fn=custom_collate_fn, persistent_workers=True)
+        sampler=MixUpBalancedBatchSampler(args.do_mixup, train_set), num_workers=2, pin_memory=True, collate_fn=custom_collate_fn, persistent_workers=True)
     
     valid_loader = DataLoader(valid_set, batch_size=8,
         num_workers=2, persistent_workers=True, pin_memory=True, collate_fn=custom_collate_fn)

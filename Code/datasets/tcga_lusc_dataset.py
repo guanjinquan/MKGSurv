@@ -29,7 +29,7 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
     POST_OP_MODALITIES = [
         "text-pathology", 
         "text-treatment",
-        "tabular-treatment-6", 
+        "tabular-treatment-7", 
         "tabular-pathology-22", 
     ]
 
@@ -164,7 +164,7 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
 
         # Process Treatment Tabular
         self.treatment_tabular_dict = {}
-        if "tabular-treatment-6" in self.modalities:
+        if "tabular-treatment-7" in self.modalities:
             cols = [c for c in self.treatment_df.columns if c not in exclude_cols]
             for _, row in self.treatment_df.iterrows():
                 pid = row['cases.submitter_id']
@@ -228,7 +228,7 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
 
-            elif mod == "tabular-treatment-6":
+            elif mod == "tabular-treatment-7":
                 feature_data = self.treatment_tabular_dict.get(patient_id)
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)

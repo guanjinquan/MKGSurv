@@ -212,7 +212,7 @@ def process_biospecimen_metadata(target_ids):
     return final_text
 
 def process_genomics(target_ids):
-    """处理 Genomics 数据"""
+    """处理 genomics 数据"""
     if not os.path.exists(PATH_RNA) or not os.path.exists(PATH_HALLMARK):
         return pd.Series(index=target_ids, dtype=object).fillna("")
     try:
@@ -230,7 +230,7 @@ def process_genomics(target_ids):
         rna = rna.loc[valid]
         
         results = {}
-        for pid, row in tqdm(rna.iterrows(), total=len(rna), desc="Genomics"):
+        for pid, row in tqdm(rna.iterrows(), total=len(rna), desc="genomics"):
             parts = []
             for pname, genes in h_map.items():
                 v_genes = [g for g in genes if g in rna.columns]
@@ -296,7 +296,7 @@ def main():
         # 筛选目标病人
         full_concat = full_concat[full_concat['cases.submitter_id'].isin(target_ids)]
         
-        # 聚合通用数据 (Clinical, Treatment, Pathology Tabular)
+        # 聚合通用数据 (clinical, Treatment, pathology Tabular)
         print("   Aggregating General Tabular Data...")
         def agg_func(s):
             vals = {clean_value(x) for x in s if clean_value(x)}
@@ -308,21 +308,21 @@ def main():
         grouped = full_concat[relevant_cols].groupby('cases.submitter_id').agg(agg_func)
         
         # 填充到 Final DF
-        final_df['Clinical'] = grouped.apply(lambda r: row_to_text(r, cols_clinical), axis=1).reindex(target_ids).fillna("")
+        final_df['clinical'] = grouped.apply(lambda r: row_to_text(r, cols_clinical), axis=1).reindex(target_ids).fillna("")
         final_df['Treatment'] = grouped.apply(lambda r: row_to_text(r, cols_treatment), axis=1).reindex(target_ids).fillna("")
         path_tabular = grouped.apply(lambda r: row_to_text(r, cols_path_tabular), axis=1).reindex(target_ids).fillna("")
     else:
         print("Warning: No raw data loaded for tabular sections.")
         path_tabular = pd.Series("", index=target_ids)
-        final_df['Clinical'] = ""
+        final_df['clinical'] = ""
         final_df['Treatment'] = ""
 
     # 4. Biospecimen Metadata (Slide/Sample/Portion) - [NEW]
     print("\n[Step 3] Processing Biospecimen Metadata (The Missing Link)...")
     path_meta = process_biospecimen_metadata(target_ids)
 
-    # 5. Pathology Reports
-    print("\n[Step 4] Processing Pathology Reports...")
+    # 5. pathology Reports
+    print("\n[Step 4] Processing pathology Reports...")
     path_reports = pd.Series("", index=target_ids)
     if os.path.exists(PATH_REPORTS):
         try:
@@ -340,17 +340,17 @@ def main():
         except Exception as e:
             print(f"Error loading reports: {e}")
 
-    # 6. 合并所有 Pathology 信息
-    print("   Merging Pathology Sections...")
-    final_df['Pathology'] = (
+    # 6. 合并所有 pathology 信息
+    print("   Merging pathology Sections...")
+    final_df['pathology'] = (
         path_tabular + "\n\n" + 
         path_reports + "\n\n" + 
         path_meta
     ).str.strip()
 
-    # 7. Genomics
-    print("\n[Step 5] Processing Genomics...")
-    final_df['Genomics'] = process_genomics(target_ids)
+    # 7. genomics
+    print("\n[Step 5] Processing genomics...")
+    final_df['genomics'] = process_genomics(target_ids)
 
     # 8. 保存
     print(f"\n[Step 6] Saving to {OUTPUT_FILE}...")
@@ -365,7 +365,7 @@ def main():
     total_patients = len(final_df)
     print(f"总目标患者数 (Total Target Patients): {total_patients}")
     
-    check_cols = ['Clinical', 'Treatment', 'Pathology', 'Genomics']
+    check_cols = ['clinical', 'Treatment', 'pathology', 'genomics']
     all_complete = True
     
     for col in check_cols:

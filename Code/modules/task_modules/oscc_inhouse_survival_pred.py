@@ -200,8 +200,8 @@ class OSCCSurvivalPred(nn.Module):
         all_masks = []
         
         # Mapping for groups
-        modality_group_map = {} # 'pathology' -> group_index
-        modalities_groups = []  # List[List[int]]
+        modality_group_map = {}   # 'pathology' -> group_index
+        modalities_groups = []    # List[List[int]]
         
         # Mapping for Medical Knowledge retrieval: "mod_name" -> index in all_embeddings list
         modality_name_to_index = {} 
@@ -263,15 +263,15 @@ class OSCCSurvivalPred(nn.Module):
         medical_knowledge_mask = {}
 
         # Iterate over all pairs of *successfully encoded* modalities
-        valid_mod_names = list(modality_name_to_index.keys())
+        valid_groups = list(modality_group_map.keys())
 
-        for i in range(len(valid_mod_names)):
-            for j in range(i + 1, len(valid_mod_names)):
+        for i in range(len(valid_groups)):
+            for j in range(i + 1, len(valid_groups)):
 
-                name_i = valid_mod_names[i]
-                name_j = valid_mod_names[j]
-                idx_i = modality_name_to_index[name_i]
-                idx_j = modality_name_to_index[name_j]
+                name_i = valid_groups[i]
+                name_j = valid_groups[j]
+                idx_i = modality_group_map[name_i]
+                idx_j = modality_group_map[name_j]
 
                 # If medical knowledge is available
                 if "medical-knowledge" in batch:  
@@ -331,21 +331,21 @@ class OSCCSurvivalPred(nn.Module):
              return {"logits": logits, "loss": loss}
 
         # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
-        do_mixup_list = [batch['labels'][i]['do_mixup'] for i in range(batch_size)]
+        weights_list = [batch['labels'][i]['sample_weight'] for i in range(batch_size)]
         label_time_list = [batch['labels'][i]['label_time'] for i in range(batch_size)]
         label_event_list = [batch['labels'][i]['label_event'] for i in range(batch_size)]
 
         Y_full = torch.tensor(label_time_list, device=device, dtype=torch.float32)
         c_full = torch.tensor(label_event_list, device=device, dtype=torch.float32)
-        m_full = torch.tensor(do_mixup_list, device=device, dtype=torch.bool)
+        w_full = torch.tensor(weights_list, device=device, dtype=torch.float32)
 
         valid_Y = Y_full[patient_mask]
         valid_c = c_full[patient_mask]
-        valid_m = m_full[patient_mask]
+        valid_w = w_full[patient_mask]
 
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
-        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c, valid_m)
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c, valid_w)
         loss = mean_by_event(loss_tensor_unreduced, valid_c)
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
