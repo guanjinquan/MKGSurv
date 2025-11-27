@@ -28,7 +28,10 @@ MANIFEST
 
 *Trash*
 *Checkpoints*/*
-Data/*
+Data/TCGA-LUAD/*
+Data/TCGA-LUSC/*
+Data/HANCOCK/*
+Data/Multi-OSCCPI-Dataset/*
 Results/*
 PretrainedWeights/*
 *swanlog*
