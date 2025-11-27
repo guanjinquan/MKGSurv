@@ -154,9 +154,6 @@ class Tester:
             try:
                 pid_to_data = {}
                 for i in range(len(pids)):
-                    if isinstance(labels[i]['treatment_type_onehot'], torch.Tensor):
-                        labels[i]['treatment_type_onehot'] = labels[i]['treatment_type_onehot'].cpu().numpy().tolist()
-                    
                     pid_to_data[pids[i]] = {
                         "logits": logits[i],
                         "label": labels[i]

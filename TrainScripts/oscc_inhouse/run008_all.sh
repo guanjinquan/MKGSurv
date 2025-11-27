@@ -9,13 +9,13 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="oscc_inhouse_run008_ood-debug"
+RUN_ID="oscc_inhouse_run008_ood-debugmedkgat-soft-mixup"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-5               # Learning rate for the model head.
-NUM_EPOCHS=50        # Total number of training epochs.
+LR=1e-4               # Learning rate for the model head.
+NUM_EPOCHS=100        # Total number of training epochs.
 
 
 # --- Execution ---
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest.py \
     --model_task "oscc_inhouse" \
     --dataset "oscc_inhouse" \
     --image_aggregater "panther" \
-    --fusion_type "msa" \
+    --fusion_type "medkgat_fusion" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
@@ -36,7 +36,8 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "all" \
+    --do_mixup
 
 
 echo "Training run ${RUN_ID} finished."

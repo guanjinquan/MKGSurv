@@ -1,40 +1,86 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 
 
 # --- Masked Mean Pooling Function ---
-def masked_mean_pool(embedding: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+def masked_mean_pool(embedding: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Performs masked mean pooling on a sequence.
-    This is used to aggregate variable-length sequences into a single feature vector.
-
+    带详细 Debug 逻辑的 Masked Mean Pooling。
+    
     Args:
-        embedding (torch.Tensor): Input sequence of shape (B, N, D).
-        mask (Optional[torch.Tensor]): Boolean or binary mask of shape (B, N), with 1s for valid tokens.
-
+        embedding (torch.Tensor): (B, N, D)
+        mask (Optional[torch.Tensor]): (B, N), 1为有效, 0为padding
+        
     Returns:
-        torch.Tensor: Pooled embedding of shape (B, D).
+        pooled_embedding: (B, D)
+        valid_batch_mask: (B,) bool, 标记该样本是否有效（至少有一个token）
     """
+    # --- Debug 1: 检查输入是否含有 NaN ---
+    if torch.isnan(embedding).any():
+        raise ValueError("Error: Input 'embedding' contains NaN values before pooling!")
+    
+    # 无 Mask 情况：直接求平均
     if mask is None:
-        return embedding.mean(dim=1)
-    
-    pooled_mask = torch.any(mask.bool(), dim=1)  # Shape: (B,)
-    
-    # Ensure mask is float for multiplication and summation
-    mask = mask.float().unsqueeze(-1)
-    
-    # Masked pooling
-    summed = (embedding * mask).sum(dim=1)
-    # Count non-zero elements in the mask for each batch item to get the sequence length
-    count = mask.sum(dim=1)
-    # Avoid division by zero for empty sequences
-    count = torch.max(count, torch.ones_like(count))
-    
-    return summed / count, pooled_mask
+        return embedding.mean(dim=1), torch.ones(embedding.shape[0], device=embedding.device, dtype=torch.bool)
 
+    # 确保 mask 是 float 类型用于计算，且维度对齐
+    # mask: (B, N)
+    if mask.dim() != 2:
+        raise ValueError(f"Error: Mask should be 2D (B, N), but got {mask.shape}")
+        
+    # --- Debug 2: 检查 Mask 是否全为 0 (Empty Sequence) ---
+    # 计算每个样本有多少个有效 token
+    seq_lengths = mask.sum(dim=1)  # (B,)
+    
+    # 找出全为 0 的样本索引（即该样本全是 Padding）
+    empty_indices = (seq_lengths == 0).nonzero(as_tuple=False).squeeze()
+    
+    if empty_indices.numel() > 0:
+        # 严重警告：如果存在全空的样本，除法会出问题，或者业务逻辑有误
+        print(f"\n[DEBUG WARNING] Found {empty_indices.numel()} empty sequences in batch!")
+        print(f"  Empty indices: {empty_indices}")
+        print(f"  Embedding shape: {embedding.shape}")
+        raise ValueError(f"Found empty sequences at indices {empty_indices}. Cannot pool all-padding sequences.")
+
+    # 扩展 mask 维度以匹配 embedding: (B, N) -> (B, N, 1)
+    mask_expanded = mask.float().unsqueeze(-1)
+
+    # Masked Sum
+    # sum_embeddings: (B, D)
+    sum_embeddings = (embedding * mask_expanded).sum(dim=1)
+
+    # --- Debug 3: 检查求和后是否产生 NaN/Inf (可能是数值溢出) ---
+    if torch.isnan(sum_embeddings).any() or torch.isinf(sum_embeddings).any():
+        raise ValueError("Error: NaN or Inf detected after summing embeddings.")
+
+    # Safe Division
+    # 将分母中的 0 替换为 1e-9 或 1，防止除零错误 (NaN)
+    # clamp_min=1e-9 保证分母不为 0
+    safe_lengths = torch.clamp(seq_lengths.unsqueeze(-1), min=1e-9)
+    
+    pooled_embedding = sum_embeddings / safe_lengths
+    
+    # --- Debug 4: 最终检查 ---
+    if torch.isnan(pooled_embedding).any():
+        # 打印详细现场以供调试
+        nan_indices = torch.isnan(pooled_embedding).any(dim=1).nonzero().squeeze()
+        print(f"\n[CRITICAL ERROR] NaN produced in output!")
+        print(f"  Indices with NaN: {nan_indices}")
+        print(f"  Corresponding seq_lengths: {seq_lengths[nan_indices]}")
+        raise ValueError("Output contains NaN after division.")
+
+    # 生成 valid_batch_mask: 只要序列长度 > 0，就是有效的样本
+    valid_batch_mask = (seq_lengths > 0).bool()
+
+    # 处理那些原本全空的样本：
+    # 虽然计算结果是 0 (0 / 1e-9 = 0)，但为了安全，显式地将它们置为 0
+    if (~valid_batch_mask).any():
+        pooled_embedding[~valid_batch_mask] = 0.0
+
+    return pooled_embedding, valid_batch_mask
 
 
 # --- Weighted Aggregation Head ---

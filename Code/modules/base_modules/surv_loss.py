@@ -109,14 +109,14 @@ class CustomCoxPHLoss(nn.Module):
         cox_loss = cox_ph_loss_matrix(log_h, durations, events, 
                                       self.reduction, eps, is_augmented)
         
-        # 2. Compute Regularization (Matrix based, Order invariant)
-        reg_loss = 0.0
-        if self.reg_weight > 0 and is_augmented is not None and is_augmented.any():
-            reg_loss = self._compute_margin_reg(
-                log_h, durations, events, is_augmented
-            )
-            print("Reg Loss : ", reg_loss, "Augment Sum: ", is_augmented.sum())
-            return cox_loss + self.reg_weight * reg_loss
+        # # 2. Compute Regularization (Matrix based, Order invariant)
+        # reg_loss = 0.0
+        # if self.reg_weight > 0 and is_augmented is not None and is_augmented.any():
+        #     reg_loss = self._compute_margin_reg(
+        #         log_h, durations, events, is_augmented
+        #     )
+        #     print("Reg Loss : ", reg_loss, "Augment Sum: ", is_augmented.sum())
+        #     return cox_loss + self.reg_weight * reg_loss
         
         return cox_loss
 
@@ -159,8 +159,7 @@ def cox_ph_loss_matrix(
     # Flatten
     log_h = log_h.view(-1)
     durations = durations.view(-1)
-    if events.dtype is torch.bool:
-        events = events.float()
+    assert events.dtype == torch.float, f"Expected events to be float, but got {events.dtype}"
     events = events.view(-1)
 
     device = log_h.device

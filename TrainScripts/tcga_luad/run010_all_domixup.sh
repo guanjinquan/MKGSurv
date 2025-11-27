@@ -5,17 +5,17 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=0
+GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_luad_run010"
+RUN_ID="tcga_luad_run010_soft_mixup"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-5               # Learning rate for the model head.
-NUM_EPOCHS=50        # Total number of training epochs.
+LR=1e-4               # Learning rate for the model head.
+NUM_EPOCHS=100        # Total number of training epochs.
 
 
 # --- Execution ---

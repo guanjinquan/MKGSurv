@@ -29,7 +29,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
     POST_OP_MODALITIES = [
         "text-pathology", 
         "text-treatment",
-        "tabular-treatment-8", 
+        "tabular-treatment-9", 
         "tabular-pathology-21", 
     ]
 
@@ -87,7 +87,6 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         self.modalities = self.parse_modalities(modalities)
         self.do_mixup = (args.do_mixup or args.do_mixup_only_treatment) and len(self.modalities) > 1 and self.mode == "train"
         print(f"Active modalities: {self.modalities}")
-
 
         # --- 2. Load Patient Split ---
         split_file = os.path.join(self.processed_dir, "luad_patients_5fold.json") 
@@ -165,8 +164,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
         # Process Treatment Tabular
         self.treatment_tabular_dict = {}
-        if "tabular-treatment-8" in self.modalities:
-
+        if "tabular-treatment-9" in self.modalities:
             cols = [c for c in self.treatment_df.columns if c not in exclude_cols]
             for _, row in self.treatment_df.iterrows():
                 pid = row['cases.submitter_id']
@@ -207,8 +205,6 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             survival_info = self.patient_labels[patient_id]
             event = int(survival_info['DFS_event'])
             time_days = float(survival_info['DFS_time'])
-            treatment = str(survival_info['Treatment_type'])
-            treatment_type_id = str(survival_info['Treatment_type_id'])
         except KeyError:
             # Skip patient if labels are missing
             # print(f"Warning: Labels missing for {patient_id}, skipping...")
@@ -232,7 +228,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
 
-            elif mod == "tabular-treatment-8":
+            elif mod == "tabular-treatment-9":
                 feature_data = self.treatment_tabular_dict.get(patient_id)
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
@@ -287,64 +283,43 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         return output_dict
 
     def mixup_data(self, ori_data, other_data):
-        """
-        Performs multimodal mixup by swapping a subset of modalities from 'other_data' to 'ori_data'.
-        Critically, it assigns the labels corresponding to the higher risk patient.
-        """
-        # 1. Determine which modalities to swap
         mixup_modalities = set()
 
-        if not self.args.do_mixup_only_treatment:
-            # Handle edge case where only 1 modality exists (randint(1, 0) would fail)
-            max_k = max(1, len(self.modalities) - 1)
-            k = random.randint(1, max_k)
-            # Select k modalities to swap from other_data -> ori_data
-            mixup_modalities.update(random.sample(self.modalities, k=k))
-        elif "text-treatment" in self.modalities:
-            mixup_modalities.add("text-treatment")
+        # Handle edge case where only 1 modality exists (randint(1, 0) would fail)
+        max_k = max(1, len(self.modalities) - 1)
+        k = random.randint(1, max_k)
+        mixup_modalities.update(random.sample(self.modalities, k=k))  # Select k modalities to swap from other_data -> ori_data
 
-        # 2. Swap Features
+        token_num_1 = sum([v.shape[0] for k, v in ori_data.items() if k != 'labels' and k != 'pid' and v is not None])
+        token_num_2 = 0
+
         for mod in mixup_modalities:
-            # Only swap if the other patient actually has data for this modality
+            token_num_1 -= ori_data[mod].shape[0] if isinstance(ori_data[mod], torch.Tensor) else 0
             if other_data.get(mod) is not None:
-                ori_data[mod] = other_data[mod].clone()
+                ori_data[mod] = other_data[mod].clone() if isinstance(other_data[mod], torch.Tensor) else other_data[mod]
+                token_num_2 += other_data[mod].shape[0]
             else:
-                ori_data[mod] = None  # Drop the data for this modality
-        
-        # 3. Swap Labels (Risk-Based Selection)
-        # Definition of Higher Risk:
-        #   1. Event (1) > Censored (0)
-        #   2. If events are same, Shorter Time > Longer Time
-        
+                ori_data[mod] = None
+
         t1 = ori_data['labels']['label_time']
         e1 = ori_data['labels']['label_event']
-        
         t2 = other_data['labels']['label_time']
         e2 = other_data['labels']['label_event']
-        
-        use_other_labels = False
 
-        if e1 == 1 and e2 == 0:
-            # Patient 1 has event, Patient 2 censored. 1 is riskier. Keep 1.
-            use_other_labels = False
-        elif e1 == 0 and e2 == 1:
-            # Patient 2 has event, Patient 1 censored. 2 is riskier. Swap.
-            use_other_labels = True
-        elif e1 == e2:
-            # Both Event or Both Censored. 
-            # The one with SHORTER time is considered higher risk (died sooner) 
-            # or more conservative for censored (less info, assume riskier).
-            if t2 < t1:
-                use_other_labels = True
-            else:
-                use_other_labels = False
+        if e1 == e2:
+            label_event = e1
+            label_time = t2 if t2 < t1 else t1
         else:
-            raise ValueError("Invalid label combination")
-        
-        if use_other_labels:
-            ori_data['labels'] = copy.deepcopy(other_data['labels'])
-            
-        ori_data['labels']['do_mixup'] = True
+            ratio = token_num_1 / (token_num_1 + token_num_2)
+            label_event = ratio * e1 + (1 - ratio) * e2
+            label_time = ratio * t1 + (1 - ratio) * t2
+   
+        ori_data['labels'] = {
+            "do_mixup": True,
+            "label_event": label_event,
+            "label_time": label_time,
+        }
+
         return ori_data
 
     def get_survival_bins(self):

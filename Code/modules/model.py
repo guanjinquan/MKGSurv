@@ -27,6 +27,7 @@ from modules.fusion_modules.MIBF_fusion import MIBF_fusion
 from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
+from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
 
 # --- Common Modules ---
 from modules.base_modules.align_utils import AlignmentModule
@@ -62,16 +63,6 @@ def GetModel(args, dataset):
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
-
-    
-    if args.with_multimodal_vib:
-        return ModelInterfaceWithMultimodalVIB(
-            args, 
-            dataset,
-            decode_task=args.decode_task,
-            model_task=args.model_task, 
-            fusion_type=args.fusion_type
-        )
     
     if args.fusion_type == "hgcn_fusion":
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
@@ -84,8 +75,8 @@ def GetModel(args, dataset):
 
 
     # with_multimodal_align
-    if args.with_multimodal_align:
-        return ModelInterfaceWithAlign(
+    if args.fusion_type == 'medkgat_fusion':
+        return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
             decode_task=args.decode_task,
@@ -161,6 +152,8 @@ class ModelInterface(nn.Module):
             self.fusion_module = DIMAFFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "surv_path":
             self.fusion_module = SurvPath(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == 'medkgat_fusion':
+            self.fusion_module = MedKGATFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
@@ -213,71 +206,6 @@ class ModelInterface(nn.Module):
         return {"logits": final_logits, "losses": all_losses}
 
 
-
-class ModelInterfaceWithAlign(ModelInterface):
-    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
-        super(ModelInterfaceWithAlign, self).__init__(args, dataset, decode_task, model_task, fusion_type)
-        self.align_module = AlignmentModule(embed_dim=self.embed_dim)
-    
-    def forward(self, batch_size, data_dicts: List[Dict]):
-
-        device = next(self.parameters()).device
-
-        # --- Step 1: Unimodal Encoding ---
-        encodings = self.task_head.encode(data_dicts)
-        all_embeddings, all_masks, align_pairs = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
-
-        # Check the data type of tensor
-        all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
-        all_masks = [m.to(torch.bool) if m is not None else None for m in all_masks]
-        
-        # Filter out None embeddings and corresponding masks for fusion
-        present_indices = [i for i, e in enumerate(all_embeddings) if e is not None]
-        present_embeddings = [e for e in all_embeddings if e is not None]
-        present_masks = [m for e, m in zip(all_embeddings, all_masks) if e is not None]
-        present_align_pairs = [(present_indices.index(p), present_indices.index(q)) for p, q in align_pairs if p in present_indices and q in present_indices]
-        num_present = len(present_embeddings)
-        assert num_present > 0, "No embeddings present for fusion and final prediction"
-
-        # --- Extra Step: Align pairs adjustment ---
-        align_losses = {}
-        if num_present > 1 and len(align_pairs) > 0:
-            pooled_output = [masked_mean_pool(embedding, mask) for embedding, mask in zip(present_embeddings, present_masks)]
-            pooled_embeddings = [pooled[0] for pooled in pooled_output]
-            pooled_masks = [pooled[1] for pooled in pooled_output]
-            align_losses = self.align_module(pooled_embeddings, pooled_masks, present_align_pairs)
-            total_align_loss = align_losses.get('total_loss', torch.tensor(0.0, device=device))
-
-        # --- Step 2: Multimodal Fusion ---
-        assert num_present > 1 or self.fusion_type == 'msa', "At least two modalities are required for fusion or use MSA fusion which can handle single modality."
-        fusion_output = self.fusion_module(embeddings=all_embeddings, masks=all_masks)
-        fused_embedding = fusion_output["fused_embedding"]
-        fusion_losses_dict = fusion_output.get("loss_dict") or {}
-        total_fusion_loss = fusion_losses_dict.get('total_loss', torch.tensor(0.0, device=device))
-        
-        # --- Step 3: Multimodal Task Prediction ---
-        assert fused_embedding.dim() == 2, f"Fused embedding must be a 2D tensor, shaping in (batch_size, embed_dim), but got {fused_embedding.shape}"
-
-        # Create patient-wise mask: if any modality is present for a patient, mark as True
-        present_masks = [m.to(device).bool() for m in present_masks if m is not None]
-        if len(present_masks) == 0:
-            patient_wise_mask = torch.zeros(batch_size, device=device, dtype=torch.bool)
-        else:
-            #  mask.any(dim=1) -> (batch,), stack -> (num_mods, batch), any(dim=0) -> (batch,)
-            patient_wise_mask = torch.stack([m.any(dim=1) for m in present_masks], dim=0).any(dim=0)
-
-        final_output = self.task_head.decode(fused_embedding, patient_wise_mask, data_dicts)
-        multimodal_task_loss = final_output['loss']
-        final_logits = final_output['logits']
-
-        # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + total_align_loss + total_fusion_loss
-        # all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss}
-        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'align_loss': total_align_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
-        all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
-        all_losses.update({f"align_{k}": v for k, v in align_losses.items() if 'total' not in k})
-        
-        return {"logits": final_logits, "losses": all_losses}
     
 
 
@@ -290,7 +218,7 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
 
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
-        all_embeddings, all_masks, _ = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
+        all_embeddings, all_masks = encodings['embeddings'], encodings['masks']
    
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
@@ -342,7 +270,7 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
 
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
-        all_embeddings, all_masks, _ = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
+        all_embeddings, all_masks = encodings['embeddings'], encodings['masks']
         # assert len(all_embeddings) == 2, "KLfusion requires two modalities"
 
         # Check the data type of tensor
@@ -388,14 +316,9 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
 
 
 
-class ModelInterfaceWithMultimodalVIB(ModelInterface):
+class ModelInterfaceWithMedicalKnowledge(ModelInterface):
     def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
-        super(ModelInterfaceWithMultimodalVIB, self).__init__(args, dataset, decode_task, model_task, fusion_type)
-
-        self.vib_module = TokenWiseMultiModalVIB(
-            num_modalities=self.max_modalities,
-            embed_dim=self.embed_dim
-        )
+        super(ModelInterfaceWithMedicalKnowledge, self).__init__(args, dataset, decode_task, model_task, fusion_type)
     
     def forward(self, batch_size, data_dicts: List[Dict]):
 
@@ -403,7 +326,8 @@ class ModelInterfaceWithMultimodalVIB(ModelInterface):
 
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
-        all_embeddings, all_masks, align_pairs = encodings['embeddings'], encodings['masks'], encodings['align_pairs']
+        all_embeddings, all_masks, medical_knowledge, medical_knowledge_mask, modalities_groups = \
+            encodings['embeddings'], encodings['masks'], encodings['medical_knowledge'], encodings['medical_knowledge_mask'], encodings['modalities_groups']
 
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
@@ -413,23 +337,15 @@ class ModelInterfaceWithMultimodalVIB(ModelInterface):
         present_indices = [i for i, e in enumerate(all_embeddings) if e is not None]
         present_embeddings = [e for e in all_embeddings if e is not None]
         present_masks = [m for e, m in zip(all_embeddings, all_masks) if e is not None]
-        present_align_pairs = [(present_indices.index(p), present_indices.index(q)) for p, q in align_pairs if p in present_indices and q in present_indices]
         num_present = len(present_embeddings)
         assert num_present > 0, "No embeddings present for fusion and final prediction"
 
         for e in present_embeddings:
             assert not torch.any(torch.isnan(e)).item(), "Embedding contains NaN values"
 
-        # --- Extra Step: VIB ---
-        vib_output, vib_mask, vib_losses_dict = self.vib_module(all_embeddings, all_masks)
-        vib_loss = vib_losses_dict.get('total_loss', torch.tensor(0.0, device=device))
-
-        for o in vib_output:
-            assert not torch.any(torch.isnan(o)).item(), "VIB output contains NaN values"
-
         # --- Step 2: Multimodal Fusion ---
         assert num_present > 1 or self.fusion_type == 'msa', "At least two modalities are required for fusion or use MSA fusion which can handle single modality."
-        fusion_output = self.fusion_module(embeddings=vib_output, masks=vib_mask)  # UPDATE: Use VIB output
+        fusion_output = self.fusion_module(all_embeddings, all_masks, modalities_groups, medical_knowledge, medical_knowledge_mask)  
         fused_embedding = fusion_output["fused_embedding"]
         fusion_losses_dict = fusion_output.get("loss_dict") or {}
         total_fusion_loss = fusion_losses_dict.get('total_loss', torch.tensor(0.0, device=device))
@@ -452,10 +368,9 @@ class ModelInterfaceWithMultimodalVIB(ModelInterface):
         final_logits = final_output['logits']
 
         # --- Step 4: Combine All Losses, then return logits and all loss components for logging ---
-        total_loss = multimodal_task_loss + 0.5 * vib_loss + total_fusion_loss
+        total_loss = multimodal_task_loss + total_fusion_loss
 
-        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'vib_loss': vib_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
+        all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
-        all_losses.update({f"vib_{k}": v for k, v in vib_losses_dict.items() if 'total' not in k})
         
         return {"logits": final_logits, "losses": all_losses}
