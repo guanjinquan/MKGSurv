@@ -28,11 +28,17 @@ MANIFEST
 
 *Trash*
 *Checkpoints*/*
-!Data/*/*scripts*
-Data
+Data/*
 Results/*
 PretrainedWeights/*
 *swanlog*
+
+# 但不忽略 scripts 目录
+!Data/*/*scripts*
+!*scripts*/
+
+# 不忽略 .gitignore 文件本身
+!.gitignore
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
