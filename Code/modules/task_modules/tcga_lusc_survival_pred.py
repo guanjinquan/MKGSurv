@@ -122,7 +122,6 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         )
         init_kaiming_norm(self.prediction_head)
 
-
     def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Handles padding for a list of variable length tensors.
@@ -190,16 +189,15 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             - "embeddings": List[Tensor(B, N_mod, Embed_Dim)]
             - "masks": List[Tensor(B, N_mod)]
             - "medical_knowledge": Dict {(i,j): Tensor}
-            - "medical_knowledge_mask": Dict {(i,j): Tensor}
             - "modalities_groups": List[List[int]] (indices of modalities in the returned list)
         """
         # Determine batch size from the first active modality present
         present_modalities = [m for m in self.active_modalities if m in batch]
         if not present_modalities:
-             # Should generally not happen in training
-            return {"embeddings": [], "masks": [], "modalities_groups": []}
+            raise ValueError("No active modalities found in batch.")
         
         # Safe extraction of batch size
+        # Check if it's a list or tensor
         first_mod_data = batch[present_modalities[0]]
         batch_size = len(first_mod_data)
         
@@ -209,8 +207,8 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         all_masks = []
         
         # Mapping for groups
-        modality_group_map = {} # 'pathology' -> group_index
-        modalities_groups = []  # List[List[int]]
+        modality_group_map = {}   # 'pathology' -> group_index
+        modalities_groups = []    # List[List[int]]
         
         # Mapping for Medical Knowledge retrieval: "mod_name" -> index in all_embeddings list
         modality_name_to_index = {} 
@@ -229,12 +227,11 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             padded_features, mask = self._pad_and_mask_modality(raw_data)
             
             if padded_features is None:
-                # If a modality is completely missing for the whole batch, skip
+                # If a modality is completely missing for the whole batch, we skip it
+                # to avoid dimension errors in fusion.
                 continue 
             
             # B. Project
-            encoded_feat = None
-            
             if mod_name == 'image-pathology':
                 encoded_feat = self.image_proj(padded_features)
                 
@@ -247,8 +244,8 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             elif 'tabular' in mod_name:
                 if mod_name in self.tabular_encoders:
                     encoded_feat = self.tabular_encoders[mod_name](padded_features)
-            
-            if encoded_feat is None:
+
+            else:
                 continue
 
             # C. Collect
@@ -257,7 +254,7 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
 
             # D. Track Indices and Groups
             modality_name_to_index[mod_name] = current_list_index
-            group_name =  mod_name.split('-')[1]
+            group_name = mod_name.split('-')[1]
 
             # Create group if not exists
             if group_name not in modality_group_map:
@@ -276,15 +273,15 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         medical_knowledge_mask = {}
 
         # Iterate over all pairs of *successfully encoded* modalities
-        valid_mod_names = list(modality_name_to_index.keys())
+        valid_groups = list(modality_group_map.keys())
 
-        for i in range(len(valid_mod_names)):
-            for j in range(i + 1, len(valid_mod_names)):
+        for i in range(len(valid_groups)):
+            for j in range(i + 1, len(valid_groups)):
 
-                name_i = valid_mod_names[i]
-                name_j = valid_mod_names[j]
-                idx_i = modality_name_to_index[name_i]
-                idx_j = modality_name_to_index[name_j]
+                name_i = valid_groups[i]
+                name_j = valid_groups[j]
+                idx_i = modality_group_map[name_i]
+                idx_j = modality_group_map[name_j]
 
                 # If medical knowledge is available
                 if "medical-knowledge" in batch:  
@@ -292,20 +289,14 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
                     pair_data_list = []                    
                     # Iterate through batch samples to collect the specific pair
                     for sample_mk in mk_batch:
-                        # Check (i, j) or (j, i)
                         val = sample_mk.get((name_i, name_j), sample_mk.get((name_j, name_i), None))
                         pair_data_list.append(val)
-                    
+
                     # Pad and mask the MK data
                     mk_feat, mk_mask = self._pad_and_mask_modality(pair_data_list)
-                    
-                    if mk_feat is None:
-                        # Fallback for missing pairs in batch
-                        mk_feat = torch.zeros(batch_size, 1, 768, device=device)
-                        mk_mask = torch.zeros(batch_size, 1, device=device)
                 
                 else:
-                    # Fallback if MK not in batch at all (placeholder 768 dim for BERT-like MK)
+                    # Using 768 as default BERT dim
                     mk_feat = torch.randn(batch_size, 1, 768, device=device)
                     mk_mask = torch.ones(batch_size, 1, device=device)
 
@@ -320,7 +311,6 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             "medical_knowledge_mask": medical_knowledge_mask, # Dict{(i,j): Tensor}
             "modalities_groups": modalities_groups  # List[List[int]]
         }
-    
 
     def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         
@@ -347,25 +337,25 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         valid_embeddings = pooled_embeddings[patient_mask]
         
         if valid_embeddings.shape[0] == 0:
-             print("Warning: decode valid_embeddings is empty.")
-             return {"logits": logits, "loss": loss}
+            print("Warning: decode valid_embeddings is empty.")
+            return {"logits": logits, "loss": loss}
 
         # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
-        do_mixup_list = [batch['labels'][i]['do_mixup'] for i in range(batch_size)]
+        weights_list = [batch['labels'][i]['sample_weight'] for i in range(batch_size)]
         label_time_list = [batch['labels'][i]['label_time'] for i in range(batch_size)]
         label_event_list = [batch['labels'][i]['label_event'] for i in range(batch_size)]
 
         Y_full = torch.tensor(label_time_list, device=device, dtype=torch.float32)
         c_full = torch.tensor(label_event_list, device=device, dtype=torch.float32)
-        m_full = torch.tensor(do_mixup_list, device=device, dtype=torch.bool)
+        w_full = torch.tensor(weights_list, device=device, dtype=torch.float32)
 
         valid_Y = Y_full[patient_mask]
         valid_c = c_full[patient_mask]
-        valid_m = m_full[patient_mask]
+        valid_w = w_full[patient_mask]
 
         # 5. 仅在有效子集上进行预测和损失计算
         valid_logits = self.prediction_head(valid_embeddings)
-        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c, valid_m)
+        loss_tensor_unreduced = self.loss_fn(valid_logits, valid_Y, valid_c, valid_w)
         loss = mean_by_event(loss_tensor_unreduced, valid_c)
 
         # 6. 将 logits 映射回原始 (B, out_dim) 张量
@@ -376,3 +366,5 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         full_loss_tensor[patient_mask] = loss_tensor_unreduced.squeeze(1) if loss_tensor_unreduced.dim() == 2 else loss_tensor_unreduced
 
         return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
+        
+

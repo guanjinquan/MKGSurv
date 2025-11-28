@@ -24,8 +24,8 @@ PATH_PORTION_TSV = os.path.join(BIOSPECIMEN_DIR, "portion.tsv")
 
 # --- 处理后的文件 (仅用于获取 Schema) ---
 PATH_CLINICAL_AGG = os.path.join(PROCESSED_DIR, "clinical_data_aggregated.csv")
-PATH_TREATMENT_AGG = os.path.join(PROCESSED_DIR, "treatment_data_aggregated.csv")
-PATH_TREATMENT_TEXT = os.path.join(PROCESSED_DIR, "text_treatment.csv")
+PATH_treatment_AGG = os.path.join(PROCESSED_DIR, "treatment_data_aggregated.csv")
+PATH_treatment_TEXT = os.path.join(PROCESSED_DIR, "text_treatment.csv")
 PATH_PATHOLOGY_AGG = os.path.join(PROCESSED_DIR, "pathology_aggregated.csv")
 
 # --- 其他资源 ---
@@ -264,7 +264,7 @@ def main():
     # 2. 获取 Schema (用于 Generic Tabular 处理)
     print("\n[Step 1] Loading Schemas for General Tabular Data...")
     cols_clinical = get_cols_from_processed(PATH_CLINICAL_AGG)
-    cols_treatment = get_cols_from_processed(PATH_TREATMENT_AGG) + get_cols_from_processed(PATH_TREATMENT_TEXT)
+    cols_treatment = get_cols_from_processed(PATH_treatment_AGG) + get_cols_from_processed(PATH_treatment_TEXT)
     cols_path_tabular = get_cols_from_processed(PATH_PATHOLOGY_AGG) # 仅包含分期等诊断信息
     
     # 3. 加载并聚合所有 Raw TSV (用于 General Tabular)
@@ -296,7 +296,7 @@ def main():
         # 筛选目标病人
         full_concat = full_concat[full_concat['cases.submitter_id'].isin(target_ids)]
         
-        # 聚合通用数据 (clinical, Treatment, pathology Tabular)
+        # 聚合通用数据 (clinical, treatment, pathology Tabular)
         print("   Aggregating General Tabular Data...")
         def agg_func(s):
             vals = {clean_value(x) for x in s if clean_value(x)}
@@ -309,13 +309,13 @@ def main():
         
         # 填充到 Final DF
         final_df['clinical'] = grouped.apply(lambda r: row_to_text(r, cols_clinical), axis=1).reindex(target_ids).fillna("")
-        final_df['Treatment'] = grouped.apply(lambda r: row_to_text(r, cols_treatment), axis=1).reindex(target_ids).fillna("")
+        final_df['treatment'] = grouped.apply(lambda r: row_to_text(r, cols_treatment), axis=1).reindex(target_ids).fillna("")
         path_tabular = grouped.apply(lambda r: row_to_text(r, cols_path_tabular), axis=1).reindex(target_ids).fillna("")
     else:
         print("Warning: No raw data loaded for tabular sections.")
         path_tabular = pd.Series("", index=target_ids)
         final_df['clinical'] = ""
-        final_df['Treatment'] = ""
+        final_df['treatment'] = ""
 
     # 4. Biospecimen Metadata (Slide/Sample/Portion) - [NEW]
     print("\n[Step 3] Processing Biospecimen Metadata (The Missing Link)...")
@@ -365,7 +365,7 @@ def main():
     total_patients = len(final_df)
     print(f"总目标患者数 (Total Target Patients): {total_patients}")
     
-    check_cols = ['clinical', 'Treatment', 'pathology', 'genomics']
+    check_cols = ['clinical', 'treatment', 'pathology', 'genomics']
     all_complete = True
     
     for col in check_cols:

@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_lusc_run008_rerun"
+RUN_ID="tcga_lusc_run014"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_lusc" \
     --dataset "tcga_lusc" \
     --image_aggregater "panther" \
-    --fusion_type "msa" \
+    --fusion_type "medkgat_fusion" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
@@ -36,7 +36,8 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "image-pathology,genomics-genomics,tabular-clinical-9" 
+
 
 
 echo "Training run ${RUN_ID} finished."

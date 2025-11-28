@@ -13,13 +13,13 @@ BASE_URL = "https://api.deepseek.com"
 MODEL_NAME = "deepseek-reasoner"
 
 # File Paths
-INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_deepseek.json"
+INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/multimodal_texts.csv"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_deepseek.json"
 FAILED_LOG_PATH = "failed_ids_deepseek.log"
 
 # Threading Configuration
 # 根据 API 速率限制调整。如果不确定，从 5-10 开始尝试。
-MAX_WORKERS = 10
+MAX_WORKERS = 4 
 
 # ================= MAPPING & VALIDATION LOGIC =================
 
@@ -34,16 +34,9 @@ DATA_TYPE_MAPPING = {
     'pathological data': 'pathology',
     'pathological': 'pathology',
     'pathology': 'pathology',
-    # Genomics
-    'genomic data': 'genomics',
-    'genomics data': 'genomics',
-    'genomic': 'genomics',
-    'genomics': 'genomics',
-    'molecular data': 'genomics',
-    'mgenomics': 'genomics'
 }
 
-VALID_KEYS = {'clinical', 'treatment', 'pathology', 'genomics'}
+VALID_KEYS = {'clinical', 'treatment', 'pathology'}
 
 def map_data_type(data_string):
     if not isinstance(data_string, str): return None
@@ -54,7 +47,6 @@ def map_data_type(data_string):
     if 'clinical' in normalized: return 'clinical'
     elif 'treatment' in normalized: return 'treatment'
     elif 'pathology' in normalized or 'pathological' in normalized: return 'pathology'
-    elif 'genomic' in normalized or 'molecular' in normalized: return 'genomics'
     return None
 
 def validate_and_normalize_response(parsed_json):
@@ -82,8 +74,8 @@ def validate_and_normalize_response(parsed_json):
         entry["modalPairs"] = [m1, m2]
         normalized_list.append(entry)
 
-    if len(seen_pairs) != 6:
-        raise ValueError(f"Expected exactly 6 unique pairs, found {len(seen_pairs)}. Pairs: {seen_pairs}")
+    if len(seen_pairs) != 3:
+        raise ValueError(f"Expected exactly 3 unique pairs, found {len(seen_pairs)}. Pairs: {seen_pairs}")
 
     return normalized_list
 
@@ -91,15 +83,14 @@ def validate_and_normalize_response(parsed_json):
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 
-def construct_prompt(clinical, pathology, treatment, genomics):
+def construct_prompt(clinical, pathology, treatment):
     """
     Constructs the prompt string with the specific patient data.
     """
-    num_pairs = 6
-    
+ 
     prompt = f"""
 You are a professional physician with expertise in medical knowledge across various departments. 
-This is data from a Lung Squamous Cell Carcinoma tumor patient in the TCGA-LUSC dataset to analyze the patient's survival risk.
+This is data from a OSCC patient in the chinese guangdong province oral hospital dataset to analyze the patient's survival risk.
 
 The clinical data: {clinical}
 
@@ -107,19 +98,14 @@ The pathological data: {pathology}
 
 The treatment data: {treatment}
 
-The genomics data: {genomics}
-
 You need to evaluate the degree of association between the two modalities of data for the patient's survival analysis, providing an integer score from 0 to 10, where 0 indicates the lowest association and 10 the highest. You need to generate for all pairs given to you:
 1. Clinical - Pathology
 2. Clinical - Treatment
-3. Clinical - Genomics
-4. Pathology - Treatment
-5. Pathology - Genomics
-6. Treatment - Genomics
+3. Pathology - Treatment
 
 
 As a professional physician, you must integrate both modalities of data to assess the patient's survival risk. 
-Strictly use the following names for modalities in the "modalPairs" list: "clinical", "pathology", "treatment", "genomics", and your output format should be in json format:
+Strictly use the following names for modalities in the "modalPairs" list: "clinical", "pathology", "treatment", and your output format should be in json format:
 
 ```
 [
@@ -134,8 +120,8 @@ Strictly use the following names for modalities in the "modalPairs" list: "clini
 ```
 Stop after generating above output. Return ONLY the JSON.
 """
-    
-    return prompt
+    return prompt.strip()
+
 
 def clean_and_parse_json(response_text):
     try:
@@ -152,28 +138,27 @@ def clean_and_parse_json(response_text):
 def process_single_patient(row_data, final_data_ref, file_lock):
     """
     单个患者的处理逻辑。
-    返回: (success_bool, submitter_id, message)
+    返回: (success_bool, PID, message)
     """
-    submitter_id = row_data['submitter_id']
+    PID = row_data['PID']
     
     # Extract Modalities
     clinical = row_data.get('clinical')
     pathology = row_data.get('pathology')
     treatment = row_data.get('treatment')
-    genomics = row_data.get('genomics')
 
     # --- CRITICAL ASSERTION ---
     # 严格保留 Assert 验证：确保 Prompt 的输入参数绝对不为 None。
     # 这一步在构建 Prompt 和调用 API 之前执行，防止脏数据浪费 Token 或导致错误。
     try:
-        assert None not in [clinical, pathology, treatment, genomics], \
-            f"Input Validation Failed: One or more modalities are None for {submitter_id}"
+        assert None not in [clinical, pathology, treatment], \
+            f"Input Validation Failed: One or more modalities are None for {PID}"
     except AssertionError as e:
         # 捕获 AssertionError 并返回失败，而不是让线程崩溃
-        return False, submitter_id, str(e)
+        return False, PID, str(e)
     # --------------------------
 
-    prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
+    prompt_text = construct_prompt(clinical, pathology, treatment)
 
     MAX_RETRIES = 5
     last_error = None
@@ -196,18 +181,18 @@ def process_single_patient(row_data, final_data_ref, file_lock):
             # --- CRITICAL SECTION: FILE WRITE ---
             # 加锁写入，确保多线程下数据安全
             with file_lock:
-                final_data_ref[submitter_id] = normalized_result
+                final_data_ref[PID] = normalized_result
                 with open(OUTPUT_JSON_PATH, 'w', encoding='utf-8') as f:
                     json.dump(final_data_ref, f, ensure_ascii=False, indent=4)
             # ------------------------------------
 
-            return True, submitter_id, "Success"
+            return True, PID, "Success"
 
         except Exception as e:
             last_error = str(e)
             time.sleep(2 * (attempt + 1)) # 指数退避
     
-    return False, submitter_id, last_error
+    return False, PID, last_error
 
 # ================= MAIN CONTROLLER =================
 
@@ -227,11 +212,10 @@ def process_patients():
     all_patients = []
     for _, row in df.iterrows():
         all_patients.append({
-            'submitter_id': row.get('cases.submitter_id'),
-            'clinical': row.get('clinical', None),
-            'pathology': row.get('pathology', None),
-            'treatment': row.get('treatment', None),
-            'genomics': row.get('genomics', None)
+            'PID': str(row.get('PID')),
+            'clinical': str(row.get('clinical', None)),
+            'pathology': str(row.get('pathology', None)),
+            'treatment': str(row.get('treatment', None)),
         })
 
     # 2. Resume Logic
@@ -255,7 +239,7 @@ def process_patients():
     print(f"Resuming with {len(final_data)} valid records.")
 
     # 3. Filter
-    patients_to_process = [p for p in all_patients if p['submitter_id'] not in final_data]
+    patients_to_process = [p for p in all_patients if p['PID'] not in final_data]
     print(f"Remaining patients to process: {len(patients_to_process)}")
 
     if not patients_to_process:
@@ -269,7 +253,7 @@ def process_patients():
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_id = {
-            executor.submit(process_single_patient, p_data, final_data, file_lock): p_data['submitter_id'] 
+            executor.submit(process_single_patient, p_data, final_data, file_lock): p_data['PID'] 
             for p_data in patients_to_process
         }
 

@@ -16,19 +16,15 @@ from datasets.dataset_base import MultiModalDataset
 
 class OSCCSurvInHouseDataset(MultiModalDataset):
 
-    PRE_OP_MODALITIES = [
-        "image-pathology",           # pre-treatment (Feature from PKL)
-        "text-clinical",             # pre-treatment (Feature from PKL)
-        "tabular-clinical-18",       # pre-treatment (From CSV)
+    VALID_MODALITIES = [
+        "image-pathology",            
+        "text-clinical",            
+        "tabular-clinical-18",      
+ 
+        "text-pathology",          
+        "text-treatment",           
+        "tabular-pathology-21",     
     ]
-
-    POST_OP_MODALITIES = [
-        "text-pathology",            # with-treat (Feature from PKL)
-        "text-treatment",            # with-treat (Feature from PKL)
-        "tabular-pathology-21",      # with-treat (From CSV)
-    ]
-
-    VALID_MODALITIES = PRE_OP_MODALITIES + POST_OP_MODALITIES
 
     def _read_pickle(self, path: str) -> Any:
         if not os.path.exists(path):

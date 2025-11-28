@@ -8,42 +8,28 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIGURATION =================
-API_KEY = os.environ.get("DEEPSEEK_API_KEY", "") # 确保你有设置环境变量，或者直接在这里填入
-BASE_URL = "https://api.deepseek.com"
-MODEL_NAME = "deepseek-reasoner"
+API_KEY = os.environ.get("QWEN_API_KEY", "") 
+BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+MODEL_NAME = "qwen-turbo"
 
 # File Paths
-INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_deepseek.json"
-FAILED_LOG_PATH = "failed_ids_deepseek.log"
+INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/multimodal_texts.csv"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_qwen.json"
+FAILED_LOG_PATH = "failed_ids_qwen.log"
 
 # Threading Configuration
-# 根据 API 速率限制调整。如果不确定，从 5-10 开始尝试。
-MAX_WORKERS = 10
+# Qwen 的速率限制通常较高，可以尝试 10-20
+MAX_WORKERS = 10 
 
 # ================= MAPPING & VALIDATION LOGIC =================
 
 DATA_TYPE_MAPPING = {
-    # Clinical
-    'clinical data': 'clinical',
-    'clinical': 'clinical',
-    # Treatment
-    'treatment data': 'treatment',
-    'treatment': 'treatment',
-    # Pathology
-    'pathological data': 'pathology',
-    'pathological': 'pathology',
-    'pathology': 'pathology',
-    # Genomics
-    'genomic data': 'genomics',
-    'genomics data': 'genomics',
-    'genomic': 'genomics',
-    'genomics': 'genomics',
-    'molecular data': 'genomics',
-    'mgenomics': 'genomics'
+    'clinical data': 'clinical', 'clinical': 'clinical',
+    'treatment data': 'treatment', 'treatment': 'treatment',
+    'pathological data': 'pathology', 'pathological': 'pathology', 'pathology': 'pathology',
 }
 
-VALID_KEYS = {'clinical', 'treatment', 'pathology', 'genomics'}
+VALID_KEYS = {'clinical', 'treatment', 'pathology'}
 
 def map_data_type(data_string):
     if not isinstance(data_string, str): return None
@@ -54,7 +40,6 @@ def map_data_type(data_string):
     if 'clinical' in normalized: return 'clinical'
     elif 'treatment' in normalized: return 'treatment'
     elif 'pathology' in normalized or 'pathological' in normalized: return 'pathology'
-    elif 'genomic' in normalized or 'molecular' in normalized: return 'genomics'
     return None
 
 def validate_and_normalize_response(parsed_json):
@@ -82,24 +67,21 @@ def validate_and_normalize_response(parsed_json):
         entry["modalPairs"] = [m1, m2]
         normalized_list.append(entry)
 
-    if len(seen_pairs) != 6:
-        raise ValueError(f"Expected exactly 6 unique pairs, found {len(seen_pairs)}. Pairs: {seen_pairs}")
+    if len(seen_pairs) != 3:
+        raise ValueError(f"Expected exactly 3 unique pairs, found {len(seen_pairs)}. Pairs: {seen_pairs}")
 
     return normalized_list
 
 # ================= CLIENT SETUP =================
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
-
-
-def construct_prompt(clinical, pathology, treatment, genomics):
+def construct_prompt(clinical, pathology, treatment):
     """
     Constructs the prompt string with the specific patient data.
     """
-    num_pairs = 6
-    
+ 
     prompt = f"""
 You are a professional physician with expertise in medical knowledge across various departments. 
-This is data from a Lung Squamous Cell Carcinoma tumor patient in the TCGA-LUSC dataset to analyze the patient's survival risk.
+This is data from a OSCC patient in the chinese guangdong province oral hospital dataset to analyze the patient's survival risk.
 
 The clinical data: {clinical}
 
@@ -107,19 +89,14 @@ The pathological data: {pathology}
 
 The treatment data: {treatment}
 
-The genomics data: {genomics}
-
 You need to evaluate the degree of association between the two modalities of data for the patient's survival analysis, providing an integer score from 0 to 10, where 0 indicates the lowest association and 10 the highest. You need to generate for all pairs given to you:
 1. Clinical - Pathology
 2. Clinical - Treatment
-3. Clinical - Genomics
-4. Pathology - Treatment
-5. Pathology - Genomics
-6. Treatment - Genomics
+3. Pathology - Treatment
 
 
 As a professional physician, you must integrate both modalities of data to assess the patient's survival risk. 
-Strictly use the following names for modalities in the "modalPairs" list: "clinical", "pathology", "treatment", "genomics", and your output format should be in json format:
+Strictly use the following names for modalities in the "modalPairs" list: "clinical", "pathology", "treatment", and your output format should be in json format:
 
 ```
 [
@@ -134,8 +111,8 @@ Strictly use the following names for modalities in the "modalPairs" list: "clini
 ```
 Stop after generating above output. Return ONLY the JSON.
 """
-    
-    return prompt
+    return prompt.strip()
+
 
 def clean_and_parse_json(response_text):
     try:
@@ -151,31 +128,27 @@ def clean_and_parse_json(response_text):
 
 def process_single_patient(row_data, final_data_ref, file_lock):
     """
-    单个患者的处理逻辑。
-    返回: (success_bool, submitter_id, message)
+    单个患者的处理逻辑 (Qwen 版本)
     """
-    submitter_id = row_data['submitter_id']
+    PID = row_data['PID']
     
     # Extract Modalities
     clinical = row_data.get('clinical')
     pathology = row_data.get('pathology')
     treatment = row_data.get('treatment')
-    genomics = row_data.get('genomics')
 
     # --- CRITICAL ASSERTION ---
-    # 严格保留 Assert 验证：确保 Prompt 的输入参数绝对不为 None。
-    # 这一步在构建 Prompt 和调用 API 之前执行，防止脏数据浪费 Token 或导致错误。
+    # 严格保留 Assert 验证，针对 Qwen 任务的 3 个模态
     try:
-        assert None not in [clinical, pathology, treatment, genomics], \
-            f"Input Validation Failed: One or more modalities are None for {submitter_id}"
+        assert None not in [clinical, pathology, treatment], \
+            f"Input Validation Failed: One or more modalities are None for {PID}"
     except AssertionError as e:
-        # 捕获 AssertionError 并返回失败，而不是让线程崩溃
-        return False, submitter_id, str(e)
+        return False, PID, str(e)
     # --------------------------
 
-    prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
+    prompt_text = construct_prompt(clinical, pathology, treatment)
 
-    MAX_RETRIES = 5
+    MAX_RETRIES = 10
     last_error = None
 
     for attempt in range(MAX_RETRIES):
@@ -183,9 +156,10 @@ def process_single_patient(row_data, final_data_ref, file_lock):
             completion = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
-                    {'role': 'system', 'content': 'You are a helpful medical AI assistant that outputs strict JSON.'},
+                    {'role': 'system', 'content': 'You are a helpful medical AI assistant that outputs strict JSON with specific keys.'},
                     {'role': 'user', 'content': prompt_text}
                 ],
+                # 适当增加超时时间
                 timeout=120
             )
             
@@ -193,48 +167,49 @@ def process_single_patient(row_data, final_data_ref, file_lock):
             parsed_raw = clean_and_parse_json(response_content)
             normalized_result = validate_and_normalize_response(parsed_raw)
             
-            # --- CRITICAL SECTION: FILE WRITE ---
-            # 加锁写入，确保多线程下数据安全
+            # --- CRITICAL SECTION: ATOMIC FILE WRITE ---
+            # 使用临时文件 + rename 机制，防止写入中断导致文件损坏或 Duplicate Key 格式错误
             with file_lock:
-                final_data_ref[submitter_id] = normalized_result
-                with open(OUTPUT_JSON_PATH, 'w', encoding='utf-8') as f:
+                final_data_ref[PID] = normalized_result
+                
+                temp_file = OUTPUT_JSON_PATH + ".tmp"
+                with open(temp_file, 'w', encoding='utf-8') as f:
                     json.dump(final_data_ref, f, ensure_ascii=False, indent=4)
+                
+                # 原子操作：替换原文件
+                os.replace(temp_file, OUTPUT_JSON_PATH)
             # ------------------------------------
 
-            return True, submitter_id, "Success"
+            return True, PID, "Success"
 
         except Exception as e:
             last_error = str(e)
-            time.sleep(2 * (attempt + 1)) # 指数退避
+            time.sleep(1 + attempt) # 简易退避
     
-    return False, submitter_id, last_error
+    return False, PID, last_error
 
 # ================= MAIN CONTROLLER =================
 
 def process_patients():
-    # 1. Load Input Data
     if not os.path.exists(INPUT_CSV_PATH):
         print(f"Error: Input file not found at {INPUT_CSV_PATH}")
         return
 
     df = pd.read_csv(INPUT_CSV_PATH)
-    
-    # 填充 NaN 为 "Not Available"，但如果 CSV 中完全缺少该列，row.get() 仍可能返回 None，
-    # 从而触发上面的 assert 保护。
     df = df.fillna("Not Available")
     
-    # 转换为列表字典，方便传递给线程
+    # 构建任务列表
     all_patients = []
     for _, row in df.iterrows():
+        # 注意：这里使用的是 row.get('PID')，符合你 Qwen 代码的设定
         all_patients.append({
-            'submitter_id': row.get('cases.submitter_id'),
-            'clinical': row.get('clinical', None),
-            'pathology': row.get('pathology', None),
-            'treatment': row.get('treatment', None),
-            'genomics': row.get('genomics', None)
+            'PID': row.get('PID'),
+            'clinical': row.get('clinical'),
+            'pathology': row.get('pathology'),
+            'treatment': row.get('treatment')
         })
 
-    # 2. Resume Logic
+ # Resume Logic
     final_data = {}
     if os.path.exists(OUTPUT_JSON_PATH):
         try:
@@ -245,31 +220,58 @@ def process_patients():
                     print(f"Validating {len(loaded_data)} existing records...")
                     for sid, record in loaded_data.items():
                         try:
-                            final_data[sid] = validate_and_normalize_response(record)
+                            # 确保载入的 Key 也是干净的字符串，防止 " 123" 和 "123" 造成重复
+                            clean_sid = str(sid).strip()
+                            final_data[clean_sid] = validate_and_normalize_response(record)
                         except Exception as e:
                             print(f"  [Invalid Record] {sid}: {e} -> Will re-process.")
+            
+            # --- SANITIZATION STEP ---
+            if final_data:
+                print(f"Sanitizing output file: re-saving {len(final_data)} clean, unique records...")
+                with open(OUTPUT_JSON_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(final_data, f, ensure_ascii=False, indent=4)
+
         except Exception as e:
             print(f"Error loading existing JSON: {e}. Starting fresh.")
             final_data = {}
 
     print(f"Resuming with {len(final_data)} valid records.")
 
-    # 3. Filter
-    patients_to_process = [p for p in all_patients if p['submitter_id'] not in final_data]
-    print(f"Remaining patients to process: {len(patients_to_process)}")
+    # --- FILTER & DEDUPLICATE (Critical Fix) ---
+    # 1. 过滤掉已完成的
+    # 2. 过滤掉 CSV 中的重复项 (防止同一 ID 启动多个线程)
+    patients_to_process = []
+    seen_in_batch = set()
+
+    for p in all_patients:
+        sid = str(p['PID']).strip()
+        
+        # 如果已经存在于结果文件中，跳过
+        if sid in final_data:
+            continue
+            
+        # 如果在当前批次中已经添加过（CSV中有重复行），跳过
+        if sid in seen_in_batch:
+            continue
+        
+        patients_to_process.append(p)
+        seen_in_batch.add(sid)
+
+    print(f"Remaining unique patients to process: {len(patients_to_process)}")
 
     if not patients_to_process:
         print("All patients processed!")
         return
 
-    # 4. Multi-threading Execution
+    # Multi-threading Execution
     file_lock = threading.Lock()
     
     print(f"Starting execution with {MAX_WORKERS} threads...")
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_id = {
-            executor.submit(process_single_patient, p_data, final_data, file_lock): p_data['submitter_id'] 
+            executor.submit(process_single_patient, p_data, final_data, file_lock): p_data['PID'] 
             for p_data in patients_to_process
         }
 

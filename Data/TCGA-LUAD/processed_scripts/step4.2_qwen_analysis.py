@@ -12,7 +12,7 @@ MODEL_NAME = "qwen-turbo"
 
 # File Paths
 INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/qwen_analysis.json"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
 
 # ================= MAPPING & VALIDATION LOGIC =================
 
@@ -246,10 +246,12 @@ def process_patients():
             continue
 
         # Extract Modalities
-        clinical = row.get('Clinical', 'N/A')
-        pathology = row.get('Pathology', 'N/A')
-        treatment = row.get('Treatment', 'N/A')
-        genomics = row.get('Genomics', 'N/A')
+        clinical = row.get('clinical', None)
+        pathology = row.get('pathology', None)
+        treatment = row.get('treatment', None)
+        genomics = row.get('genomics', None)
+
+        assert None not in [clinical, pathology, treatment, genomics], "One or more modalities are missing"
 
         prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
 

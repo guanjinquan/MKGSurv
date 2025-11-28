@@ -12,7 +12,7 @@ MODEL_NAME = "qwen-turbo"
 
 # File Paths
 INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/qwen_analysis.json"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_qwen.json"
 
 # ================= MAPPING & VALIDATION LOGIC =================
 
@@ -32,7 +32,8 @@ DATA_TYPE_MAPPING = {
     'genomics data': 'genomics',
     'genomic': 'genomics',
     'genomics': 'genomics',
-    'molecular data': 'genomics'
+    'molecular data': 'genomics',
+    'mgenomics': 'genomics'
 }
 
 VALID_KEYS = {'clinical', 'treatment', 'pathology', 'genomics'}
@@ -165,7 +166,7 @@ Strictly use the following names for modalities in the "modalPairs" list: "clini
 [
     {{
         "modalPairs": ["Modal1", "Modal2"],
-        "score": [An integer representing the association score between the two modalities of data],
+        "score": [An integer representing the association score between the two modalities of data, encouraged to be different among pairs],
         "relationship":  [A text paragraph analyzing the association between the two modalities of data, including your perspective on their relationship as detailed as possible],
         "survival": [A survival risk analysis integrating both modalities of data as detailed as possible],
     }},
@@ -246,10 +247,12 @@ def process_patients():
             continue
 
         # Extract Modalities
-        clinical = row.get('Clinical', 'N/A')
-        pathology = row.get('Pathology', 'N/A')
-        treatment = row.get('Treatment', 'N/A')
-        genomics = row.get('Genomics', 'N/A')
+        clinical = row.get('clinical', None)
+        pathology = row.get('pathology', None)
+        treatment = row.get('treatment', None)
+        genomics = row.get('genomics', None)
+
+        assert None not in [clinical, pathology, treatment, genomics], "One or more modalities are missing"
 
         prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
 

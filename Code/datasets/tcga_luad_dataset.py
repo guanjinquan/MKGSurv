@@ -20,20 +20,16 @@ import copy
 
 class TCGA_LUAD_Dataset(MultiModalDataset):
 
-    PRE_OP_MODALITIES = [
+    VALID_MODALITIES = [
         "tabular-clinical-9", 
         "genomics-genomics",
         "image-pathology", 
-    ]
 
-    POST_OP_MODALITIES = [
         "text-pathology", 
         "text-treatment",
         "tabular-treatment-9", 
         "tabular-pathology-21", 
     ]
-
-    VALID_MODALITIES = PRE_OP_MODALITIES + POST_OP_MODALITIES
 
     def _read_pickle(self, path: str) -> Any:
         """
