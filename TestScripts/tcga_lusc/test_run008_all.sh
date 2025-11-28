@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="tcga_lusc_run008"
+RUN_ID="tcga_lusc_run008_rerun"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.

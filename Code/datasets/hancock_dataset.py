@@ -64,6 +64,11 @@ class HANCOCKDataset(Dataset):
         self._load_data()
         print(f"Dataset for mode '{self.mode}' initialized. Found {len(self.patient_ids)} patients.")
 
+        # Knowledge Features
+        knowledge_file = os.path.join(self.processed_dir, "features_medical_knowledge.pkl")
+        self.knowledge_dict = self._read_pickle(knowledge_file)
+
+
     def _get_survival_bins(self):
         """
         Returns a list of all labels (time bins) in the dataset.

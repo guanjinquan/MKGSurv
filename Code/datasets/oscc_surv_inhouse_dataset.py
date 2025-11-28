@@ -188,9 +188,12 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
             "labels": {
                 'label_time': event_time,
                 'label_event': event_flag,
-                'sample_weight': 1.0  # Default weight
-            }
+                'sample_weight': 1.0,
+            },
         }
+
+        if self.args.use_medical_knowledge:
+            output_dict["medical-knowledge"] = self.knowledge_dict.get(pid_str, None)
 
         # 4. 加载特征 
         modalities_found = 0

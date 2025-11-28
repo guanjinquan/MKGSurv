@@ -2,72 +2,51 @@ import pandas as pd
 import json
 import os
 import time
+import threading
 from openai import OpenAI
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIGURATION =================
-API_KEY = os.environ.get("QWEN_API_KEY", None)
+API_KEY = os.environ.get("QWEN_API_KEY", "") 
 BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MODEL_NAME = "qwen-turbo"
 
 # File Paths
 INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
 OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_qwen.json"
+FAILED_LOG_PATH = "failed_ids_lusc_qwen.log"
+
+# Threading Configuration
+MAX_WORKERS = 10 
 
 # ================= MAPPING & VALIDATION LOGIC =================
 
 DATA_TYPE_MAPPING = {
     # Clinical
-    'clinical data': 'clinical',
-    'clinical': 'clinical',
+    'clinical data': 'clinical', 'clinical': 'clinical',
     # Treatment
-    'treatment data': 'treatment',
-    'treatment': 'treatment',
+    'treatment data': 'treatment', 'treatment': 'treatment',
     # Pathology
-    'pathological data': 'pathology',
-    'pathological': 'pathology',
-    'pathology': 'pathology',
+    'pathological data': 'pathology', 'pathological': 'pathology', 'pathology': 'pathology',
     # Genomics
-    'genomic data': 'genomics',
-    'genomics data': 'genomics',
-    'genomic': 'genomics',
-    'genomics': 'genomics',
-    'molecular data': 'genomics',
-    'mgenomics': 'genomics'
+    'genomic data': 'genomics', 'genomics data': 'genomics',
+    'genomic': 'genomics', 'genomics': 'genomics',
+    'molecular data': 'genomics', 'mgenomics': 'genomics'
 }
 
 VALID_KEYS = {'clinical', 'treatment', 'pathology', 'genomics'}
 
 def map_data_type(data_string):
-    """
-    Standardizes the data type string to one of the 4 valid keys.
-    Returns None if mapping fails.
-    """
-    if not isinstance(data_string, str):
-        return None
-        
-    # Normalize: lowercase and strip whitespace
+    if not isinstance(data_string, str): return None
     normalized = data_string.lower().strip()
-    
-    # 1. Direct dictionary lookup
-    if normalized in DATA_TYPE_MAPPING:
-        return DATA_TYPE_MAPPING[normalized]
-    
-    # 2. Heuristic removal of "data" if not in dict
+    if normalized in DATA_TYPE_MAPPING: return DATA_TYPE_MAPPING[normalized]
     cleaned = normalized.replace("data", "").strip()
-    if cleaned in DATA_TYPE_MAPPING:
-        return DATA_TYPE_MAPPING[cleaned]
-
-    # 3. Keyword matching (Safety net)
-    if 'clinical' in normalized:
-        return 'clinical'
-    elif 'treatment' in normalized:
-        return 'treatment'
-    elif 'pathology' in normalized or 'pathological' in normalized:
-        return 'pathology'
-    elif 'genomic' in normalized or 'molecular' in normalized:
-        return 'genomics'
-        
+    if cleaned in DATA_TYPE_MAPPING: return DATA_TYPE_MAPPING[cleaned]
+    if 'clinical' in normalized: return 'clinical'
+    elif 'treatment' in normalized: return 'treatment'
+    elif 'pathology' in normalized or 'pathological' in normalized: return 'pathology'
+    elif 'genomic' in normalized or 'molecular' in normalized: return 'genomics'
     return None
 
 def validate_and_normalize_response(parsed_json):
@@ -75,62 +54,39 @@ def validate_and_normalize_response(parsed_json):
     Validates that:
     1. All modalPairs map correctly to the 4 standard keys.
     2. There are exactly C(4,2) = 6 unique pairs.
-    3. No self-loops (e.g. clinical-clinical).
-    
-    Returns the normalized list if valid, otherwise raises ValueError.
     """
-    if not isinstance(parsed_json, list):
-        raise ValueError("Output must be a list")
-
+    if not isinstance(parsed_json, list): raise ValueError("Output must be a list")
     normalized_list = []
     seen_pairs = set()
 
     for entry in parsed_json:
         if "modalPairs" not in entry or not isinstance(entry["modalPairs"], list):
             raise ValueError("Missing or invalid 'modalPairs' field")
-        
         raw_pair = entry["modalPairs"]
-        if len(raw_pair) != 2:
-            raise ValueError(f"Pair does not contain exactly 2 elements: {raw_pair}")
+        if len(raw_pair) != 2: raise ValueError(f"Pair does not contain exactly 2 elements: {raw_pair}")
 
-        # Map keys
         m1 = map_data_type(raw_pair[0])
         m2 = map_data_type(raw_pair[1])
 
-        # Check validity
         if m1 not in VALID_KEYS or m2 not in VALID_KEYS:
             raise ValueError(f"Could not map pair {raw_pair} to valid keys. Got: {m1}, {m2}")
-        
-        if m1 == m2:
-            raise ValueError(f"Self-pair detected: {m1}-{m2}")
+        if m1 == m2: raise ValueError(f"Self-pair detected: {m1}-{m2}")
 
-        # Check Uniqueness (sort to handle [A,B] same as [B,A])
         sorted_pair = tuple(sorted([m1, m2]))
-        
-        if sorted_pair in seen_pairs:
-            # We treat duplicates as an error because we want exactly 6 unique pairs covering the combination
-            # Alternatively, you could skip, but strictly we need 6 unique distinct pairs.
-            raise ValueError(f"Duplicate pair detected: {sorted_pair}")
+        if sorted_pair in seen_pairs: raise ValueError(f"Duplicate pair detected: {sorted_pair}")
         
         seen_pairs.add(sorted_pair)
-        
-        # Update entry with normalized keys
         entry["modalPairs"] = [m1, m2]
         normalized_list.append(entry)
 
     # Final Count Check: C(4, 2) = 6
     if len(seen_pairs) != 6:
-        raise ValueError(f"Expected exactly 6 unique pairs, found {len(seen_pairs)}. Pairs found: {seen_pairs}")
+        raise ValueError(f"Expected exactly 6 unique pairs, found {len(seen_pairs)}. Pairs: {seen_pairs}")
 
     return normalized_list
 
-# ================= LLM CLIENT & LOGIC =================
-
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=BASE_URL,
-)
-
+# ================= CLIENT SETUP =================
+client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 def construct_prompt(clinical, pathology, treatment, genomics):
     """
@@ -180,36 +136,106 @@ Stop after generating above output. Return ONLY the JSON.
 
 
 def clean_and_parse_json(response_text):
-    """
-    Cleans the LLM response by extracting the substring between the first '[' and last ']',
-    ignoring any text before or after the JSON array.
-    """
     try:
         text = response_text.strip()
-        
-        # Robust extraction: find the outer brackets
         start_idx = text.find('[')
         end_idx = text.rfind(']')
-        
-        if start_idx == -1 or end_idx == -1:
-            raise ValueError("No JSON list brackets [] found in response")
-            
-        json_str = text[start_idx : end_idx + 1]
-        
-        return json.loads(json_str)
+        if start_idx == -1 or end_idx == -1: raise ValueError("No JSON list brackets [] found")
+        return json.loads(text[start_idx : end_idx + 1])
     except Exception as e:
         raise e
 
+# ================= WORKER FUNCTION =================
+
+def process_single_patient(row_data, final_data_ref, file_lock):
+    """
+    Worker function to process a single patient.
+    """
+    submitter_id = row_data['submitter_id']
+    
+    # Extract Modalities
+    clinical = row_data.get('clinical')
+    pathology = row_data.get('pathology')
+    treatment = row_data.get('treatment')
+    genomics = row_data.get('genomics')
+
+    # --- CRITICAL ASSERTION ---
+    try:
+        assert None not in [clinical, pathology, treatment, genomics], \
+            f"Input Validation Failed: One or more modalities are None for {submitter_id}"
+    except AssertionError as e:
+        return False, submitter_id, str(e)
+    # --------------------------
+
+    prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
+
+    MAX_RETRIES = 10
+    last_error = None
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {'role': 'system', 'content': 'You are a helpful medical AI assistant that outputs strict JSON with specific keys.'},
+                    {'role': 'user', 'content': prompt_text}
+                ],
+                timeout=120
+            )
+            
+            response_content = completion.choices[0].message.content
+            parsed_raw = clean_and_parse_json(response_content)
+            normalized_result = validate_and_normalize_response(parsed_raw)
+            
+            # --- CRITICAL SECTION: ATOMIC FILE WRITE ---
+            with file_lock:
+                final_data_ref[submitter_id] = normalized_result
+                
+                temp_file = OUTPUT_JSON_PATH + ".tmp"
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(final_data_ref, f, ensure_ascii=False, indent=4)
+                
+                os.replace(temp_file, OUTPUT_JSON_PATH)
+            # ------------------------------------
+
+            return True, submitter_id, "Success"
+
+        except Exception as e:
+            last_error = str(e)
+            time.sleep(1 + attempt)
+    
+    return False, submitter_id, last_error
+
+# ================= MAIN CONTROLLER =================
+
 def process_patients():
-    # 1. Load Data
     if not os.path.exists(INPUT_CSV_PATH):
         print(f"Error: Input file not found at {INPUT_CSV_PATH}")
         return
 
     df = pd.read_csv(INPUT_CSV_PATH)
     df = df.fillna("Not Available")
+    
+    all_patients = []
+    for _, row in df.iterrows():
+        # TCGA-LUSC usually uses 'cases.submitter_id'
+        raw_id = row.get('cases.submitter_id')
+        
+        if pd.isna(raw_id) or raw_id == "Not Available":
+            continue
 
-    # 2. Load existing results (Resume capability) with Strict Validation
+        # Force String & Strip to prevent duplicate keys logic error
+        sid_str = str(raw_id).strip()
+        
+        all_patients.append({
+            'submitter_id': sid_str,
+            'clinical': row.get('clinical'),
+            'pathology': row.get('pathology'),
+            'treatment': row.get('treatment'),
+            'genomics': row.get('genomics')
+        })
+
+    # Resume Logic & Sanitization
     final_data = {}
     if os.path.exists(OUTPUT_JSON_PATH):
         try:
@@ -217,91 +243,68 @@ def process_patients():
                 content = f.read()
                 if content.strip():
                     loaded_data = json.loads(content)
-                    print(f"Checking {len(loaded_data)} records from disk for validity...")
-                    
-                    invalid_count = 0
+                    print(f"Validating {len(loaded_data)} existing records...")
                     for sid, record in loaded_data.items():
                         try:
-                            # Validate immediately upon loading.
-                            # If this fails, it raises ValueError and we go to except block.
-                            # We save the normalized version to ensure consistency.
-                            final_data[sid] = validate_and_normalize_response(record)
-                        except ValueError as e:
-                            # If data on disk is invalid, we do NOT add it to final_data.
-                            # This ensures it will be re-processed in the loop below.
-                            print(f"  [Invalid Record Found] ID {sid}: {e} -> Scheduled for re-generation.")
-                            invalid_count += 1
-                            
-                    print(f"Resuming with {len(final_data)} valid records. (Found {invalid_count} invalid records to re-run)")
-                    
-        except json.JSONDecodeError:
-            print("Output file exists but is empty or corrupt. Starting fresh.")
-            final_data = {}
-
-    # 3. Iterate through patients
-    for index, row in tqdm(df.iterrows(), total=df.shape[0], desc="Processing Patients"):
-        submitter_id = row.get('cases.submitter_id')
-        
-        # Check if already processed (only valid data is in final_data now)
-        if submitter_id in final_data:
-            continue
-
-        # Extract Modalities
-        clinical = row.get('clinical', None)
-        pathology = row.get('pathology', None)
-        treatment = row.get('treatment', None)
-        genomics = row.get('genomics', None)
-
-        assert None not in [clinical, pathology, treatment, genomics], "One or more modalities are missing"
-
-        prompt_text = construct_prompt(clinical, pathology, treatment, genomics)
-
-        # Retry Loop
-        MAX_RETRIES = 10
-        success = False
-        last_error = None
-
-        for attempt in range(MAX_RETRIES):
-            try:
-                completion = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[
-                        {'role': 'system', 'content': 'You are a helpful medical AI assistant that outputs strict JSON with specific keys.'},
-                        {'role': 'user', 'content': prompt_text}
-                    ],
-                )
-                
-                response_content = completion.choices[0].message.content
-                
-                # 1. Parse JSON
-                parsed_raw = clean_and_parse_json(response_content)
-                
-                # 2. Validate and Normalize (Key mapping & C_4^2 check)
-                normalized_result = validate_and_normalize_response(parsed_raw)
-                
-                # If we get here, result is valid
-                final_data[submitter_id] = normalized_result
-                
-                # Save to disk immediately
+                            clean_sid = str(sid).strip()
+                            final_data[clean_sid] = validate_and_normalize_response(record)
+                        except Exception as e:
+                            print(f"  [Invalid Record] {sid}: {e} -> Will re-process.")
+            
+            # Sanitize File
+            if final_data:
+                print(f"Sanitizing output file: re-saving {len(final_data)} clean, unique records...")
                 with open(OUTPUT_JSON_PATH, 'w', encoding='utf-8') as f:
                     json.dump(final_data, f, ensure_ascii=False, indent=4)
-                
-                success = True
-                break # Exit retry loop
-            
-            except Exception as e:
-                last_error = str(e)
-                # Optional: print simple log for debugging retries
-                # print(f"  [Retry {attempt+1}/{MAX_RETRIES}] ID {submitter_id}: {e}")
-                time.sleep(1) # Short pause before retry
 
-        # If failed after all retries
-        if not success:
-            error_msg = f"FAILED {submitter_id} after {MAX_RETRIES} attempts. Reason: {last_error}\n"
-            print(error_msg.strip())
-            # Optionally write failed IDs to a log file
-            with open("failed_ids.log", "a") as err_f:
-                err_f.write(f"{submitter_id}: {last_error}\n")
+        except Exception as e:
+            print(f"Error loading existing JSON: {e}. Starting fresh.")
+            final_data = {}
+
+    print(f"Resuming with {len(final_data)} valid records.")
+
+    # Deduplication Filter
+    patients_to_process = []
+    seen_in_batch = set()
+
+    for p in all_patients:
+        sid = p['submitter_id']
+        
+        if sid in final_data:
+            continue
+            
+        if sid in seen_in_batch:
+            continue
+        
+        patients_to_process.append(p)
+        seen_in_batch.add(sid)
+
+    print(f"Remaining unique patients to process: {len(patients_to_process)}")
+
+    if not patients_to_process:
+        print("All patients processed!")
+        return
+
+    # Multi-threading Execution
+    file_lock = threading.Lock()
+    
+    print(f"Starting execution with {MAX_WORKERS} threads...")
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_id = {
+            executor.submit(process_single_patient, p_data, final_data, file_lock): p_data['submitter_id'] 
+            for p_data in patients_to_process
+        }
+
+        for future in tqdm(as_completed(future_to_id), total=len(patients_to_process), desc="Concurrent Processing"):
+            sid = future_to_id[future]
+            try:
+                success, _, msg = future.result()
+                if not success:
+                    with open(FAILED_LOG_PATH, "a") as err_f:
+                        err_f.write(f"{sid}: {msg}\n")
+            except Exception as e:
+                print(f"Critical thread error for {sid}: {e}")
 
 if __name__ == "__main__":
     process_patients()

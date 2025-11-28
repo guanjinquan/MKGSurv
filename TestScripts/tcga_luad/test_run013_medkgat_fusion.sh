@@ -22,7 +22,7 @@ NUM_EPOCHS=50        # Total number of training epochs.
 # The command below executes the main training script with the configured parameters.
 echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 
-python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
+python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
     --model_task "tcga_luad" \

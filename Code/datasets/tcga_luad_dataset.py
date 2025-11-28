@@ -280,8 +280,11 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 'label_event': event,
                 'sample_weight': 1.0,
             },
-            "medical-knowledge": self.knowledge_dict.get(patient_id, None),
         }
+
+        if self.args.use_medical_knowledge:
+            output_dict["medical-knowledge"] = self.knowledge_dict.get(patient_id, None)
+
         # --- 2. Load Modalities ---
         modalities_found = 0
 

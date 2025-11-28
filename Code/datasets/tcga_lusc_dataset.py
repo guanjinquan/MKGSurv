@@ -280,10 +280,12 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
                 'label_event': event,
                 'sample_weight': 1.0,
             },
-            "medical-knowledge": self.knowledge_dict.get(patient_id, None),
         }
 
-        assert self.knowledge_dict.get(patient_id, None) is not None, f"Knowledge missing for {patient_id}"
+        if self.args.use_medical_knowledge:
+            output_dict["medical-knowledge"] = self.knowledge_dict.get(patient_id, None)
+            assert self.knowledge_dict.get(patient_id, None) is not None, f"Knowledge missing for {patient_id}"
+
 
         # --- 2. Load Modalities ---
         modalities_found = 0
