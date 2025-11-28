@@ -85,7 +85,9 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         
         # --- 0. Parse Modalities ---
         self.modalities = self.parse_modalities(modalities)
-        self.do_mixup = (args.do_mixup or args.do_mixup_only_treatment) and len(self.modalities) > 1 and self.mode == "train"
+        self.do_mixup = getattr(args, 'do_mixup', False) and self.mode == "train"
+        self.mixup_alpha = getattr(args, 'mixup_alpha', 1.0) # 默认为1.0
+
         print(f"Active modalities: {self.modalities}")
 
         # --- 2. Load Patient Split ---
@@ -96,7 +98,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         with open(split_file, 'r') as f:
             splits = json.load(f)
             if 'folds' not in splits:
-                 raise KeyError(f"JSON structure error: 'folds' key missing in {split_file}")
+                raise KeyError(f"JSON structure error: 'folds' key missing in {split_file}")
             self.patient_ids = splits['folds'][fold][mode]
         
         print(f"Mode: {mode} | Fold: {fold} | Patients: {len(self.patient_ids)}")
@@ -126,9 +128,76 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 data = self._read_pickle(pkl_path)
                 if data is not None:
                     self.loaded_features[mod] = data
+        
+        # Knowledge Features
+        knowledge_file = os.path.join(self.processed_dir, "features_medical_knowledge.pkl")
+        self.knowledge_dict = self._read_pickle(knowledge_file)
 
         # Load CSVs (Tabular Data & Labels)
         self._load_tabular_and_labels()
+
+        # ---Calculate Global Statistics for H-Mixup Weights ---
+        # pi_star: 原始数据集的事件发生率
+        # pi_hat:  H-Mixup 增强后预期的事件发生率 (通过模拟计算)
+        self.pi_star = 0.5
+        self.pi_hat = 0.5
+        
+        if self.mode == 'train':
+            self._calculate_statistics()
+
+    def _calculate_statistics(self):
+        """
+        计算原始事件率(pi_star)并模拟一次Mixup过程以估算增强后的事件率(pi_hat)。
+        这样可以在 getitem 中直接返回全局校正后的权重。
+        """
+        # 1. 提取所有样本的 Time 和 Event
+        times = []
+        events = []
+        
+        for pid, info in self.patient_labels.items():
+            event = info.get('DFS_event', 0)
+            time = info.get('DFS_time', -1)
+            
+            if time >= 0:
+                times.append(time)
+                events.append(event)
+        
+        times = np.array(times)
+        events = np.array(events)
+        
+        # 2. 计算原始事件率 pi_star
+        self.pi_star = np.mean(events)
+        self.pi_star = np.clip(self.pi_star, 1e-6, 1 - 1e-6)
+
+        # 3. 模拟 H-Mixup 过程估算 pi_hat
+        # 我们进行 N 次随机配对模拟，N = len(dataset) * 5 以保证统计稳定性
+        n_sim = len(events) * 5
+        sim_events = []
+        
+        for _ in range(n_sim):
+            # 随机采样两个索引
+            idx1 = np.random.randint(0, len(events))
+            idx2 = np.random.randint(0, len(events))
+            
+            t1, e1 = times[idx1], events[idx1]
+            t2, e2 = times[idx2], events[idx2]
+            
+            # 生成 lambda
+            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+            lam = np.clip(lam, 1e-4, 1 - 1e-4)
+            
+            # H-Mixup 逻辑: Time Scaling + Min
+            t_scale_1 = t1 / lam
+            t_scale_2 = t2 / (1 - lam)
+            
+            if t_scale_1 < t_scale_2:
+                sim_events.append(e1)
+            else:
+                sim_events.append(e2)
+        
+        # 计算估算的增强后事件率 pi_hat
+        self.pi_hat = np.mean(sim_events)
+        self.pi_hat = np.clip(self.pi_hat, 1e-6, 1 - 1e-6)
 
     def _load_tabular_and_labels(self):
         try:
@@ -193,12 +262,10 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         return self.get_sample(idx)
 
     def get_sample(self, requested_idx: int) -> Dict[str, Any]:
-        do_mixup = requested_idx >= len(self) and self.do_mixup   # if idx >= len(self), then we're doing mixup augmentation
-        # print("Request IDX", requested_idx, "Do Mixup:", do_mixup, "Dataset length = ", len(self))
+        do_mixup = requested_idx >= len(self) and self.do_mixup   
         idx = requested_idx % len(self) 
 
         patient_id = self.patient_ids[idx]
-        output_dict = {"pid": patient_id}
 
         # --- 1. Labels ---
         try:
@@ -210,12 +277,15 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             # print(f"Warning: Labels missing for {patient_id}, skipping...")
             return self.get_sample((idx + 1) % len(self))
 
-        output_dict['labels'] = {
-            'do_mixup': do_mixup,  
-            'label_time': time_days,
-            'label_event': event,
+        output_dict = {
+            "pid": patient_id,
+            "labels": {
+                'label_time': time_days,
+                'label_event': event,
+                'sample_weight': 1.0,
+            },
+            "medical-knowledge": self.knowledge_dict.get(patient_id, None),
         }
-
         # --- 2. Load Modalities ---
         modalities_found = 0
 
@@ -280,44 +350,75 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 other_item_idx = (idx + 1) % len(self)
             output_dict = self.mixup_data(output_dict, self.get_sample(other_item_idx))
 
+
+
         return output_dict
 
     def mixup_data(self, ori_data, other_data):
-        mixup_modalities = set()
+        """
+        Implementation of H-Mixup with Variable Length Padding and Weight Calculation.
+        """
+        # 1. 生成 Mixup 系数
+        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+        lam = np.clip(lam, 1e-4, 1 - 1e-4)
 
-        # Handle edge case where only 1 modality exists (randint(1, 0) would fail)
-        max_k = max(1, len(self.modalities) - 1)
-        k = random.randint(1, max_k)
-        mixup_modalities.update(random.sample(self.modalities, k=k))  # Select k modalities to swap from other_data -> ori_data
+        # 2. 特征混合 (Variable Length Padding)
+        for mod in self.modalities:
+            if mod not in ori_data or ori_data[mod] is None: continue
+            
+            feat_a = ori_data[mod]
+            feat_b = other_data.get(mod)
 
-        token_num_1 = sum([v.shape[0] for k, v in ori_data.items() if k != 'labels' and k != 'pid' and v is not None])
-        token_num_2 = 0
+            if feat_b is None: continue
 
-        for mod in mixup_modalities:
-            token_num_1 -= ori_data[mod].shape[0] if isinstance(ori_data[mod], torch.Tensor) else 0
-            if other_data.get(mod) is not None:
-                ori_data[mod] = other_data[mod].clone() if isinstance(other_data[mod], torch.Tensor) else other_data[mod]
-                token_num_2 += other_data[mod].shape[0]
-            else:
-                ori_data[mod] = None
+            if isinstance(feat_a, torch.Tensor) and isinstance(feat_b, torch.Tensor):
+                if feat_a.shape != feat_b.shape:
+                    len_a = feat_a.shape[0]
+                    len_b = feat_b.shape[0]
+                    max_len = max(len_a, len_b)
+                    
+                    pad_a = torch.zeros((max_len, feat_a.shape[1]), dtype=feat_a.dtype)
+                    pad_a[:len_a] = feat_a
+                    
+                    pad_b = torch.zeros((max_len, feat_b.shape[1]), dtype=feat_b.dtype)
+                    pad_b[:len_b] = feat_b
+                    
+                    mixed_feat = lam * pad_a + (1 - lam) * pad_b
+                    ori_data[mod] = mixed_feat
+                else:
+                    ori_data[mod] = lam * feat_a + (1 - lam) * feat_b
 
-        t1 = ori_data['labels']['label_time']
-        e1 = ori_data['labels']['label_event']
-        t2 = other_data['labels']['label_time']
-        e2 = other_data['labels']['label_event']
+        # 3. 标签混合 (H-Mixup Logic)
+        t1 = float(ori_data['labels']['label_time'])
+        e1 = int(ori_data['labels']['label_event'])
+        t2 = float(other_data['labels']['label_time'])
+        e2 = int(other_data['labels']['label_event'])
 
-        if e1 == e2:
+        t_scale_1 = t1 / lam
+        t_scale_2 = t2 / (1 - lam)
+
+        if t_scale_1 < t_scale_2:
+            label_time = t_scale_1
             label_event = e1
-            label_time = t2 if t2 < t1 else t1
         else:
-            ratio = token_num_1 / (token_num_1 + token_num_2)
-            label_event = ratio * e1 + (1 - ratio) * e2
-            label_time = ratio * t1 + (1 - ratio) * t2
-   
+            label_time = t_scale_2
+            label_event = e2
+
+        # 4. 计算样本权重 (Based on Global Statistics)
+        # Weight = P*(y) / P_hat(y)
+        # 如果是 Event (1): Weight = pi_star / pi_hat
+        # 如果是 Censor(0): Weight = (1 - pi_star) / (1 - pi_hat)
+        
+        if label_event == 1:
+            weight = self.pi_star / self.pi_hat
+        else:
+            weight = (1.0 - self.pi_star) / (1.0 - self.pi_hat)
+
+        # 5. 更新 Labels
         ori_data['labels'] = {
-            "do_mixup": True,
             "label_event": label_event,
             "label_time": label_time,
+            "sample_weight": float(weight)  # 直接返回计算好的权重
         }
 
         return ori_data

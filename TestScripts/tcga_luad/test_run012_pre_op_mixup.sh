@@ -5,16 +5,16 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=0
+GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="oscc_inhouse_run008_ood-msa-rerun_lowlr"
+RUN_ID="tcga_luad_run012_rerun"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-5               # Learning rate for the model head.
+LR=1e-4               # Learning rate for the model head.
 NUM_EPOCHS=100        # Total number of training epochs.
 
 
@@ -22,11 +22,11 @@ NUM_EPOCHS=100        # Total number of training epochs.
 # The command below executes the main training script with the configured parameters.
 echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 
-python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest.py \
+python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "oscc_inhouse" \
-    --dataset "oscc_inhouse" \
+    --model_task "tcga_luad" \
+    --dataset "tcga_luad" \
     --image_aggregater "panther" \
     --fusion_type "msa" \
     --batch_size ${BATCH_SIZE} \
@@ -36,7 +36,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all" 
+    --modalities "image-pathology,genomics-genomics,tabular-clinical-9" \
+    --do_mixup
+
 
 echo "Training run ${RUN_ID} finished."
 

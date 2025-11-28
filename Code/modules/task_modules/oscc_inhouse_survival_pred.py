@@ -281,6 +281,7 @@ class OSCCSurvivalPred(nn.Module):
                     for sample_mk in mk_batch:
                         val = sample_mk.get((name_i, name_j), sample_mk.get((name_j, name_i), None))
                         pair_data_list.append(val)
+
                     # Pad and mask the MK data
                     mk_feat, mk_mask = self._pad_and_mask_modality(pair_data_list)
                 

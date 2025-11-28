@@ -22,7 +22,7 @@ NUM_EPOCHS=100        # Total number of training epochs.
 # The command below executes the main training script with the configured parameters.
 echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 
-python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest.py \
+python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
     --model_task "oscc_inhouse" \
