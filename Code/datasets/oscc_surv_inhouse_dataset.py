@@ -19,11 +19,14 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
     VALID_MODALITIES = [
         "image-pathology",            
         "text-clinical",            
-        "tabular-clinical-18",      
+        "tabular-clinical-metadata-4",        #  (From CSV)
+        "tabular-clinical-history-9",         #  (From CSV)
+        "tabular-clinical-blood-5",           #  (From CSV)     
  
         "text-pathology",          
         "text-treatment",           
-        "tabular-pathology-21",     
+        "tabular-pathology-cell-16",        # (From CSV)
+        "tabular-pathology-immunohistochemic-5", # (From CSV)  
     ]
 
     def _read_pickle(self, path: str) -> Any:
@@ -80,7 +83,11 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
         self.tabular_features = {} 
         self._preprocess_tabular_data()
 
-        # --- 6. Calculate Global Statistics for H-Mixup Weights ---
+        # --- 6. Knowledge Features ---
+        knowledge_file = os.path.join(self.processed_dir, "features_medical_knowledge.pkl")
+        self.knowledge_dict = self._read_pickle(knowledge_file)
+
+        # --- 7. Calculate Global Statistics for H-Mixup Weights ---
         # pi_star: 原始数据集的事件发生率
         # pi_hat:  H-Mixup 增强后预期的事件发生率 (通过模拟计算)
         self.pi_star = 0.5
@@ -341,29 +348,27 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
 
     def _preprocess_tabular_data(self):
         sources_with_columns = {
-            # "tabular-metadata-4": ["Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)"],
-            # "tabular-history-9": [
-            #     "AlcoholHistory(0no/1yes)", "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", 
-            #     "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
-            #     "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)"
-            # ],
-            # "tabular-blood-5": ["PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD"],
-            # "tabular-posop-blood-4": ["PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"],
-            # "tabular-immunohistochemic-5": ["Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)"]
-            "tabular-clinical-18": [
-                "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)",
+            "tabular-clinical-metadata-4": [
+                "Gender(0male/1female)", "Age(Y)", "Weight(kg)", "Height(cm)"
+            ],
+            "tabular-clinical-history-9": [
                 "AlcoholHistory(0no/1yes)", "SmokingHistory(0no/1yes)", "BetelNutHistory(0no/1yes)", 
                 "PreoperativeHistory(0no/1yes)", "Diabetes(0no/1yes)", "RespiratoryDisease(0no/1yes)",
-                "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)",
-                "PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD",
+                "CardiovascularDisease(0no/1yes)", "MedControlledHypertension(0no/1yes)", "NeckMass(+)"
             ],
-            "tabular-pathology-21": [
+            "tabular-clinical-blood-9": [
+                "PreopWBC", "PreopHemoglobin", "PreopPotassium", "PreopAlbumin", "PreopVitaminD",
+                "PostopWBC", "PostopHemoglobin", "PostopPotassium", "PostopAlbumin"
+            ],
+            "tabular-pathology-cell-16": [
                 "TumorT", "TumorN", "TumorM", "TumorDifferentiation(1high/2med/3low)",
                 "CancerThrombus(0/1)", "SurroundingTissueInvasion(0/1)",  "LNM(0/1)", 
                 "AccessoryChain(+)", "VascularInvasion(+)", "PerineuralInvasion(+)", 
-                "Metastasis(0no/1yes)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)",
-                "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)"
+                "Metastasis(0no/1yes)", "IA(+)", "IB(+)", "IIA(+)", "IIB(+)", "III(+)"
             ],
+            "tabular-pathology-immunohistochemic-5": [
+                "Ki-67", "CK5_6(0/1)", "P63(0/1)", "P16(0/1)", "HPV(0/1)"
+            ]
         }
 
         def process_special_column(column, value):
