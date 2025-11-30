@@ -33,20 +33,21 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
 
     def _read_pickle(self, path: str) -> Any:
         """
-        Helper to load pickle/joblib files.
+        Helper to load pickle/joblib files with better resource management.
         """
         if not os.path.exists(path):
             print(f"Warning: Pickle file not found at: {path}")
-            # Do not raise here, allow soft failure (returns None implicitly)
             return None
- 
+    
         try:
-            data = joblib.load(path)
+            # 使用更安全的加载方式
+            with open(path, 'rb') as f:
+                data = joblib.load(f)
             return data
         except Exception as e:
             print(f"Error loading data file {path}: {e}")
-            raise
-
+            # 不要重新抛出异常，返回None让调用者处理
+            return None
     def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
         """
         Args:

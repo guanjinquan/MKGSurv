@@ -30,14 +30,21 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
     ]
 
     def _read_pickle(self, path: str) -> Any:
+        """
+        Helper to load pickle/joblib files with better resource management.
+        """
         if not os.path.exists(path):
             print(f"Warning: Pickle file not found at: {path}")
             return None
+    
         try:
-            data = joblib.load(path)
+            # 使用更安全的加载方式
+            with open(path, 'rb') as f:
+                data = joblib.load(f)
             return data
         except Exception as e:
             print(f"Error loading data file {path}: {e}")
+            # 不要重新抛出异常，返回None让调用者处理
             return None
 
     def __init__(self, args, mode="train", modalities="all", fold=None):
