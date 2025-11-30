@@ -15,7 +15,7 @@ RUN_ID="oscc_inhouse_run002"
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
 LR=1e-4               # Learning rate for the model head.
-NUM_EPOCHS=100        # Total number of training epochs.
+NUM_EPOCHS=50        # Total number of training epochs.
 
 
 # --- Execution ---

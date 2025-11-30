@@ -459,7 +459,7 @@ class MedKGATFusion_without_Group(nn.Module):
         }
     
     def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
-        if self.args.point_save_path is None:
+        if self.args.points_save_path is None:
             return 
 
         # --- 1. 预先计算 Mean Pooling ---
@@ -519,7 +519,7 @@ class MedKGATFusion_without_Group(nn.Module):
 
         # --- 5. 第二轮循环：归一化并收集数据 ---
         if len(valid_pairs) > 0:
-            save_points_path = self.args.point_save_path
+            save_points_path = self.args.points_save_path
             os.makedirs(os.path.dirname(save_points_path), exist_ok=True)
             
             current_batch_points = []
