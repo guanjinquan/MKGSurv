@@ -105,18 +105,12 @@ class ModelInterface(nn.Module):
 
         
         # --- 2. Instantiate fusion sub-modules ---
-        if self.fusion_type == 'hier_align':
-            self.fusion_module = HierAlignFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'i2moe':
+        if self.fusion_type == 'i2moe':
             self.fusion_module = I2MoEFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'healnet':
             self.fusion_module = HealNetFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type in ['concat', 'msa', 'lmf', 'gated']:
             self.fusion_module = SimpleFusion(args, embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
-        elif self.fusion_type == "kl_gated":
-            self.fusion_module = KLGatedFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == "mibf_fusion":
-            self.fusion_module = MIBF_fusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'hgcn_fusion':
             self.fusion_module = HGCNFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "dimaf_fusion":
