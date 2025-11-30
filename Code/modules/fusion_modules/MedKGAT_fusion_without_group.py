@@ -458,7 +458,7 @@ class MedKGATFusion_without_Group(nn.Module):
             }
         }
     
-def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
+    def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
         if self.args.point_save_path is None:
             return 
 

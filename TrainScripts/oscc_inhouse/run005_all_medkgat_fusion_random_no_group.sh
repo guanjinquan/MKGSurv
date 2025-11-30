@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 
-RUN_ID="oscc_inhouse_run002"
+RUN_ID="oscc_inhouse_run005"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "oscc_inhouse" \
     --dataset "oscc_inhouse" \
     --image_aggregater "panther" \
-    --fusion_type "msa" \
+    --fusion_type "medkgat_fusion_without_group" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
