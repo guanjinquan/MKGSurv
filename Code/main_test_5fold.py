@@ -20,6 +20,7 @@ if __name__ == '__main__':
     # start work
     summary_of_folds_valid = {}
     summary_of_folds_test = {}
+    run_path = [args.model_task, args.runs_id + "+" + args.fusion_type]
 
     for fold in range(5):
         args.fold = fold
@@ -34,7 +35,17 @@ if __name__ == '__main__':
         for key, value in test_metrics.items():
             summary_of_folds_test[key] = summary_of_folds_test.get(key, []) + [value]
     
-    # Print Summary
+    # Print Summary and save in run_path/summary.txt
+    with open(os.path.join(args.log_path, *run_path, "summary.txt"), "w") as f:
+        f.write("Validation Summary:\n")
+        for key, value in summary_of_folds_valid.items():
+            f.write(f"{key}: {np.mean(value):.4f} ± {np.std(value):.4f}\n")
+            f.write(f" - List = {value}\n")
+        f.write("\nTest Summary:\n")
+        for key, value in summary_of_folds_test.items():
+            f.write(f"{key}: {np.mean(value):.4f} ± {np.std(value):.4f}\n")
+            f.write(f" - List = {value}\n")
+
     print("Validation Summary:")
     for key, value in summary_of_folds_valid.items():
         print(f"{key}: {np.mean(value):.4f} ± {np.std(value):.4f}")
@@ -43,4 +54,3 @@ if __name__ == '__main__':
     for key, value in summary_of_folds_test.items():
         print(f"{key}: {np.mean(value):.4f} ± {np.std(value):.4f}")
         print(f" - List = {value}")
-
