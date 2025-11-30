@@ -261,9 +261,10 @@ class OSCCSurvivalPred(nn.Module):
         # =========================================================
         medical_knowledge = {}
         medical_knowledge_mask = {}
+        groups_relationships = {}
 
         # Iterate over all pairs of *successfully encoded* modalities
-        valid_groups = list(modality_group_map.keys())
+        valid_groups = sorted(list(modality_group_map.keys()))
 
         for i in range(len(valid_groups)):
             for j in range(i + 1, len(valid_groups)):
@@ -276,31 +277,37 @@ class OSCCSurvivalPred(nn.Module):
                 # If medical knowledge is available
                 if "medical-knowledge" in batch:  
                     mk_batch = batch["medical-knowledge"]
-                    pair_data_list = []                    
+                    pair_data_list = []     
+                    score_list = []
+
                     # Iterate through batch samples to collect the specific pair
                     for sample_mk in mk_batch:
                         val = sample_mk.get((name_i, name_j), sample_mk.get((name_j, name_i), None))
-                        pair_data_list.append(val)
+                        pair_data_list.append(val['knowledge'])
+                        score_list.append(val['score'])
 
                     # Pad and mask the MK data
                     mk_feat, mk_mask = self._pad_and_mask_modality(pair_data_list)
-                
+                    score_tensor = torch.tensor(score_list, device=device, dtype=torch.float32)
+
                 else:
                     # Using 768 as default BERT dim
+                    score_tensor = torch.ones(batch_size, 1, device=device, dtype=torch.float32)
                     mk_feat = torch.randn(batch_size, 1, 768, device=device)
                     mk_mask = torch.ones(batch_size, 1, device=device)
 
                 # Save into dict
+                groups_relationships[(idx_i, idx_j)] = score_tensor
                 medical_knowledge[(idx_i, idx_j)] = mk_feat
                 medical_knowledge_mask[(idx_i, idx_j)] = mk_mask
 
-
         return {
-            "embeddings": all_embeddings,           # List[Tensor]
-            "masks": all_masks,                     # List[Tensor]
-            "medical_knowledge": medical_knowledge, # Dict{(i,j): Tensor}
-            "medical_knowledge_mask": medical_knowledge_mask, # Dict{(i,j): Tensor}
-            "modalities_groups": modalities_groups  # List[List[int]]
+            "embeddings": all_embeddings,                        # List[Tensor]
+            "masks": all_masks,                                  # List[Tensor]
+            "medical_knowledge": medical_knowledge,              # Dict{(i,j): Tensor}
+            "medical_knowledge_mask": medical_knowledge_mask,    # Dict{(i,j): Tensor}
+            "groups_relationships": groups_relationships,        # Dict{(i,j): Tensor}
+            "modalities_groups": modalities_groups,              # List[List[int]]
         }
 
     def decode(self, pooled_embeddings: torch.Tensor, pooled_mask: Optional[torch.Tensor], batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:

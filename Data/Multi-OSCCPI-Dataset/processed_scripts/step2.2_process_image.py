@@ -42,7 +42,8 @@ except ImportError as e:
 # -------------------------------------------------------------------------
 CONF = {
     'input_root': "/home/Guanjq/NewWork/PathoBackup/Multi-OSCCPI-Dataset/Multi-OSCCPI-Images",
-    'split_json': "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/split_seed=2024.json",
+    # Changed to the 5-fold OOD split file
+    'split_json': "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/split_OOD_5fold.json",
     
     # 这里的 backup_dir 是根目录，代码会自动在下面创建/查找 h5_files 子文件夹
     'backup_dir': "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/backup",
@@ -214,23 +215,33 @@ def main():
     with open(CONF['split_json'], 'r') as f:
         split_data = json.load(f)
     
-    train_ids = split_data.get('train', [])
-    valid_ids = split_data.get('valid', [])
-    test_ids = split_data.get('test', [])
-    all_ids = train_ids + valid_ids + test_ids
-    print(f"IDs - Train: {len(train_ids)}, Valid: {len(valid_ids)}, Test: {len(test_ids)}")
+    # 遍历所有 Fold，获取所有唯一 Patient ID 用于 Step 0 (避免重复提取)
+    all_unique_ids = set()
+    folds_to_process = []
+
+    # 识别 fold_1 到 fold_5
+    for key in split_data.keys():
+        if key.startswith("fold_"):
+            folds_to_process.append(key)
+            train_ids = split_data[key].get('train', [])
+            valid_ids = split_data[key].get('valid', [])
+            test_ids = split_data[key].get('test', [])
+            all_unique_ids.update(train_ids + valid_ids + test_ids)
+    
+    folds_to_process.sort() # 确保顺序: fold_1, fold_2...
+    print(f"Found {len(folds_to_process)} folds: {folds_to_process}")
+    print(f"Total unique patients across all folds: {len(all_unique_ids)}")
 
     # -----------------------------------------------------------
-    # Step 0: Stream Feature Extraction (Optimized Batching)
+    # Step 0: Global Stream Feature Extraction (Optimized Batching)
     # -----------------------------------------------------------
-    print(f"\n{'='*10} Step 0: Stream Feature Extraction {'='*10}")
+    # 这一步是全局的，只要提取了一次，所有 Fold 都可以共用
+    print(f"\n{'='*10} Step 0: Global Stream Feature Extraction {'='*10}")
     
-    # 1. 严格筛选出需要提取特征的 Patients (检查 h5_files 子目录)
-    # 只有当 h5_dir 下不存在该患者的 .h5 文件时，才加入待处理列表
-    pending_ids = [pid for pid in all_ids if not os.path.exists(os.path.join(h5_dir, f"{pid}.h5"))]
+    all_ids_list = list(all_unique_ids)
+    pending_ids = [pid for pid in all_ids_list if not os.path.exists(os.path.join(h5_dir, f"{pid}.h5"))]
     
-    # 打印跳过信息，让用户放心
-    skipped_count = len(all_ids) - len(pending_ids)
+    skipped_count = len(all_ids_list) - len(pending_ids)
     if skipped_count > 0:
         print(f"Skipping {skipped_count} already processed patients found in {h5_dir}.")
     
@@ -245,82 +256,49 @@ def main():
             print(f"Failed to load UNI model: {e}")
             return
             
-        # 缓冲区
-        tensor_buffer = []  # 存放 Tensor
-        pid_buffer = []     # 存放对应的 PID
-        
-        # 结果缓存: {pid: [feat1, feat2, ...]}
+        tensor_buffer = []  
+        pid_buffer = []     
         results_cache = defaultdict(list)
-        
-        # 记录正在处理的 PID 集合，用于判断是否可以保存
         active_pids_in_results = set()
         
         pbar = tqdm(pending_ids, desc="Processing Stream")
         
-        # ------------------------------------------
-        # 内部函数：执行 Batch 推理并分发结果
-        # ------------------------------------------
         def flush_buffer():
             if not tensor_buffer:
                 return
-            
-            # 堆叠 Batch
             batch_tensors = torch.stack(tensor_buffer).to(device)
-            
             with torch.no_grad():
-                # Inference
                 feats = extractor(batch_tensors).cpu().numpy()
-            
-            # 分发结果
             for i, feat in enumerate(feats):
                 pid = pid_buffer[i]
                 results_cache[pid].append(feat)
                 active_pids_in_results.add(pid)
-            
-            # 清空缓冲区
             tensor_buffer.clear()
             pid_buffer.clear()
 
-        # ------------------------------------------
-        # 主循环：遍历患者 -> 收集 Patch -> 凑 Batch
-        # ------------------------------------------
         for current_pid in pbar:
-            # 1. 获取该患者所有 Patch
             img_paths = get_patient_image_paths(CONF['input_root'], current_pid)
             patient_patches = []
             if img_paths:
                 for p_path in img_paths:
                     patient_patches.extend(get_patches_from_image(p_path, CONF['patch_size']))
             
-            # 如果该患者没有图片，记录空文件或跳过
             if not patient_patches:
                 save_empty_features(current_pid, CONF['backup_dir'])
                 continue
 
-            # 2. 逐个 Patch 加入全局缓冲区
             for patch in patient_patches:
-                # Transform to Tensor (3, 224, 224)
                 t = transform(patch)
                 tensor_buffer.append(t)
                 pid_buffer.append(current_pid)
-                
-                # 如果缓冲区满了，执行推理
                 if len(tensor_buffer) >= CONF['batch_size']:
                     flush_buffer()
 
-            # 3. 检查并保存已完成的患者
-            # 找出所有在 cache 中有数据，但不在 buffer 中等待的 pid
             pids_waiting_in_buffer = set(pid_buffer)
-            
-            # 准备保存列表 (转换成 list 避免运行时修改 dict error)
             pids_to_save = []
             for pid in list(active_pids_in_results):
-                # 如果 pid 还有残余数据在 buffer 里，不能保存
                 if pid in pids_waiting_in_buffer:
                     continue
-                
-                # 如果 pid 是当前正在处理的 patient，且循环还没真正结束，这里因为代码是串行的，
-                # 所以一旦 current_pid 不在 buffer 里，说明它的所有 patch 都推理完了。
                 pids_to_save.append(pid)
             
             for pid in pids_to_save:
@@ -328,155 +306,174 @@ def main():
                 del results_cache[pid]
                 active_pids_in_results.remove(pid)
                 
-        # ------------------------------------------
-        # 循环结束：清理剩余的 Buffer
-        # ------------------------------------------
         if len(tensor_buffer) > 0:
             flush_buffer()
             
-        # 保存所有剩余的 results
         for pid, feats in results_cache.items():
             save_patient_features(pid, feats, CONF['backup_dir'])
             
         print("Feature extraction complete. Cleaning up UNI model...")
         del extractor
         torch.cuda.empty_cache()
-        
     else:
         print(f"All features already exist in {h5_dir}. Skipping extraction step.")
 
     # -----------------------------------------------------------
-    # Step A: Prototype Generation (Load from Disk)
+    # Loop over Folds
     # -----------------------------------------------------------
-    print(f"\n{'='*10} Step A: Prototype Generation {'='*10}")
-    
-    # [修改点]：prototypes 保存路径在 backup 根目录下
-    proto_filename = f"prototypes_num={CONF['n_proto']}.pkl"
-    proto_save_path = os.path.join(CONF['backup_dir'], proto_filename)
-    
-    if os.path.exists(proto_save_path):
-        print(f"Loading existing UNI prototypes from {proto_save_path}")
-        prototypes = joblib.load(proto_save_path)
-    else:
-        print(f"Generating Prototypes from Training Set H5 files in: {h5_dir}")
-        sampled_features = []
-        total_collected = 0
-        
-        shuffled_train_ids = list(train_ids)
-        random.shuffle(shuffled_train_ids)
-        
-        pbar = tqdm(shuffled_train_ids, desc="Sampling Train Patches")
-        
-        debug_path_printed = False 
+    for fold_name in folds_to_process:
+        print(f"\n\n{'#'*30}")
+        print(f" Processing {fold_name}")
+        print(f"{'#'*30}")
 
-        for pid in pbar:
-            if total_collected >= CONF['n_patches_sample']:
-                break
+        train_ids = split_data[fold_name].get('train', [])
+        valid_ids = split_data[fold_name].get('valid', [])
+        test_ids = split_data[fold_name].get('test', [])
+        current_fold_all_ids = train_ids + valid_ids + test_ids
+
+        # -----------------------------------------------------------
+        # Step A: Prototype Generation (Specific to current Fold)
+        # -----------------------------------------------------------
+        print(f"\n--- Step A: Prototype Generation for {fold_name} ---")
+        
+        # 文件名包含 fold_name，避免覆盖
+        proto_filename = f"prototypes_{fold_name}_num={CONF['n_proto']}.pkl"
+        proto_save_path = os.path.join(CONF['backup_dir'], proto_filename)
+        
+        prototypes = None
+        if os.path.exists(proto_save_path):
+            print(f"Loading existing prototypes for {fold_name} from {proto_save_path}")
+            prototypes = joblib.load(proto_save_path)
+        else:
+            print(f"Generating Prototypes using TRAIN set of {fold_name}")
+            sampled_features = []
+            total_collected = 0
             
-            # 读取路径调整为 h5_dir 子目录
+            shuffled_train_ids = list(train_ids)
+            random.shuffle(shuffled_train_ids)
+            
+            pbar = tqdm(shuffled_train_ids, desc=f"Sampling Train Patches ({fold_name})")
+            
+            for pid in pbar:
+                if total_collected >= CONF['n_patches_sample']:
+                    break
+                
+                h5_path = os.path.join(h5_dir, f"{pid}.h5")
+                if not os.path.exists(h5_path):
+                    continue
+                    
+                try:
+                    with h5py.File(h5_path, 'r') as f:
+                        if 'features' not in f or f['features'].shape[0] == 0:
+                            continue
+                        feats = f['features'][:]
+                        
+                    if len(feats) > 0:
+                        n_take = min(len(feats), 500) 
+                        indices = np.random.choice(len(feats), n_take, replace=False)
+                        sampled_features.append(feats[indices])
+                        total_collected += n_take
+                        pbar.set_postfix({'collected': total_collected})
+                except Exception as e:
+                    print(f"Error reading {h5_path}: {e}")
+
+            if not sampled_features:
+                print(f"Warning: Could not extract features for {fold_name}. Skipping this fold.")
+                continue
+            else:
+                all_sampled = np.concatenate(sampled_features, axis=0)
+                print(f"Clustering {all_sampled.shape[0]} patches into {CONF['n_proto']} prototypes...")
+                
+                prototypes = cluster(
+                    patches=all_sampled,
+                    n_proto=CONF['n_proto'],
+                    mode=CONF['cluster_mode'],
+                    n_proto_patches=CONF['n_patches_sample']
+                )
+                joblib.dump(prototypes, proto_save_path)
+                print(f"Prototypes saved to {proto_save_path}")
+
+        # -----------------------------------------------------------
+        # Step B & C: PANTHER Inference (Specific to current Fold)
+        # -----------------------------------------------------------
+        print(f"\n--- Step B/C: PANTHER Inference for {fold_name} ---")
+        
+        feature_dim = prototypes.shape[1]
+        
+        # 初始化新的 PANTHER 模型 (因为 Prototypes 变了)
+        panther_model = StructuredPANTHER(
+            in_dim=feature_dim,
+            n_proto=CONF['n_proto'],
+            prototypes=prototypes, 
+            em_iter=3,
+            tau=0.001,
+            ot_eps=0.1,
+            fix_proto=True
+        ).to(device)
+        panther_model.eval()
+
+        final_results = {}
+        missing_ids_in_fold = [] # 记录本 fold 中确实的患者ID
+        
+        process_pbar = tqdm(current_fold_all_ids, desc=f"Extracting features ({fold_name})")
+        
+        for pid in process_pbar:
             h5_path = os.path.join(h5_dir, f"{pid}.h5")
             if not os.path.exists(h5_path):
-                if not debug_path_printed:
-                    print(f"\n[DEBUG WARNING] File not found: {h5_path}")
-                    print("Please ensure Step 0 ran successfully.")
-                    debug_path_printed = True
+                missing_ids_in_fold.append(pid)
                 continue
                 
             try:
                 with h5py.File(h5_path, 'r') as f:
-                    # Handle empty datasets
                     if 'features' not in f or f['features'].shape[0] == 0:
+                        # 特征为空，也视为 Missing，不加入 final_results
+                        missing_ids_in_fold.append(pid)
                         continue
-                    feats = f['features'][:]
-                    
-                if len(feats) > 0:
-                    n_take = min(len(feats), 500) 
-                    indices = np.random.choice(len(feats), n_take, replace=False)
-                    sampled_features.append(feats[indices])
-                    total_collected += n_take
-                    pbar.set_postfix({'collected': total_collected})
-            except Exception as e:
-                print(f"Error reading {h5_path}: {e}")
-
-        if not sampled_features:
-            print("Warning: Could not extract any features from training set for prototypes.")
-            print("Please check your input paths and data.")
-        else:
-            all_sampled = np.concatenate(sampled_features, axis=0)
-            print(f"Clustering {all_sampled.shape[0]} patches into {CONF['n_proto']} prototypes...")
-            
-            prototypes = cluster(
-                patches=all_sampled,
-                n_proto=CONF['n_proto'],
-                mode=CONF['cluster_mode'],
-                n_proto_patches=CONF['n_patches_sample']
-            )
-            joblib.dump(prototypes, proto_save_path)
-            print(f"Prototypes saved to {proto_save_path}")
-
-    # -----------------------------------------------------------
-    # Step B: Initialize PANTHER
-    # -----------------------------------------------------------
-    # Check if prototypes exist
-    if not os.path.exists(proto_save_path):
-        print("Prototypes not found, skipping PANTHER step.")
-        return
-
-    feature_dim = prototypes.shape[1]
-    print(f"Initializing StructuredPANTHER (dim={feature_dim}, proto={CONF['n_proto']})...")
-    
-    panther_model = StructuredPANTHER(
-        in_dim=feature_dim,
-        n_proto=CONF['n_proto'],
-        prototypes=prototypes, 
-        em_iter=3,
-        tau=0.001,
-        ot_eps=0.1,
-        fix_proto=True
-    ).to(device)
-    panther_model.eval()
-
-    # -----------------------------------------------------------
-    # Step C: Process All Patients (Load from Disk)
-    # -----------------------------------------------------------
-    print(f"\n{'='*10} Step C: PANTHER Inference {'='*10}")
-    final_results = {}
-    
-    process_pbar = tqdm(all_ids, desc="Extracting PANTHER Features")
-    
-    for pid in process_pbar:
-        # 读取路径调整为 h5_dir 子目录
-        h5_path = os.path.join(h5_dir, f"{pid}.h5")
-        if not os.path.exists(h5_path):
-            continue
-            
-        try:
-            # Load Features
-            with h5py.File(h5_path, 'r') as f:
-                if 'features' not in f or f['features'].shape[0] == 0:
-                    continue
-                patch_features = f['features'][:]
-            
-            # Inference
-            x = torch.from_numpy(patch_features).float().unsqueeze(0).to(device)
-            mask = torch.ones(1, x.shape[1]).to(device)
-            
-            with torch.no_grad():
-                embedding = panther_model(x, mask)
+                    patch_features = f['features'][:]
                 
-            embedding_np = embedding.squeeze(0).cpu().numpy()
-            final_results[str(pid)] = embedding_np
-            
-        except Exception as e:
-            print(f"Error in PANTHER inference for {pid}: {e}")
+                # Inference
+                x = torch.from_numpy(patch_features).float().unsqueeze(0).to(device)
+                mask = torch.ones(1, x.shape[1]).to(device)
+                
+                with torch.no_grad():
+                    embedding = panther_model(x, mask)
+                    
+                embedding_np = embedding.squeeze(0).cpu().numpy()
+                final_results[str(pid)] = embedding_np
+                
+            except Exception as e:
+                print(f"Error in PANTHER inference for {pid}: {e}")
+                missing_ids_in_fold.append(pid)
 
-    # -----------------------------------------------------------
-    # Step D: Save Final Output
-    # -----------------------------------------------------------
-    output_pkl = os.path.join(CONF['output_dir'], f"feature_image_pathology.pkl")
-    print(f"Saving features for {len(final_results)} patients to: {output_pkl}")
-    joblib.dump(final_results, output_pkl)
-    print("Done!")
+        # -----------------------------------------------------------
+        # CHECK: Validation of Completeness
+        # -----------------------------------------------------------
+        expected_count = len(current_fold_all_ids)
+        actual_count = len(final_results)
+        
+        if missing_ids_in_fold:
+            print(f"\n[WARNING] Fold {fold_name}: {len(missing_ids_in_fold)} patients skipped due to missing/empty features:")
+            print(f"Skipped IDs: {missing_ids_in_fold}")
+        
+        if expected_count != actual_count:
+            print(f"\n[CHECK FAILED] Fold {fold_name}: Missing {expected_count - actual_count} patients in output.")
+            print(f"Expected {expected_count} (Train+Valid+Test), got {actual_count}.")
+        else:
+            print(f"\n[CHECK PASSED] Fold {fold_name}: All {expected_count} patients (Train/Valid/Test) successfully processed.")
+
+        # -----------------------------------------------------------
+        # Step D: Save Final Output for this Fold
+        # -----------------------------------------------------------
+        # 文件名包含 fold_name
+        output_pkl = os.path.join(CONF['output_dir'], f"feature_image_pathology_{fold_name}.pkl")
+        print(f"Saving features for {len(final_results)} patients ({fold_name}) to: {output_pkl}")
+        joblib.dump(final_results, output_pkl)
+        
+        # 清理内存，为下一个 fold 做准备
+        del panther_model
+        torch.cuda.empty_cache()
+
+    print("\nAll folds processed successfully!")
 
 if __name__ == "__main__":
     main()

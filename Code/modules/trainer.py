@@ -76,7 +76,7 @@ class Trainer:
         self.scheduler = GetScheduler(self.args, self.optimizer)
         
         self.epoch = 0
-        self.save_epoch_limit = max(10, self.args.num_epochs // 5)
+        self.save_epoch_limit = max(20, self.args.num_epochs // 5)
         self.iters = 0
         self.acc_step = self.args.acc_step
             
@@ -130,7 +130,7 @@ class Trainer:
             print("ckpt_path : ", self.ckpt_path, flush=True)
             
             if os.path.exists(os.path.join(self.ckpt_path, 'valid_Best.pth')):
-                raise ValueError("Trainer already exists!!!")
+                raise FileExistsError("Trainer already exists!!!")
             
             os.makedirs(self.log_path, exist_ok=True)
             os.makedirs(self.ckpt_path, exist_ok=True)

@@ -284,11 +284,17 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
 
         if self.args.use_medical_knowledge:
             output_dict["medical-knowledge"] = self.knowledge_dict.get(patient_id, None)
-            assert self.knowledge_dict.get(patient_id, None) is not None, f"Knowledge missing for {patient_id}"
-
-
+        else:
+            kdata = self.knowledge_dict.get(patient_id, None)
+            output_dict["medical-knowledge"] = {}
+            for k, v in kdata.items():
+                output_dict["medical-knowledge"][k] = {
+                    "score": v['score'] if self.mode != 'train' else 0.0,
+                    "knowledge": torch.randn_like(v['knowledge'])
+                }
+                
         # --- 2. Load Modalities ---
-        modalities_found = 0
+        modalities_found = []
 
         for mod in self.modalities:
             feature_data = None
@@ -336,12 +342,12 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
             if feature_data is not None:
                 if isinstance(feature_data, torch.Tensor):
                     if feature_data.numel() > 0:
-                        modalities_found += 1
+                        modalities_found.append(mod)
                 else:
-                    modalities_found += 1
+                    modalities_found.append(mod)
         
         # --- 3. Integrity Check ---
-        if modalities_found == 0:
+        if len(modalities_found) == 0:
             # print(f"Warning: No valid modalities found for {patient_id}, skipping...")
             return self.get_sample((idx + 1) % len(self))
 
@@ -350,8 +356,6 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
             if other_item_idx == idx: 
                 other_item_idx = (idx + 1) % len(self)
             output_dict = self.mixup_data(output_dict, self.get_sample(other_item_idx))
-
-
 
         return output_dict
 

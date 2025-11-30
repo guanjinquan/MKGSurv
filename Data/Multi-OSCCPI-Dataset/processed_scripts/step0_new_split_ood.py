@@ -1,286 +1,275 @@
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedGroupKFold, train_test_split
 from sklearn.manifold import TSNE
 from tqdm import tqdm
-from itertools import combinations
 import warnings
 import os
 import json
 import matplotlib.pyplot as plt
+import h5py
 import random
 
+# --- 1. 数据加载与特征处理 (H5 Version) ---
 
-
-# --- 1. 数据加载与特征处理 ---
-
-def load_and_reduce_features_from_npy(
-    npy_file_paths, 
+def load_and_reduce_features_from_h5(
+    pid_list, 
+    h5_root_dir,
     n_components=128
 ):
-    """从.npy文件列表加载数据，进行聚合、扁平化和PCA降维。"""
-    num_patients = len(npy_file_paths)
-    print(f"将从 {num_patients} 个.npy文件中加载数据并进行处理...")
+    """
+    从.h5文件列表加载数据。
+    每个h5文件包含 (n, 1024) 的特征。
+    计算均值得到 (1024,)，然后进行PCA降维。
+    """
+    print(f"准备从 {len(pid_list)} 个 .h5 文件中加载数据...")
 
     high_dim_features = []
-    for file_path in tqdm(npy_file_paths, desc="加载并聚合数据"):
-        patient_data = np.load(file_path)
-        mean_image = np.mean(patient_data, axis=0)
-        high_dim_features.append(mean_image.flatten())
-    
-    high_dim_features = np.array(high_dim_features)
-    print(f"数据扁平化完成，高维特征矩阵形状: {high_dim_features.shape}")
+    valid_pids = []
+    missing_pids = []
 
+    for pid in tqdm(pid_list, desc="加载H5数据"):
+        file_path = os.path.join(h5_root_dir, f"{pid}.h5")
+        
+        if not os.path.exists(file_path):
+            missing_pids.append(pid)
+            continue
+            
+        try:
+            with h5py.File(file_path, 'r') as f:
+                # 自动查找包含数据的key (假设文件里有一个主要的数据集)
+                data_key = None
+                for key in f.keys():
+                    # 简单判断：取第一个是Dataset类型的key
+                    if isinstance(f[key], h5py.Dataset):
+                        data_key = key
+                        break
+                
+                if data_key is None:
+                    print(f"Warning: {pid}.h5 中未找到数据集，跳过。")
+                    continue
+
+                patient_data = f[data_key][:] # Shape: (n, 1024)
+                
+                # 聚合：(n, 1024) -> (1024,)
+                mean_feature = np.mean(patient_data, axis=0)
+                high_dim_features.append(mean_feature)
+                valid_pids.append(pid)
+                
+        except Exception as e:
+            print(f"Error reading {file_path}: {e}")
+            continue
+    
+    if len(missing_pids) > 0:
+        print(f"警告: {len(missing_pids)} 个文件未找到 (例如 PID: {missing_pids[:3]}...)")
+
+    high_dim_features = np.array(high_dim_features)
+    print(f"数据加载完成，高维特征矩阵形状: {high_dim_features.shape}")
+
+    # PCA 降维 (1024 -> n_components)
+    # 这一步是为了让KMeans聚类更稳定，减少噪声影响
     print(f"正在使用PCA将特征从 {high_dim_features.shape[1]} 维降至 {n_components} 维...")
     pca = PCA(n_components=n_components, random_state=42)
     low_dim_features = pca.fit_transform(high_dim_features)
     print(f"PCA降维完成，解释的总方差比例: {np.sum(pca.explained_variance_ratio_):.4f}")
     
-    return low_dim_features
+    return low_dim_features, valid_pids
 
-# --- 2. 核心划分逻辑 ---
+# --- 2. 核心划分逻辑 (5-Fold OOD) ---
 
-def _find_best_ood_cluster_split(
+def create_5fold_ood_split(
     patient_features, 
     patient_labels, 
-    n_clusters,
-    split_size
+    patient_ids,
+    n_clusters=20,  # 簇的数量要大于Fold数量，建议设大一点以便组合
+    n_splits=5,
+    val_size=0.2
 ):
     """
-    内部辅助函数：执行聚类并寻找最优簇组合以形成一个划分。
-    返回两个列表的索引：(group1_indices, group2_indices)
+    使用基于聚类的 StratifiedGroupKFold 实现 5折交叉验证。
+    逻辑：
+    1. 先对所有病人聚类（例如聚成20类）。
+    2. 使用 StratifiedGroupKFold，其中 'groups' 是聚类ID。
+       这保证了同一个簇（代表一种特定的数据分布/OOD）完全在训练集或完全在测试集，
+       绝不会被切分。
+    3. 在每折的训练数据中，再随机切分出验证集。
     """
-    num_patients = len(patient_labels)
+    
+    print(f"\n--- 开始 OOD 5折交叉验证划分 ---")
+    print(f"第一步：执行 KMeans 聚类 (n_clusters={n_clusters}) ...")
     
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
-    patient_cluster_ids = kmeans.fit_predict(patient_features)
+    cluster_ids = kmeans.fit_predict(patient_features)
     
-    target_count = int(num_patients * split_size)
-    overall_label_counts = np.bincount(patient_labels, minlength=2)
-    target_ratio = overall_label_counts[0] / (overall_label_counts[1] + 1e-6)
+    # StratifiedGroupKFold: 
+    # - Stratified: 尽量保持每折中 label (REC) 的比例一致
+    # - Group: 保证同一个 Group (这里是 Cluster ID) 的数据不跨折泄漏
+    sgkf = StratifiedGroupKFold(n_splits=n_splits)
     
-    clusters_info = []
-    for i in range(n_clusters):
-        members_indices = np.where(patient_cluster_ids == i)[0]
-        if len(members_indices) == 0: continue
+    folds_result = {}
+    
+    # 需要将 list 转换为 np.array 以便索引
+    y_arr = np.array(patient_labels)
+    pids_arr = np.array(patient_ids)
+    
+    # sgkf.split 返回的是索引
+    for fold_idx, (train_val_indices, test_indices) in enumerate(sgkf.split(patient_features, y_arr, groups=cluster_ids)):
         
-        labels_in_cluster = np.array(patient_labels)[members_indices]
-        label_counts = np.bincount(labels_in_cluster, minlength=2)
+        # 获取当前的训练+验证 ID 和 标签
+        X_train_val = patient_features[train_val_indices]
+        y_train_val = y_arr[train_val_indices]
+        pids_train_val = pids_arr[train_val_indices]
         
-        clusters_info.append({
-            'id': i,
-            'indices': members_indices,
-            'size': len(members_indices),
-            'label_counts': label_counts
-        })
+        # 从 Train+Val 中根据 val_size 划分出 Validation Set
+        # 这里使用普通的 StratifiedSplit，因为仅仅是为了监控训练过程
+        train_indices_local, val_indices_local = train_test_split(
+            np.arange(len(train_val_indices)),
+            test_size=val_size,
+            stratify=y_train_val,
+            random_state=42 + fold_idx # 每一折变个种子增加随机性
+        )
+        
+        # 映射回原始索引 (虽然我们在JSON里存PID，但为了逻辑严谨)
+        global_train_indices = train_val_indices[train_indices_local]
+        global_val_indices = train_val_indices[val_indices_local]
+        
+        # 获取PID列表
+        fold_train_pids = pids_arr[global_train_indices].tolist()
+        fold_val_pids = pids_arr[global_val_indices].tolist()
+        fold_test_pids = pids_arr[test_indices].tolist()
+        
+        # 记录统计信息
+        test_clusters = np.unique(cluster_ids[test_indices])
+        print(f"\n[Fold {fold_idx}]")
+        print(f"  Train: {len(fold_train_pids)} | Val: {len(fold_val_pids)} | Test: {len(fold_test_pids)}")
+        print(f"  Test集包含的簇 ID: {test_clusters} (体现了OOD特性)")
+        
+        folds_result[f"fold_{fold_idx+1}"] = {
+            "train": sorted(fold_train_pids),
+            "valid": sorted(fold_val_pids),
+            "test": sorted(fold_test_pids),
+            "indices": {
+                "train": global_train_indices,
+                "valid": global_val_indices,
+                "test": test_indices
+            }
+        }
+        
+    return folds_result, cluster_ids
 
-    best_combination = None
-    lowest_cost = float('inf')
+# --- 3. 可视化函数 ---
 
-    for i in range(1, n_clusters + 1):
-        for combo in combinations(clusters_info, i):
-            combo_size = sum(c['size'] for c in combo)
-            if abs(combo_size - target_count) > (target_count * 0.5): continue
-
-            combo_label_0 = sum(c['label_counts'][0] for c in combo)
-            combo_label_1 = sum(c['label_counts'][1] for c in combo)
-            current_ratio = combo_label_0 / (combo_label_1 + 1e-6)
-            
-            cost_size = ((combo_size - target_count) / target_count) ** 2
-            cost_ratio = ((current_ratio - target_ratio) / (target_ratio + 1e-6)) ** 2
-            total_cost = cost_size + 5 * cost_ratio
-
-            if total_cost < lowest_cost:
-                lowest_cost = total_cost
-                best_combination = combo
-    
-    if best_combination is None:
-        raise RuntimeError("未能找到合适的簇组合。请尝试调整 n_clusters 或 split_size。")
-
-    group2_indices = np.concatenate([c['indices'] for c in best_combination]).tolist()
-    all_patient_indices = set(range(num_patients))
-    group1_indices = list(all_patient_indices - set(group2_indices))
-    
-    return group1_indices, group2_indices
-
-def create_train_val_test_split(
-    patient_features,
-    patient_labels,
-    n_clusters=12,
-    test_size=0.2,
-    val_size=0.1
-):
-    """主函数：将患者划分为训练集、验证集和测试集。"""
-    print("\n--- 开始第一步：创建分布外(OOD)的测试集 ---")
-    if n_clusters > 16:
-        warnings.warn(f"簇数量({n_clusters})过高，可能会导致组合搜索非常耗时。建议 n_clusters <= 16。")
-
-    train_val_indices, test_indices = _find_best_ood_cluster_split(
-        patient_features,
-        patient_labels,
-        n_clusters=n_clusters,
-        split_size=test_size
-    )
-
-    print("\n--- 开始第二步：从剩余数据中分层抽样出验证集 ---")
-    val_split_ratio = val_size / (1.0 - test_size)
-    train_val_labels = np.array(patient_labels)[train_val_indices]
-    
-    train_indices, val_indices, _, _ = train_test_split(
-        train_val_indices,
-        train_val_labels,
-        test_size=val_split_ratio,
-        random_state=42,
-        stratify=train_val_labels
-    )
-
-    return sorted(train_indices), sorted(val_indices), sorted(test_indices)
-
-# --- 3. 新增的可视化函数 ---
-
-def visualize_split(
+def visualize_5fold(
     features_2d, 
-    train_indices, 
-    val_indices, 
-    test_indices, 
-    save_path
+    folds_result,
+    save_dir
 ):
-    """将划分结果绘制成2D散点图并保存。"""
-    print(f"\n正在生成2D可视化图并保存至: {save_path}")
+    """
+    为每一个Fold生成一张可视化图。
+    """
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        
+    print(f"\n正在生成每折的可视化图...")
     
-    plt.figure(figsize=(12, 10))
-    
-    # 绘制训练集
-    plt.scatter(
-        features_2d[train_indices, 0], 
-        features_2d[train_indices, 1], 
-        c='blue', 
-        label=f'Train ({len(train_indices)})', 
-        alpha=0.6,
-        s=15 # 点的大小
-    )
-    # 绘制验证集
-    plt.scatter(
-        features_2d[val_indices, 0], 
-        features_2d[val_indices, 1], 
-        c='orange', 
-        label=f'Validation ({len(val_indices)})', 
-        alpha=0.8,
-        s=20
-    )
-    # 绘制测试集
-    plt.scatter(
-        features_2d[test_indices, 0], 
-        features_2d[test_indices, 1], 
-        c='red', 
-        label=f'Test (OOD) ({len(test_indices)})', 
-        alpha=0.9,
-        s=25,
-        marker='*' # 用星号标记测试集
-    )
-    
-    plt.title('Patient Data Split Visualization (t-SNE)', fontsize=16)
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-    plt.legend(loc='best')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    
-    # 保存图像
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    for fold_name, fold_data in folds_result.items():
+        indices = fold_data['indices']
+        train_idx = indices['train']
+        val_idx = indices['valid']
+        test_idx = indices['test']
+        
+        plt.figure(figsize=(10, 8))
+        
+        # 绘制所有点作为灰色背景，表现整体分布
+        plt.scatter(features_2d[:, 0], features_2d[:, 1], c='lightgray', alpha=0.2, s=10)
 
+        # 绘制训练集
+        plt.scatter(features_2d[train_idx, 0], features_2d[train_idx, 1], 
+                    c='blue', label='Train', alpha=0.5, s=15)
+        # 绘制验证集
+        plt.scatter(features_2d[val_idx, 0], features_2d[val_idx, 1], 
+                    c='orange', label='Valid', alpha=0.7, s=20)
+        # 绘制测试集 (OOD)
+        plt.scatter(features_2d[test_idx, 0], features_2d[test_idx, 1], 
+                    c='red', label='Test (OOD)', alpha=0.9, s=30, marker='*')
+        
+        plt.title(f'5-Fold OOD Split - {fold_name}\n(Test set should be distinct clusters)', fontsize=14)
+        plt.legend()
+        plt.tight_layout()
+        
+        save_path = os.path.join(save_dir, f"{fold_name}_vis.png")
+        plt.savefig(save_path, dpi=150)
+        plt.close()
+        print(f"  已保存: {save_path}")
+
+# --- 主程序 ---
 
 if __name__ == "__main__":
-    # --- 固定随机种子以保证结果可复现 ---
+    # --- 配置 ---
     np.random.seed(42)
     random.seed(42)
 
-    # --- 文件与路径设置 ---
     BASE_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset"
-    NPY_ROOT_DIR = os.path.join(BASE_DIR, "Multi-OSCCPI-Npy-224")
+    # H5文件路径
+    H5_ROOT_DIR = os.path.join(BASE_DIR, "backup/h5_files") 
     META_FILE = os.path.join(BASE_DIR, "all_metadata.json")
-    SAVE_SPLIT_FILE = os.path.join(BASE_DIR, "split_OOD.json")
-    SAVE_VIS_FILE = os.path.join(BASE_DIR, "split_OOD_visualization.png")
     
-    # --- 加载元数据 ---
+    # 输出文件路径
+    SAVE_JSON_FILE = os.path.join(BASE_DIR, "split_OOD_5fold.json")
+    VIS_SAVE_DIR = os.path.join(BASE_DIR, "vis_5fold_ood")
+
+    # --- 1. 加载元数据 ---
     with open(META_FILE, 'r') as f:
         meta_data = json.load(f)['datainfo']
-    pids = [int(item['pid']) for item in meta_data]
-    patient_labels = [int(item['REC']) for item in meta_data]
     
-    # --- 准备NPY文件路径 ---
-    all_npy_paths = []
-    for pid in pids:
-        npy_path = os.path.join(NPY_ROOT_DIR, f"{pid}.npy")
-        assert os.path.exists(npy_path), f"文件不存在: {npy_path}"
-        all_npy_paths.append(npy_path)
+    # 原始PID和Label列表
+    all_pids_raw = [int(item['pid']) for item in meta_data]
+    all_labels_map = {int(item['pid']): int(item['REC']) for item in meta_data}
 
-    # --- 步骤 1: 加载并降维 ---
-    patient_features_reduced = load_and_reduce_features_from_npy(
-        all_npy_paths, 
+    # --- 2. 加载数据 (H5 -> Mean -> PCA) ---
+    # 注意：load函数会过滤掉不存在文件的PID，所以返回valid_pids
+    features_pca, valid_pids = load_and_reduce_features_from_h5(
+        all_pids_raw, 
+        H5_ROOT_DIR, 
         n_components=128
     )
-
-    # --- 步骤 2: 进行训练/验证/测试划分 ---
-    train_pids_idx, val_pids_idx, test_pids_idx = create_train_val_test_split(
-        patient_features_reduced,
-        patient_labels,
-        n_clusters=12,
-        test_size=0.2,
-        val_size=0.1
+    
+    # 对齐 Label
+    valid_labels = [all_labels_map[pid] for pid in valid_pids]
+    
+    # --- 3. 执行 5-Fold OOD 划分 ---
+    # 使用 n_clusters=20，这样5折每折大约分到4个簇，保证多样性
+    folds_data, cluster_ids = create_5fold_ood_split(
+        features_pca, 
+        valid_labels, 
+        valid_pids,
+        n_clusters=20, 
+        n_splits=5,
+        val_size=0.2
     )
 
-    # --- 步骤 3: 新增 - 为可视化再次降维至2D ---
-    print("\n--- 准备可视化：使用t-SNE降维至2D ---")
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30, max_iter=1000)
-    features_2d = tsne.fit_transform(patient_features_reduced)
+    # --- 4. 生成 T-SNE 用于可视化 ---
+    print("\n计算 t-SNE (2D) 用于可视化报告...")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30, init='pca', learning_rate='auto')
+    features_2d = tsne.fit_transform(features_pca)
 
-    # --- 步骤 4: 调用可视化函数 ---
-    visualize_split(
-        features_2d,
-        train_pids_idx,
-        val_pids_idx,
-        test_pids_idx,
-        SAVE_VIS_FILE
-    )
+    visualize_5fold(features_2d, folds_data, VIS_SAVE_DIR)
 
-    # --- 步骤 5: 保存划分结果的PID ---
-    train_pat_ids = [pids[i] for i in train_pids_idx]
-    val_pat_ids = [pids[i] for i in val_pids_idx]
-    test_pat_ids = [pids[i] for i in test_pids_idx]
-
-    with open(SAVE_SPLIT_FILE, 'w') as f:
-        json.dump({
-            'train': train_pat_ids,
-            'val': val_pat_ids,
-            'test': test_pat_ids
-        }, f, indent=4)
-    print(f"\n划分结果已保存至: {SAVE_SPLIT_FILE}")
-
-    # --- 最终输出统计信息 ---
-    print("\n\n" + "="*50)
-    print("--- 患者级别的 Train/Validation/Test 划分完成 ---")
-    print(f"训练集患者数量: {len(train_pids_idx)}")
-    print(f"验证集患者数量: {len(val_pids_idx)}")
-    print(f"测试集患者数量: {len(test_pids_idx)}")
-    print(f"总计: {len(train_pids_idx) + len(val_pids_idx) + len(test_pids_idx)}")
-
-    y_train = np.array(patient_labels)[train_pids_idx]
-    y_val = np.array(patient_labels)[val_pids_idx]
-    y_test = np.array(patient_labels)[test_pids_idx]
-    
-    train_counts = np.bincount(y_train, minlength=2)
-    val_counts = np.bincount(y_val, minlength=2)
-    test_counts = np.bincount(y_test, minlength=2)
-    
-    def get_ratio(counts):
-        return counts[0] / (counts[1] + 1e-6)
-
-    print("\n--- 最终类别分布统计 ---")
-    print(f"训练集: {train_counts[0]}/{train_counts[1]} (比例 ≈ {get_ratio(train_counts):.2f})")
-    print(f"验证集: {val_counts[0]}/{val_counts[1]} (比例 ≈ {get_ratio(val_counts):.2f})")
-    print(f"测试集: {test_counts[0]}/{test_counts[1]} (比例 ≈ {get_ratio(test_counts):.2f})")
-
-
-   
+    # --- 5. 保存 JSON ---
+    # 清理掉 numpy array 等非序列化对象，只保留 PID list
+    json_output = {}
+    for fold_name, data in folds_data.items():
+        json_output[fold_name] = {
+            "train": data['train'],
+            "valid": data['valid'],
+            "test": data['test']
+        }
+        
+    with open(SAVE_JSON_FILE, 'w') as f:
+        json.dump(json_output, f, indent=4)
+        
+    print("\n" + "="*50)
+    print(f"完成！5折 OOD 划分文件已保存至: {SAVE_JSON_FILE}")
+    print(f"可视化图片已保存至目录: {VIS_SAVE_DIR}")
+    print("="*50)

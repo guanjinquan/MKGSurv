@@ -28,10 +28,9 @@ if __name__ == '__main__':
         try:
             trainer = Trainer(args=args)
             trainer.run()
-        except Exception as e:
+        except FileExistsError as e:
             print(f"Error in fold {fold}: {e}")
-            
-        
+
         # Testing
         tester = Tester(args=args)
         valid_metrics = tester.valid()

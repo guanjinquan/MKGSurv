@@ -73,7 +73,7 @@ def GetDataset(mode, args):
     if dataset == "hancock":
         return HANCOCKDataset(args=args, mode=mode, modalities=args.modalities)
     elif dataset == "oscc_inhouse":
-        return OSCCSurvInHouseDataset(args=args, mode=mode, modalities=args.modalities)
+        return OSCCSurvInHouseDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == "tcga_luad":
         return TCGA_LUAD_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == 'tcga_lusc':

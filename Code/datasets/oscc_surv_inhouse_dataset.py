@@ -43,9 +43,11 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
     def __init__(self, args, mode="train", modalities="all", fold=None):
         super().__init__()
         assert mode in ["train", "valid", "test"], "mode must be one of 'train', 'valid', or 'test'"
-        
+        assert 0 <= fold <= 4, "fold must be an integer between 0 and 4"
+
         self.args = args
         self.mode = mode
+        self.fold = fold
         
         # --- Path Definitions ---
         self.dataset_dir = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset"
@@ -66,7 +68,7 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
         # --- 4. Load Pre-extracted Features (Pickles) ---
         self.loaded_features = {}
         self.pickle_map = {
-            "image-pathology": "feature_image_pathology.pkl",
+            "image-pathology": f"feature_image_pathology_fold_{fold+1}.pkl",
             "text-clinical": "features_text_clinical.pkl",
             "text-pathology": "features_text_pathology.pkl",
             "text-treatment": "features_text_treatment.pkl"
@@ -201,6 +203,14 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
 
         if self.args.use_medical_knowledge:
             output_dict["medical-knowledge"] = self.knowledge_dict.get(pid_str, None)
+        else:
+            kdata = self.knowledge_dict.get(pid_str, None)
+            output_dict["medical-knowledge"] = {}
+            for k, v in kdata.items():
+                output_dict["medical-knowledge"][k] = {
+                    "score": v['score'] if self.mode != 'train' else 0.0,
+                    "knowledge": torch.randn_like(v['knowledge'])
+                }
 
         # 4. 加载特征 
         modalities_found = 0
@@ -327,13 +337,13 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
 
     def _load_split_file(self):
         metadata_path = os.path.join(self.dataset_dir, "oscc_recurrence_survival_data.json")
-        split_path = os.path.join(self.dataset_dir, "split_OOD.json")
+        split_path = os.path.join(self.dataset_dir, "split_OOD_5fold.json")
         
         with open(metadata_path, 'r') as f:
             all_patients_info = {str(item['pid']): item for item in json.load(f)}
 
         with open(split_path, 'r') as f:
-            split_data = json.load(f)
+            split_data = json.load(f)[f'fold_{self.fold+1}']
 
         target_pids = [str(pid) for pid in split_data[self.mode]]
         

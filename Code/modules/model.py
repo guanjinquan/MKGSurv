@@ -326,8 +326,9 @@ class ModelInterfaceWithMedicalKnowledge(ModelInterface):
 
         # --- Step 1: Unimodal Encoding ---
         encodings = self.task_head.encode(data_dicts)
-        all_embeddings, all_masks, medical_knowledge, medical_knowledge_mask, modalities_groups = \
-            encodings['embeddings'], encodings['masks'], encodings['medical_knowledge'], encodings['medical_knowledge_mask'], encodings['modalities_groups']
+        all_embeddings, all_masks, medical_knowledge, medical_knowledge_mask, modalities_groups, groups_relationships = \
+            encodings['embeddings'], encodings['masks'], encodings['medical_knowledge'], \
+                encodings['medical_knowledge_mask'], encodings['modalities_groups'], encodings['groups_relationships']
 
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
@@ -345,7 +346,14 @@ class ModelInterfaceWithMedicalKnowledge(ModelInterface):
 
         # --- Step 2: Multimodal Fusion ---
         assert num_present > 1 or self.fusion_type == 'msa', "At least two modalities are required for fusion or use MSA fusion which can handle single modality."
-        fusion_output = self.fusion_module(all_embeddings, all_masks, modalities_groups, medical_knowledge, medical_knowledge_mask)  
+        fusion_output = self.fusion_module(
+            embeddings=all_embeddings, 
+            masks=all_masks, 
+            embeddings_groups=modalities_groups, 
+            groups_relationships=groups_relationships,
+            fusion_knowledge=medical_knowledge, 
+            fusion_knowledge_mask=medical_knowledge_mask
+        )  
         fused_embedding = fusion_output["fused_embedding"]
         fusion_losses_dict = fusion_output.get("loss_dict") or {}
         total_fusion_loss = fusion_losses_dict.get('total_loss', torch.tensor(0.0, device=device))

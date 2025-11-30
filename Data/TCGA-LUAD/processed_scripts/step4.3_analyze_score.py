@@ -51,7 +51,10 @@ def map_data_type(data_string):
         # 默认返回原字符串的小写形式
         return normalized
 
-file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/qwen_analysis.json"
+# file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/qwen_analysis.json"
+
+# file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_deepseek.json"
+file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
 
 with open(file, 'r') as f:
     data = json.load(f)

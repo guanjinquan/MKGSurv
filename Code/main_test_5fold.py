@@ -26,11 +26,11 @@ if __name__ == '__main__':
 
         # Testing
         tester = Tester(args=args)
-        valid_metrics = tester.valid()
+        # valid_metrics = tester.valid()
         test_metrics = tester.test()
 
-        for key, value in valid_metrics.items():
-            summary_of_folds_valid[key] = summary_of_folds_valid.get(key, []) + [value]
+        # for key, value in valid_metrics.items():
+        #     summary_of_folds_valid[key] = summary_of_folds_valid.get(key, []) + [value]
         for key, value in test_metrics.items():
             summary_of_folds_test[key] = summary_of_folds_test.get(key, []) + [value]
     

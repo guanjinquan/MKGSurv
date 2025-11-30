@@ -176,7 +176,10 @@ def process_analysis_file(json_path: str, output_path: str):
             # If feat_1 is (2, 768) and feat_2 is (1, 768), result is (3, 768)
             combined_tensor = torch.cat([feat_1, feat_2], dim=0)
             
-            patient_features[modal_key] = combined_tensor
+            patient_features[modal_key] = {
+                "score": score,
+                "knowledge": combined_tensor,
+            }
             
         final_dataset[patient_id] = patient_features
 
@@ -194,7 +197,7 @@ def process_analysis_file(json_path: str, output_path: str):
 
 if __name__ == "__main__":
     # File Paths
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_deepseek.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge.pkl"
     
     process_analysis_file(INPUT_FILE, OUTPUT_FILE)
