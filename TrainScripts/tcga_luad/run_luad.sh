@@ -1,5 +1,6 @@
 set -e
 source activate surv_pred
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run028_medkgat_fusion_deepsek_data_medk_no_residual_llmscore.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run029_medkgat_fusion_img_gene_deepseek_data_medk_no_residual_llmscore.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run030_medkgat_fusion_ctab_deepseek_data_medk_no_residual_llmscore.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run001_group_medkgat_deepseek.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run002_group_medkgat_random.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run003_no_group_medkgat_deepseek.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run004_no_group_medkgat_random.sh

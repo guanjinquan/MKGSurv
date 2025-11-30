@@ -28,6 +28,7 @@ from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
 from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
+from modules.fusion_modules.MedKGAT_fusion_without_group import MedKGATFusion_without_Group
 
 # --- Common Modules ---
 from modules.base_modules.align_utils import AlignmentModule
@@ -75,7 +76,7 @@ def GetModel(args, dataset):
 
 
     # with_multimodal_align
-    if args.fusion_type == 'medkgat_fusion':
+    if args.fusion_type == 'medkgat_fusion' or args.fusion_type == 'medkgat_fusion_without_group':
         return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
@@ -154,6 +155,8 @@ class ModelInterface(nn.Module):
             self.fusion_module = SurvPath(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
             self.fusion_module = MedKGATFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == 'medkgat_fusion_without_group':
+            self.fusion_module = MedKGATFusion_without_Group(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 

@@ -16,6 +16,7 @@ if __name__ == '__main__':
 
     import torch
     torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_sharing_strategy('file_system')
 
     # start work
     summary_of_folds_valid = {}
