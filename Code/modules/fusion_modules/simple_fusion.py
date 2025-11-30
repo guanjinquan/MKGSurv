@@ -235,12 +235,13 @@ class SimpleFusion(nn.Module):
     """
 
 
-    def __init__(self, embed_dim: int, fusion_type: str = 'msa', max_modalities: int = 3):
+    def __init__(self, args, embed_dim: int, fusion_type: str = 'msa', max_modalities: int = 3):
         super().__init__()
         
         if fusion_type not in ['msa', 'concat', 'lmf', 'gated']:
             raise ValueError(f"Unknown fusion type: {fusion_type}")
 
+        self.args = args
         self.embed_dim = embed_dim
         self.fusion_type = fusion_type
         self.max_modalities = max_modalities

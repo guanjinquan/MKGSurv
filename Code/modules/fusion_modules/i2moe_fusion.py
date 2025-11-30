@@ -146,8 +146,10 @@ class I2MoEFusionModule(nn.Module):
     I²MoE fusion module, adapted to handle a dynamic number of modalities with token-level masks.
     """
 
-    def __init__(self, embed_dim: int, max_modalities: int, num_layers: int = 2, num_heads: int = 8, dropout: float = 0.1):
+    def __init__(self, args, embed_dim: int, max_modalities: int, num_layers: int = 2, num_heads: int = 8, dropout: float = 0.1):
         super(I2MoEFusionModule, self).__init__()
+
+        self.args = args
         self.max_modalities = max_modalities
         self.embed_dim = embed_dim
         

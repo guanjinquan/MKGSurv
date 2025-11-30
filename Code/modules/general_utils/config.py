@@ -8,6 +8,7 @@ def parse_arguments():
     parser.add_argument('--ckpt_path', type=str, default='../Checkpoints/', help='the path to save checkpoints')
     parser.add_argument('--log_path', type=str, default='../Results', help='the path to save log')
     parser.add_argument('--load_pth_path', type=str)
+    parser.add_argument('--points_save_path', type=str, default=None, help='the path to save points of medical knowledge guided fusion')
     
     # dataset settings 
     parser.add_argument('--dataset', type=str, default="multi_oscc")

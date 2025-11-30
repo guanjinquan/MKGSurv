@@ -23,6 +23,9 @@ if __name__ == '__main__':
     summary_of_folds_test = {}
     run_path = [args.model_task, args.runs_id + "+" + args.fusion_type]
 
+    if "medkgat_fusion" in args.fusion_type:
+        args.points_save_path = os.path.join(args.log_path, "draw", "points_" + args.runs_id + "+" + args.fusion_type + ".jsonl")
+
     for fold in range(5):
         args.fold = fold
 

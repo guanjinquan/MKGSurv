@@ -19,11 +19,8 @@ from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
 
 # --- Fusion Modules
 from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
-from modules.fusion_modules.hier_align_fusion import HierAlignFusionModule
 from modules.fusion_modules.simple_fusion import SimpleFusion
 from modules.fusion_modules.healnet_fusion import HealNetFusionModule
-from modules.fusion_modules.js_gated_mas_fusion import KLGatedFusion
-from modules.fusion_modules.MIBF_fusion import MIBF_fusion
 from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
@@ -37,33 +34,6 @@ from modules.base_modules.multimodal_vib import TokenWiseMultiModalVIB
 
 
 def GetModel(args, dataset):
-
-    if args.fusion_type == 'kl_gated':
-        return ModelInterfaceWithDeepSupervision(
-            args, 
-            dataset,
-            decode_task=args.decode_task,
-            model_task=args.model_task, 
-            fusion_type=args.fusion_type
-        )
-    
-    if args.fusion_type == "mibf_fusion":
-        return ModelInterfaceWithDeepSupervisionWeightedLoss(
-            args, 
-            dataset,
-            decode_task=args.decode_task,
-            model_task=args.model_task, 
-            fusion_type=args.fusion_type
-        )
-    
-    if args.fusion_type == "dimaf_fusion":
-        return ModelInterface(
-            args, 
-            dataset,
-            decode_task=args.decode_task,
-            model_task=args.model_task, 
-            fusion_type=args.fusion_type
-        )
     
     if args.fusion_type == "hgcn_fusion":
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
@@ -136,27 +106,27 @@ class ModelInterface(nn.Module):
         
         # --- 2. Instantiate fusion sub-modules ---
         if self.fusion_type == 'hier_align':
-            self.fusion_module = HierAlignFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = HierAlignFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'i2moe':
-            self.fusion_module = I2MoEFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = I2MoEFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'healnet':
-            self.fusion_module = HealNetFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = HealNetFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type in ['concat', 'msa', 'lmf', 'gated']:
-            self.fusion_module = SimpleFusion(embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
+            self.fusion_module = SimpleFusion(args, embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
         elif self.fusion_type == "kl_gated":
-            self.fusion_module = KLGatedFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = KLGatedFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "mibf_fusion":
-            self.fusion_module = MIBF_fusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = MIBF_fusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'hgcn_fusion':
-            self.fusion_module = HGCNFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = HGCNFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "dimaf_fusion":
-            self.fusion_module = DIMAFFusionModule(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = DIMAFFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "surv_path":
-            self.fusion_module = SurvPath(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = SurvPath(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
-            self.fusion_module = MedKGATFusion(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion_without_group':
-            self.fusion_module = MedKGATFusion_without_Group(embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = MedKGATFusion_without_Group(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 

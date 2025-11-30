@@ -28,6 +28,7 @@ MANIFEST
 
 *Trash*
 *Checkpoints*/*
+Data/draw
 Data/TCGA-LUAD/*
 Data/TCGA-LUSC/*
 Data/HANCOCK/*

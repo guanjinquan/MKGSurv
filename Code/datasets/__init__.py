@@ -71,7 +71,7 @@ def GetDataLoader(args):
 def GetDataset(mode, args):
     dataset = args.dataset
     if dataset == "hancock":
-        return HANCOCKDataset(args=args, mode=mode, modalities=args.modalities)
+        return HANCOCKDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == "oscc_inhouse":
         return OSCCSurvInHouseDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == "tcga_luad":

@@ -50,6 +50,7 @@ class SurvPath(nn.Module):
     """
     def __init__(
         self, 
+        args, 
         embed_dim: int = 512, 
         max_modalities: int = 2,
         dropout: float = 0.1, 
@@ -58,6 +59,7 @@ class SurvPath(nn.Module):
     ) -> None:
         super().__init__()
         
+        self.args = args
         self.embed_dim = embed_dim
         self.num_modalities = max_modalities # Hard-coded based on paper (Pathways + Patches)
         

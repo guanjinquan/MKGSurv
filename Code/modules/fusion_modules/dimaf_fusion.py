@@ -134,9 +134,10 @@ class DIMAFFusionModule(nn.Module):
     Based on the DIMAF model from https://github.com/mahmoodlab/DIMAF
     """
 
-    def __init__(self, embed_dim: int = 512, max_modalities: int = 2) -> None:
+    def __init__(self, args, embed_dim: int = 512, max_modalities: int = 2) -> None:
         super().__init__()
         
+        self.args = args
         self.embed_dim = embed_dim
         self.max_modalities = max_modalities
         

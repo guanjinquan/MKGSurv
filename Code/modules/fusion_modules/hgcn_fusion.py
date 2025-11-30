@@ -539,7 +539,8 @@ class HGCNFusionModule(nn.Module):
         - `masks[m]` is (B, N_m, 1) or None
         - Mask is True/1 for real nodes, False/0 for padding.
     """
-    def __init__(self, 
+    def __init__(self,
+                 args, 
                  embed_dim: int, 
                  max_modalities: int = 3, 
                  dropout: float = 0.3,
@@ -551,6 +552,7 @@ class HGCNFusionModule(nn.Module):
                  ) -> None:
         super().__init__()
         
+        self.args = args
         self.embed_dim = embed_dim
         self.max_modalities = max_modalities
         self.mae_mask_ratio = mae_mask_ratio

@@ -281,6 +281,7 @@ class HealNetFusionModule(nn.Module):
 
     def __init__(
         self,
+        args,
         embed_dim: int,
         max_modalities: int,
         num_latents: int = 512, # Corresponds to l_c, the number of queries (k)
@@ -290,6 +291,7 @@ class HealNetFusionModule(nn.Module):
         attn_dropout: float = 0.1
     ):
         super(HealNetFusionModule, self).__init__()
+        self.args = args
         self.max_modalities = max_modalities
         self.embed_dim = embed_dim
 

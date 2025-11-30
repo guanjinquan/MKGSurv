@@ -95,8 +95,10 @@ class EdgeContextualizer(nn.Module):
 
 
 class MedKGATFusion_without_Group(nn.Module):
-    def __init__(self, embed_dim: int, max_modalities: int = 10, dropout_rate: float = 0.1):
+    def __init__(self, args, embed_dim: int, max_modalities: int = 10, dropout_rate: float = 0.1):
         super().__init__()
+
+        self.args = args
         self.embed_dim = embed_dim
         self.dropout_rate = dropout_rate
 
@@ -230,8 +232,7 @@ class MedKGATFusion_without_Group(nn.Module):
             proj_knowledge[k] = self.know_proj(v)
 
         # 2. Intra-Group Interaction
-        # info_level_embeddings = self._intra_group_interaction(embeddings, masks, embeddings_groups)
-        info_level_embeddings = embeddings  
+        info_level_embeddings = embeddings # self._intra_group_interaction(embeddings, masks, embeddings_groups)
 
         # 3. Create Group-Level Embeddings
         group_embeddings = []
@@ -382,6 +383,9 @@ class MedKGATFusion_without_Group(nn.Module):
                 
                 all_cos_sims_list.append(sim)
 
+        # Save Points of (groups cosine similarity, edge score)
+        self.save_points(final_group_embeddings, group_masks, groups_relationships)
+
         # 7. Global Aggregation
         global_concat = torch.cat(final_group_embeddings, dim=1)
         global_mask = torch.cat(group_masks, dim=1)
@@ -453,3 +457,95 @@ class MedKGATFusion_without_Group(nn.Module):
                 "total_loss": fusion_loss
             }
         }
+    
+def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
+        if self.args.point_save_path is None:
+            return 
+
+        # --- 1. 预先计算 Mean Pooling ---
+        group_mean_embeddings = []
+        for i in range(len(final_group_embeddings)):
+            res = masked_mean_pool(final_group_embeddings[i], final_group_masks[i])
+            if isinstance(res, tuple):
+                mean_emb = res[0]
+            else:
+                mean_emb = res
+            group_mean_embeddings.append(mean_emb)
+
+        # --- 2. 准备变量 ---
+        batch_size = final_group_embeddings[0].shape[0]
+        device = final_group_embeddings[0].device
+        
+        # [FIX] 这里必须是 (batch_size, 1)，之前的代码是 (batch_size,) 导致了维度冲突
+        sum_edge_scores = torch.zeros((batch_size, 1), device=device)
+        sum_cos_sims = torch.zeros((batch_size, 1), device=device)
+        
+        # 缓存 Raw 数据
+        raw_data_cache = {} 
+        valid_pairs = []
+
+        # --- 3. 第一轮循环：计算 Raw 值并累加 Sum ---
+        for (idx_a, idx_b), _ in groups_relationships.items():
+            # A. 获取 Edge Score
+            raw_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
+            
+            if raw_score is not None:
+                # [FIX] 确保 raw_score 也是 (B, 1) 形状，防止隐式广播导致 [8] + [8, 1] = [8, 8] 的问题
+                if raw_score.dim() == 1:
+                    raw_score = raw_score.view(-1, 1)
+                
+                # B. 计算 Cosine Similarity
+                embed_a = group_mean_embeddings[idx_a] # (B, D)
+                embed_b = group_mean_embeddings[idx_b] # (B, D)
+                
+                # raw_cos shape: (B,) -> 调整为 (B, 1)
+                raw_cos = torch.cosine_similarity(embed_a, embed_b, dim=1).view(-1, 1)
+                
+                # Cosine 归一化前处理
+                raw_cos_positive = torch.clamp(raw_cos, min=1e-9) 
+
+                # C. 累加到总和向量中
+                # 现在这里是 [8, 1] += [8, 1]，完全合法
+                sum_edge_scores += raw_score
+                sum_cos_sims += raw_cos_positive
+                
+                # D. 存入缓存
+                raw_data_cache[(idx_a, idx_b)] = (raw_cos_positive, raw_score)
+                valid_pairs.append((idx_a, idx_b))
+
+        # --- 4. 防止除零异常 ---
+        sum_edge_scores = torch.clamp(sum_edge_scores, min=1e-9)
+        sum_cos_sims = torch.clamp(sum_cos_sims, min=1e-9)
+
+        # --- 5. 第二轮循环：归一化并收集数据 ---
+        if len(valid_pairs) > 0:
+            save_points_path = self.args.point_save_path
+            os.makedirs(os.path.dirname(save_points_path), exist_ok=True)
+            
+            current_batch_points = []
+            
+            for (idx_a, idx_b) in valid_pairs:
+                raw_cos, raw_score = raw_data_cache[(idx_a, idx_b)]
+                
+                # --- [核心逻辑] 双向归一化 ---
+                # (B, 1) / (B, 1) -> (B, 1)
+                norm_cos = raw_cos / sum_cos_sims
+                norm_score = raw_score / sum_edge_scores
+                
+                # 转为 list 准备保存
+                norm_cos_list = norm_cos.view(-1).detach().cpu().tolist()
+                norm_score_list = norm_score.view(-1).detach().cpu().tolist()
+                
+                for pat_idx in range(len(norm_cos_list)):
+                    current_batch_points.append([norm_cos_list[pat_idx], norm_score_list[pat_idx]])
+
+            # --- 6. 高效写入 (Append Mode) ---
+            if current_batch_points:
+                try:
+                    with open(save_points_path, 'a') as f:
+                        for point in current_batch_points:
+                            f.write(json.dumps(point) + "\n")
+                except Exception as e:
+                    print(f"Warning: Failed to save points data: {e}")
+
+        # =========================================================================
