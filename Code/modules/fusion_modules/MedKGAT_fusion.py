@@ -8,16 +8,45 @@ import torch.nn.functional as F
 from typing import List, Dict, Tuple, Optional
 from modules.base_modules.aggregation_utils import masked_mean_pool
 import json
+import random
 
 
+# --- 基础组件 ---
+class GELU(nn.Module):
+    def forward(self, x):
+        x, gates = x.chunk(2, dim = -1)
+        return x * F.gelu(gates)
+    
 
-class SafeCrossAttentionBlock(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4, dropout = 0.1):
         super().__init__()
-        # batch_first=True 输出 (B, L, D)
-        self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim * mult * 2),
+            GELU(),  # ReLU之后要跟LayerNorm，但是GeLU之后本身就是高斯分布，不需要再归一化
+            nn.Linear(dim * mult, dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+# --- SafeCrossAttnEncoder ---
+class SafeCrossAttnEncoder(nn.Module):
+    """
+    升级版交叉注意力模块。
+    结构: CrossAttention -> Add & Norm -> FeedForward -> Add & Norm
+    包含了防 NaN 的安全机制。
+    """
+    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
+        super().__init__()
         self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
+        # 1. Attention 部分
+        self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        # 2. FFN 部分  
+        self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
                 key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -27,34 +56,36 @@ class SafeCrossAttentionBlock(nn.Module):
         value: (B, Lk, D)
         key_padding_mask: (B, Lk), True 为 padding
         """
+
+        query = self.norm(query)
+        key = self.norm(key)
+        value = self.norm(value)
         
-        # --- 核心修复逻辑 Start ---
         if key_padding_mask is not None:
-            # 1. 检测哪些样本的所有 Key 都是 Padding
-            # key_padding_mask: True 表示无效
             all_masked_rows = key_padding_mask.all(dim=1) # (B,) bool
 
             if all_masked_rows.any():
-                # 2. 只有当存在全 Mask 的情况时，才进行克隆和修改，避免影响原始数据
+
                 key_padding_mask = key_padding_mask.clone()
-                
-                # 3. 将全 Mask 行的第一个位置设为 False (有效)
-                # 这样 Softmax 分母就不会是 0，避免 NaN
                 key_padding_mask[all_masked_rows, 0] = False
-        # --- 核心修复逻辑 End ---
+        else:
+            all_masked_rows = None  
 
-        # 正常计算 MHA，此时绝对不会报 NaN
+        # --- 1. Attention Block ---
         attn_out, _ = self.mha(query, key, value, key_padding_mask=key_padding_mask)
-        
-        # --- 可选：对垃圾值进行清理 ---
-        # 如果你非常介意那些原本无效的样本输出不为 0，可以在这里再次 mask 掉。
-        # 但通常因为后续还有 global pooling 或者 target mask，这步不是必须的。
-        if key_padding_mask is not None and all_masked_rows.any():
-             # 将那些原本全无效的行的输出置为 0
-             attn_out[all_masked_rows] = 0.0
+            
+        if all_masked_rows is not None and all_masked_rows.any():
+            attn_out[all_masked_rows] = 0.0
 
-        return self.norm(query + self.dropout(attn_out))
-    
+        x = query + self.dropout(attn_out)  
+        
+        # --- 2. FFN Block ---
+        ffn_out = self.ffn(self.norm(x))
+        x = x + self.dropout(ffn_out)
+
+        return x
+
+
 
 class EdgeContextualizer(nn.Module):
     """
@@ -63,7 +94,7 @@ class EdgeContextualizer(nn.Module):
     """
     def __init__(self, embed_dim: int, num_heads: int = 4):
         super().__init__()
-        self.cross_attn = SafeCrossAttentionBlock(embed_dim, num_heads)
+        self.cross_attn = SafeCrossAttnEncoder(embed_dim, num_heads)
 
     def forward(self, edge_feat: torch.Tensor, edge_mask: torch.Tensor,
                 node_i: torch.Tensor, node_i_mask: torch.Tensor,
@@ -94,57 +125,56 @@ class EdgeContextualizer(nn.Module):
     
 
 
+
+
 class MedKGATFusion(nn.Module):
-    def __init__(self, args, embed_dim: int, max_modalities: int = 10, dropout_rate: float = 0.1):
+    def __init__(self, args, embed_dim: int, 
+            max_modalities: int = 10, 
+            max_groups: int = 10, 
+            proj_dropout_rate: float = 0.1, 
+            attn_dropout_rate: float = 0.1, 
+            num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
-        self.dropout_rate = dropout_rate
+        self.drop_edge_ratio = 0.1
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
             nn.Linear(768, self.embed_dim),
+            nn.GELU(),
             nn.LayerNorm(self.embed_dim),
-            nn.ReLU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.Dropout(self.dropout_rate)
+            nn.Dropout(proj_dropout_rate),
+            nn.Linear(self.embed_dim, self.embed_dim) 
         )
 
         # 2. Intra-group Interaction
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.embed_dim,
-            nhead=8,
-            dropout=self.dropout_rate,
-            batch_first=True
-        )
-        self.intra_group_transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
+        self.num_intra_layers = num_intra_layers
+        self.intra_group_transformer = nn.ModuleList([
+            SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
+            for _ in range(num_intra_layers)
+        ])
 
-        # 3. GAT Interaction Components
-        # 注意：这里假设 SafeCrossAttentionBlock 和 EdgeContextualizer 已经在外部定义或引入
-        # 如果没有定义，运行时会报错。这里为了代码完整性保留原样。
-        # M_0_1 -> Feat_m1 (Gating)
-        self.edge_to_node_attn = SafeCrossAttentionBlock(embed_dim, num_heads=8)
-        # Feat_m1 -> Gated_m0 (Update)
-        self.node_to_node_attn = SafeCrossAttentionBlock(embed_dim, num_heads=8)
-        # Edge Updater
-        self.edge_updater = EdgeContextualizer(embed_dim, num_heads=8)
+        # 3. GAT Interaction Components (Inter-Group)
+        self.num_inter_layers = num_inter_layers
+        self.shared_edge_updater = EdgeContextualizer(embed_dim, num_heads=8)
+        self.inter_group_transformer = nn.ModuleList()
+        for i in range(max_groups):
+            self.inter_group_transformer.append(
+                nn.ModuleDict({
+                    'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
+                    'node_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
+                })
+            )
 
         # 4. Global Aggregation
-        global_encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.embed_dim,
-            nhead=8,
-            dropout=self.dropout_rate,
-            batch_first=True
-        )
-        self.global_transformer = nn.TransformerEncoder(global_encoder_layer, num_layers=1)
+        self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
 
         # 5. Post Fusion Norm
         self.post_fusion_norm = nn.LayerNorm(embed_dim)
 
-    def _intra_group_interaction(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
-                               groups: List[List[int]]) -> List[torch.Tensor]: 
+    def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
         
         for group_indices in groups:
@@ -167,12 +197,19 @@ class MedKGATFusion(nn.Module):
                 padding_mask = padding_mask.clone()
                 padding_mask[all_masked_rows, 0] = False
 
-            transformed = self.intra_group_transformer(concat_feat, src_key_padding_mask=padding_mask)
-            
-            if all_masked_rows.any():
-                transformed[all_masked_rows] = 0.0
+            # The TransformerEncoder handles num_layers internally
+            for i in range(self.num_intra_layers):
+                concat_feat = self.intra_group_transformer[i](
+                    query=concat_feat, 
+                    key=concat_feat, 
+                    value=concat_feat, 
+                    key_padding_mask=padding_mask
+                )
 
-            split_feats = torch.split(transformed, lengths, dim=1)
+                if all_masked_rows.any():
+                    concat_feat[all_masked_rows] = 0.0
+
+            split_feats = torch.split(concat_feat, lengths, dim=1)
             
             for i, idx in enumerate(group_indices):
                 updated_embeddings[idx] = split_feats[i]
@@ -181,15 +218,17 @@ class MedKGATFusion(nn.Module):
 
     def _inter_group_step(self, target_node: torch.Tensor, target_mask: torch.Tensor,
                           source_node: torch.Tensor, source_mask: torch.Tensor,
-                          edge_feat: torch.Tensor, edge_mask: torch.Tensor) -> torch.Tensor:
+                          edge_feat: torch.Tensor, edge_mask: torch.Tensor,
+                          layer_modules: nn.ModuleDict) -> torch.Tensor:
         """
         One-way interaction: Source -> Edge -> Target
+        Updated to take layer_modules dict
         """
         source_padding_mask = (source_mask == 0)
         edge_padding_mask = (edge_mask == 0)
         
         # Step 1: Edge queries Source to get relevant info (Gating)
-        gated_source = self.edge_to_node_attn(
+        gated_source = layer_modules['edge_to_node_attn'](
             query=edge_feat, 
             key=source_node, 
             value=source_node, 
@@ -198,7 +237,7 @@ class MedKGATFusion(nn.Module):
         
         # Step 2: Target queries Gated Source to update itself
         # Note: Key/Value mask depends on Edge because gated_source has shape of Edge
-        updated_target = self.node_to_node_attn(
+        updated_target = layer_modules['node_to_node_attn'](
             query=target_node,
             key=gated_source,
             value=gated_source,
@@ -209,7 +248,7 @@ class MedKGATFusion(nn.Module):
             updated_target = updated_target * target_mask.unsqueeze(-1).type_as(updated_target)
 
         return updated_target
-
+    
     def forward(
         self, 
         embeddings: List[torch.Tensor], 
@@ -222,17 +261,22 @@ class MedKGATFusion(nn.Module):
         
         # 0. Ensure symmetric keys removal
         for (i, j), v in list(fusion_knowledge.items()): 
-            if (j, i) in fusion_knowledge and i > j:
+            if (j, i) in fusion_knowledge and i < j:
                 fusion_knowledge.pop((j, i))
                 fusion_knowledge_mask.pop((j, i))
 
-        # 1. Project Knowledge Edges
-        proj_knowledge = {}
-        for k, v in fusion_knowledge.items():
-            proj_knowledge[k] = self.know_proj(v)
+        edge_keys = list(fusion_knowledge.keys())
+        if self.training:
+            random.shuffle(edge_keys)
 
-        # 2. Intra-Group Interaction
-        info_level_embeddings = self._intra_group_interaction(embeddings, masks, embeddings_groups)
+        # 1. Project Knowledge Edges
+        # This will be our initial edge state
+        current_proj_knowledge = {}
+        for k, v in fusion_knowledge.items():
+            current_proj_knowledge[k] = self.know_proj(v)
+
+        # 2. Intra-Group Interaction (Multi-layer handled inside TransformerEncoder)
+        info_level_embeddings = self._intra_group_step(embeddings, masks, embeddings_groups)
 
         # 3. Create Group-Level Embeddings
         group_embeddings = []
@@ -251,139 +295,114 @@ class MedKGATFusion(nn.Module):
             group_embeddings.append(g_feat)
             group_masks.append(g_mask)
 
-        # 4. Inter-Group Interaction (GNN / GAT)
-        num_groups = len(group_embeddings)
-        group_updates_buffer = [[] for _ in range(num_groups)]
-
-        # --- Data Collection for KL Loss Calculation ---
-        # We collect (batch_size, ) tensors for every edge defined in the graph
-        # But we will calculate Similarity AFTER the GNN updates.
-        all_edge_scores_list = []
-        all_valid_masks_list = [] # To handle patients missing specific groups
-        all_edge_pairs_list = []  # Store indices (idx_a, idx_b) to compute Sim later
-        edge_score_valid_flag = False
-
         # Pre-calculate validity masks for Weights (based on INPUT embeddings/masks)
-        # We need this to determine if a patient has a specific modality group.
-        # Note: GNN updates don't change padding, so initial mask is valid throughout.
         group_validity_masks = []
         for g, m in zip(group_embeddings, group_masks):
             _, valid_mask = masked_mean_pool(g, m)
             group_validity_masks.append(valid_mask)
 
-        # Iterate over projected edges
-        for (idx_a, idx_b), edge_feat in proj_knowledge.items():
+        # 4. Inter-Group Interaction (Multi-Layer GNN / GAT)
+        # We loop self.num_inter_layers times
+        
+        current_group_embeddings = group_embeddings # Points to current node features
 
-            edge_mask = fusion_knowledge_mask.get((idx_a, idx_b))
-            if edge_mask is None:
-                edge_mask = torch.ones(edge_feat.shape[:2], device=edge_feat.device)
+        for layer_idx in range(self.num_inter_layers):
+ 
+            for (idx_a, idx_b) in edge_keys:
+                edge_feat = current_proj_knowledge.get((idx_a, idx_b))
 
+                if self.training and getattr(self, 'drop_edge_ratio', 0.0) > 0.0:
+                    if random.random() < self.drop_edge_ratio:
+                        continue
+                
+                edge_mask = fusion_knowledge_mask.get((idx_a, idx_b))
+                if edge_mask is None:
+                    edge_mask = torch.ones(edge_feat.shape[:2], device=edge_feat.device)
+
+                # Get Group Data
+                feat_a = current_group_embeddings[idx_a]
+                mask_a = group_masks[idx_a] # Masks don't change
+                feat_b = current_group_embeddings[idx_b]
+                mask_b = group_masks[idx_b]
+
+                # --- GNN Update Logic for this Layer ---
+                # Update Edge Features
+                updated_edge_feat = self.shared_edge_updater(
+                    edge_feat, edge_mask, 
+                    feat_a, mask_a, 
+                    feat_b, mask_b
+                )
+                
+                # Store updated edge for the next layer
+                current_proj_knowledge[(idx_a, idx_b)] = updated_edge_feat
+
+                # Update Node B using Node A and Edge
+                update_for_b = self._inter_group_step(
+                    target_node=feat_b, target_mask=mask_b,
+                    source_node=feat_a, source_mask=mask_a,
+                    edge_feat=updated_edge_feat, edge_mask=edge_mask,
+                    layer_modules=self.inter_group_transformer[idx_b]
+                )
+                current_group_embeddings[idx_b] = update_for_b
+
+                # Update Node A using Node B and Edge
+                update_for_a = self._inter_group_step(
+                    target_node=feat_a, target_mask=mask_a,
+                    source_node=feat_b, source_mask=mask_b,
+                    edge_feat=updated_edge_feat, edge_mask=edge_mask,
+                    layer_modules=self.inter_group_transformer[idx_a]
+                )
+                current_group_embeddings[idx_a] = update_for_a
+
+        # Final embeddings after all GAT layers
+        final_group_embeddings = current_group_embeddings
+
+        # ------------------------------------------------------------------
+        # 4b. Data Collection for KL Loss (Post-GAT)
+        # We iterate the edges one last time (using the FINAL edge/node states) 
+        # just to gather the lists needed for loss calculation.
+        # ------------------------------------------------------------------
+        all_edge_scores_list = []
+        all_valid_masks_list = []
+        all_edge_pairs_list = []
+        edge_score_valid_flag = False
+
+        # Note: We can use current_proj_knowledge (the latest edge feats) or original. 
+        # Usually, edge structure doesn't change, just features. We iterate keys.    
+        for (idx_a, idx_b) in edge_keys:
             # Retrieve Ground Truth Edge Score
             edge_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
             if edge_score is None:
-                edge_score = torch.zeros(edge_feat.shape[0], device=edge_feat.device) # Assume batch size
+                edge_score = torch.zeros(embeddings[0].shape[0], device=embeddings[0].device)
             
-            # Ensure edge_score is (B,)
             if edge_score.dim() > 1:
                 edge_score = edge_score.view(-1)
             if edge_score.dim() == 0:
-                edge_score = edge_score.expand(edge_feat.shape[0])
+                edge_score = edge_score.expand(embeddings[0].shape[0])
 
-            # Get Group Data (Inputs for GNN)
-            feat_a = group_embeddings[idx_a]
-            mask_a = group_masks[idx_a]
-            feat_b = group_embeddings[idx_b]
-            mask_b = group_masks[idx_b]
-
-            # --- Validity Checks ---
-            # weight_for_b: Does this patient have Group A? (B, 1, 1)
             has_a = group_validity_masks[idx_a].float()
             has_b = group_validity_masks[idx_b].float()
-            
-            # Pair validity for this patient
-            pair_validity = has_a * has_b # (B,)
+            pair_validity = has_a * has_b
 
-            weight_for_b = has_a.view(-1, 1, 1) # * edge_score.view(-1, 1, 1) 不用edge score输入，好像会掉点
-            weight_for_a = has_b.view(-1, 1, 1) # * edge_score.view(-1, 1, 1)
-
-            # --- GNN Update Logic ---
-            updated_edge_feat = self.edge_updater(
-                edge_feat, edge_mask, 
-                feat_a, mask_a, 
-                feat_b, mask_b
-            )
-
-            update_for_b = self._inter_group_step(
-                target_node=feat_b, target_mask=mask_b,
-                source_node=feat_a, source_mask=mask_a,
-                edge_feat=updated_edge_feat, edge_mask=edge_mask
-            )
-            group_updates_buffer[idx_b].append((update_for_b, weight_for_b))
-
-            update_for_a = self._inter_group_step(
-                target_node=feat_a, target_mask=mask_a,
-                source_node=feat_b, source_mask=mask_b,
-                edge_feat=updated_edge_feat, edge_mask=edge_mask
-            )
-            group_updates_buffer[idx_a].append((update_for_a, weight_for_a))
-
-            # --- Collect Data for Loss (Deferred Sim Calculation) ---
             edge_score_valid_flag |= edge_score.sum().item() > 0
             all_edge_scores_list.append(edge_score)
             all_valid_masks_list.append(pair_validity)
             all_edge_pairs_list.append((idx_a, idx_b))
 
-        # 5. Apply Updates to Groups
-        final_group_embeddings = []
-        for i in range(num_groups):
-            original_group_feat = group_embeddings[i]
-            updates_and_weights = group_updates_buffer[i]
-
-            if len(updates_and_weights) > 0:
-                updates = [u for u, w in updates_and_weights]   
-                weights = [w for u, w in updates_and_weights]   
-
-                stacked_updates = torch.stack(updates, dim=0)
-                stacked_weights = torch.stack(weights, dim=0)
-                
-                sum_updates = torch.sum(stacked_updates * stacked_weights, dim=0)
-                sum_counts = torch.sum(stacked_weights, dim=0)
-                
-                aggregated_feat = torch.where(
-                    sum_counts > 0,
-                    sum_updates / sum_counts.clamp(min=1e-9),
-                    original_group_feat
-                )
-                final_group_embeddings.append(aggregated_feat)
-            else:
-                final_group_embeddings.append(original_group_feat)
-
         # 6. Compute Similarities on FINAL Embeddings 
         all_cos_sims_list = []
         
-        # Only compute if we have edges to compare
         if len(all_edge_pairs_list) > 0 and edge_score_valid_flag:
-            # 1. Pool Final Group Embeddings
-            # We use the original masks because padding doesn't change
             final_pooled_results = [masked_mean_pool(g, m) for g, m in zip(final_group_embeddings, group_masks)]
-            
-            # Extract just the embeddings (we already have validity from before)
             final_pooled_group_embeddings = [res[0] for res in final_pooled_results]
-            
-            # 2. Normalize
             final_pooled_group_embeddings = [F.normalize(g, p=2, dim=1) for g in final_pooled_group_embeddings]
             
-            # 3. Compute Similarity for each recorded edge pair
             for idx_a, idx_b in all_edge_pairs_list:
-                # Compute Cosine Similarity (B,)
                 sim = torch.sum(final_pooled_group_embeddings[idx_a] * final_pooled_group_embeddings[idx_b], dim=1)
-                
-                # Clamp similarity to [-1, 1] for numerical stability
                 sim = torch.clamp(sim, -1.0, 1.0)
-                
                 all_cos_sims_list.append(sim)
 
-        # Save Points of (groups cosine similarity, edge score)
+        # Save Points
         self.save_points(final_group_embeddings, group_masks, groups_relationships)
 
         # 7. Global Aggregation
@@ -396,7 +415,8 @@ class MedKGATFusion(nn.Module):
             global_padding_mask = global_padding_mask.clone()
             global_padding_mask[all_masked_rows, 0] = False
 
-        global_transformed = self.global_transformer(global_concat, src_key_padding_mask=global_padding_mask)
+        global_transformed = self.global_transformer(
+            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask)
         
         if all_masked_rows.any():
             global_transformed[all_masked_rows] = 0.0
@@ -405,48 +425,28 @@ class MedKGATFusion(nn.Module):
              
         fused_embedding = self.post_fusion_norm(fused_embedding)
 
-        # 8. Compute KL Divergence Loss (Patient-wise) 
+        # 8. Compute KL Divergence Loss
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
         
         if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
-            # Stack into (B, Num_Edges)
-            # Row `i` represents patient `i`, Columns represent all possible edges in the graph
-            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1) # (B, E)
-            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1)      # (B, E)
-            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1)  # (B, E) -> 1 if patient has both nodes, 0 else
+            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1)  # (Batch_Size, Num_Edges) stack all edge of one patient
+            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1)       # (Batch_Size, Num_Edges) stack all sim of one patient
+            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1)   # (Batch_Size, Num_Edges)
 
-            # Prepare for Softmax:
-            # We want to compare the distribution of Scores vs Distribution of Sims *per patient*.
-            # If a pair is invalid for a patient, its score/sim should not contribute to the distribution.
-            # We set them to -1e9 so Softmax makes them ~0.
-            
-            # 1. Target Distribution (Edge Scores)
-            # [FIX] Convert scores to float before softmax because weights might be Long integers
             scores_masked = all_scores_tensor.clone().float()
             scores_masked[all_masks_tensor == 0] = -1e9
-            target_probs = F.softmax(scores_masked, dim=1) # (B, E) Sums to 1 per patient
+            target_probs = F.softmax(scores_masked, dim=1)
 
-            # 2. Predicted Distribution (Cosine Sims)
-            # Map Cosine [-1, 1] to something softmax-friendly. 
-            # Often useful to use a temperature T to sharpen/smooth
-            temperature = 0.1 
+            temperature = 0.1
             sims_masked = all_sims_tensor.clone() / temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
-            # KLDivLoss expects: Input = Log_Softmax, Target = Probabilities
-            pred_log_probs = F.log_softmax(sims_masked, dim=1) # (B, E)
+            pred_log_probs = F.log_softmax(sims_masked, dim=1)
             
-            # 3. Compute KL Divergence
-            # reduction='none' so we can mask out patients who have NO valid edges
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none') # (B, E)
+            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
+            kl_loss_per_patient = kl_loss.sum(dim=1)
             
-            # Sum over edges dimension to get loss per patient
-            kl_loss_per_patient = kl_loss.sum(dim=1) # (B,)
-            
-            # 4. Filter valid patients
-            # If a patient has 0 or 1 valid edge, distribution matching might be trivial or undefined
-            # We only average loss over patients who have at least 2 valid edges to form a distribution
-            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float()
+            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float()   # (Batch_Size, )
             
             if valid_patients.sum() > 0:
                 fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
@@ -454,16 +454,14 @@ class MedKGATFusion(nn.Module):
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": fusion_loss
+                "total_loss": 2 * fusion_loss,
             }
         }
-    
 
     def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
         if self.args.points_save_path is None:
             return 
 
-        # --- 1. 预先计算 Mean Pooling ---
         group_mean_embeddings = []
         for i in range(len(final_group_embeddings)):
             res = masked_mean_pool(final_group_embeddings[i], final_group_masks[i])
@@ -473,52 +471,37 @@ class MedKGATFusion(nn.Module):
                 mean_emb = res
             group_mean_embeddings.append(mean_emb)
 
-        # --- 2. 准备变量 ---
         batch_size = final_group_embeddings[0].shape[0]
         device = final_group_embeddings[0].device
         
-        # [FIX] 这里必须是 (batch_size, 1)，之前的代码是 (batch_size,) 导致了维度冲突
         sum_edge_scores = torch.zeros((batch_size, 1), device=device)
         sum_cos_sims = torch.zeros((batch_size, 1), device=device)
         
-        # 缓存 Raw 数据
         raw_data_cache = {} 
         valid_pairs = []
 
-        # --- 3. 第一轮循环：计算 Raw 值并累加 Sum ---
         for (idx_a, idx_b), _ in groups_relationships.items():
-            # A. 获取 Edge Score
             raw_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
             
             if raw_score is not None:
-                # [FIX] 确保 raw_score 也是 (B, 1) 形状，防止隐式广播导致 [8] + [8, 1] = [8, 8] 的问题
                 if raw_score.dim() == 1:
                     raw_score = raw_score.view(-1, 1)
                 
-                # B. 计算 Cosine Similarity
-                embed_a = group_mean_embeddings[idx_a] # (B, D)
-                embed_b = group_mean_embeddings[idx_b] # (B, D)
+                embed_a = group_mean_embeddings[idx_a]
+                embed_b = group_mean_embeddings[idx_b]
                 
-                # raw_cos shape: (B,) -> 调整为 (B, 1)
                 raw_cos = torch.cosine_similarity(embed_a, embed_b, dim=1).view(-1, 1)
-                
-                # Cosine 归一化前处理
                 raw_cos_positive = torch.clamp(raw_cos, min=1e-9) 
 
-                # C. 累加到总和向量中
-                # 现在这里是 [8, 1] += [8, 1]，完全合法
                 sum_edge_scores += raw_score
                 sum_cos_sims += raw_cos_positive
                 
-                # D. 存入缓存
                 raw_data_cache[(idx_a, idx_b)] = (raw_cos_positive, raw_score)
                 valid_pairs.append((idx_a, idx_b))
 
-        # --- 4. 防止除零异常 ---
         sum_edge_scores = torch.clamp(sum_edge_scores, min=1e-9)
         sum_cos_sims = torch.clamp(sum_cos_sims, min=1e-9)
 
-        # --- 5. 第二轮循环：归一化并收集数据 ---
         if len(valid_pairs) > 0:
             save_points_path = self.args.points_save_path
             os.makedirs(os.path.dirname(save_points_path), exist_ok=True)
@@ -528,19 +511,15 @@ class MedKGATFusion(nn.Module):
             for (idx_a, idx_b) in valid_pairs:
                 raw_cos, raw_score = raw_data_cache[(idx_a, idx_b)]
                 
-                # --- [核心逻辑] 双向归一化 ---
-                # (B, 1) / (B, 1) -> (B, 1)
                 norm_cos = raw_cos / sum_cos_sims
                 norm_score = raw_score / sum_edge_scores
                 
-                # 转为 list 准备保存
                 norm_cos_list = norm_cos.view(-1).detach().cpu().tolist()
                 norm_score_list = norm_score.view(-1).detach().cpu().tolist()
                 
                 for pat_idx in range(len(norm_cos_list)):
                     current_batch_points.append([norm_cos_list[pat_idx], norm_score_list[pat_idx]])
 
-            # --- 6. 高效写入 (Append Mode) ---
             if current_batch_points:
                 try:
                     with open(save_points_path, 'a') as f:
@@ -548,5 +527,3 @@ class MedKGATFusion(nn.Module):
                             f.write(json.dumps(point) + "\n")
                 except Exception as e:
                     print(f"Warning: Failed to save points data: {e}")
-
-        # =========================================================================

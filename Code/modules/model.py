@@ -25,7 +25,8 @@ from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
 from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
-from modules.fusion_modules.MedKGAT_fusion_without_group import MedKGATFusion_without_Group
+from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
+from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
 
 # --- Common Modules ---
 from modules.base_modules.align_utils import AlignmentModule
@@ -39,18 +40,16 @@ def GetModel(args, dataset):
         return ModelInterfaceWithDeepSupervisionWeightedLoss(
             args, 
             dataset,
-            decode_task=args.decode_task,
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
 
 
     # with_multimodal_align
-    if args.fusion_type == 'medkgat_fusion' or args.fusion_type == 'medkgat_fusion_without_group':
+    if 'medkgat_fusion' in args.fusion_type:
         return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
-            decode_task=args.decode_task,
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
@@ -60,7 +59,6 @@ def GetModel(args, dataset):
         return ModelInterface(
             args, 
             dataset,
-            decode_task=args.decode_task,
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
@@ -70,7 +68,7 @@ def GetModel(args, dataset):
 
 class ModelInterface(nn.Module):
 
-    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+    def __init__(self, args, dataset: Dataset, model_task: str = "multi_oscc", fusion_type: str = 'moe'):
         super(ModelInterface, self).__init__()
 
         assert model_task in [  # Tasks that the model can handle
@@ -90,18 +88,19 @@ class ModelInterface(nn.Module):
         #   1. self.task_head.embed_dim, 
         #   2. self.task_head.max_modalities_num
         if model_task == "hancock":
-            self.task_head = HANCOCKSurvivalPred(args, decode_task, dataset=dataset)
+            self.task_head = HANCOCKSurvivalPred(args, dataset=dataset)
         elif model_task == "oscc_inhouse":
-            self.task_head = OSCCSurvivalPred(args, decode_task, dataset=dataset)
+            self.task_head = OSCCSurvivalPred(args, dataset=dataset)
         elif model_task == "tcga_luad":
-            self.task_head = TCGA_LUAD_SurvivalPred(args, decode_task, dataset=dataset)
+            self.task_head = TCGA_LUAD_SurvivalPred(args, dataset=dataset)
         elif model_task == "tcga_lusc":
-            self.task_head = TCGA_LUSC_SurvivalPred(args, decode_task, dataset=dataset)
+            self.task_head = TCGA_LUSC_SurvivalPred(args, dataset=dataset)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 
         self.embed_dim = self.task_head.embed_dim
         self.max_modalities = self.task_head.max_modalities_num
+        self.max_groups = self.task_head.max_groups_num
 
         
         # --- 2. Instantiate fusion sub-modules ---
@@ -118,9 +117,11 @@ class ModelInterface(nn.Module):
         elif self.fusion_type == "surv_path":
             self.fusion_module = SurvPath(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
-            self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_without_group':
-            self.fusion_module = MedKGATFusion_without_Group(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+            self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        elif self.fusion_type == 'medkgat_fusion_without_intra':
+            self.fusion_module = MedKGATFusion_without_intra(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == 'medkgat_fusion_without_inter':
+            self.fusion_module = MedKGATFusion_without_inter(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
@@ -177,8 +178,8 @@ class ModelInterface(nn.Module):
 
 
 class ModelInterfaceWithDeepSupervision(ModelInterface):
-    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
-        super(ModelInterfaceWithDeepSupervision, self).__init__(args, dataset, decode_task, model_task, fusion_type)
+    def __init__(self, args, dataset: Dataset, model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithDeepSupervision, self).__init__(args, dataset, model_task, fusion_type)
 
     def forward(self, batch_size, data_dicts: List[Dict]):
         device = next(self.parameters()).device
@@ -229,8 +230,8 @@ class ModelInterfaceWithDeepSupervision(ModelInterface):
 
 
 class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
-    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
-        super(ModelInterfaceWithDeepSupervisionWeightedLoss, self).__init__(args, dataset, decode_task, model_task, fusion_type)
+    def __init__(self, args, dataset: Dataset, model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithDeepSupervisionWeightedLoss, self).__init__(args, dataset, model_task, fusion_type)
 
     def forward(self, batch_size, data_dicts: List[Dict]):
         device = next(self.parameters()).device
@@ -284,8 +285,8 @@ class ModelInterfaceWithDeepSupervisionWeightedLoss(ModelInterface):
 
 
 class ModelInterfaceWithMedicalKnowledge(ModelInterface):
-    def __init__(self, args, dataset: Dataset, decode_task: str = "surv_pred", model_task: str = "multi_oscc", fusion_type: str = 'moe'):
-        super(ModelInterfaceWithMedicalKnowledge, self).__init__(args, dataset, decode_task, model_task, fusion_type)
+    def __init__(self, args, dataset: Dataset, model_task: str = "multi_oscc", fusion_type: str = 'moe'):
+        super(ModelInterfaceWithMedicalKnowledge, self).__init__(args, dataset, model_task, fusion_type)
     
     def forward(self, batch_size, data_dicts: List[Dict]):
 

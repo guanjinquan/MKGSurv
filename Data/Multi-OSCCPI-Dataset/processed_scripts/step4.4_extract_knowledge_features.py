@@ -197,7 +197,7 @@ def process_analysis_file(json_path: str, output_path: str):
 
 if __name__ == "__main__":
     # File Paths
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_deepseek.json"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_qwen.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge.pkl"
     
     process_analysis_file(INPUT_FILE, OUTPUT_FILE)

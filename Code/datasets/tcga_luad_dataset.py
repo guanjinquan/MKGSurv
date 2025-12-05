@@ -15,7 +15,7 @@ import random
 import joblib
 from datasets.dataset_base import MultiModalDataset
 import copy 
-
+import hashlib
 
 
 class TCGA_LUAD_Dataset(MultiModalDataset):
@@ -285,16 +285,43 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         }
 
         if self.args.use_medical_knowledge:
-            output_dict["medical-knowledge"] = self.knowledge_dict.get(patient_id, None)
-        else:
             kdata = self.knowledge_dict.get(patient_id, None)
             output_dict["medical-knowledge"] = {}
             for k, v in kdata.items():
+                knowledge = random.choice(v['knowledge_list']) if self.mode == 'train' else v['knowledge_list'][0]
                 output_dict["medical-knowledge"][k] = {
-                    "score": v['score'] if self.mode != 'train' else 0.0,
-                    "knowledge": torch.randn_like(v['knowledge'])
+                    "score": v['score'],
+                    "knowledge": knowledge
                 }
+        else:
+            kdata = self.knowledge_dict.get(patient_id, None)
+            output_dict["medical-knowledge"] = {}
 
+            # 1. Generate seed (same as above)
+            if isinstance(patient_id, int):
+                pid_seed = patient_id
+            else:
+                pid_hash = hashlib.sha256(str(patient_id).encode('utf-8')).hexdigest()
+                pid_seed = int(pid_hash, 16) % (2**32)
+
+            # 2. Create local generators
+            rng = random.Random(pid_seed) # For python floats
+            g = torch.Generator()         # For torch tensors
+            g.manual_seed(pid_seed)
+
+            for k, v in kdata.items():
+                # Determine score: if train, generate a random score seeded by PID
+                # otherwise use the existing score.
+                if self.mode != 'train':
+                    score_val = v['score']
+                else:
+                    score_val = 0.0  # Deterministic random value for this PID
+
+                output_dict["medical-knowledge"][k] = {
+                    "score": score_val,
+                    # Use the generator 'g' for torch operations
+                    "knowledge": torch.randn((1, 768), generator=g) 
+                }
 
         # --- 2. Load Modalities ---
         modalities_found = []
@@ -396,7 +423,10 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 else:
                     ori_data[mod] = lam * feat_a + (1 - lam) * feat_b
 
-        # 3. 标签混合 (H-Mixup Logic)
+        # 3. Medical-Knowledge 混合
+        # if self.args.
+
+        # 4. 标签混合 (H-Mixup Logic)
         t1 = float(ori_data['labels']['label_time'])
         e1 = int(ori_data['labels']['label_event'])
         t2 = float(other_data['labels']['label_time'])
@@ -416,7 +446,6 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         # Weight = P*(y) / P_hat(y)
         # 如果是 Event (1): Weight = pi_star / pi_hat
         # 如果是 Censor(0): Weight = (1 - pi_star) / (1 - pi_hat)
-        
         if label_event == 1:
             weight = self.pi_star / self.pi_hat
         else:
@@ -471,4 +500,9 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
     def get_active_modalities(self):
         return self.modalities
+
+    def get_active_groups(self):
+        group_names = [mod.split('-')[1] for mod in self.modalities]
+        return list(set(group_names))
+
     

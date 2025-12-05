@@ -59,6 +59,8 @@ def validate_and_normalize_response(parsed_json):
     normalized_list = []
     seen_pairs = set()
 
+    # parse json pairs
+    # check relationships and check survival analysis
     for entry in parsed_json:
         if "modalPairs" not in entry or not isinstance(entry["modalPairs"], list):
             raise ValueError("Missing or invalid 'modalPairs' field")
@@ -77,6 +79,10 @@ def validate_and_normalize_response(parsed_json):
         
         seen_pairs.add(sorted_pair)
         entry["modalPairs"] = [m1, m2]
+
+        if "relationship" not in entry or "survival" not in entry:
+            raise ValueError("Missing 'relationship' or 'survival' field")
+
         normalized_list.append(entry)
 
     # Final Count Check: C(4, 2) = 6

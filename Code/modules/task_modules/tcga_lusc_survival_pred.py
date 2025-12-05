@@ -20,11 +20,11 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
     METRICS_FN = None
     embed_dim = None
     max_modalities_num = None
+    max_groups_num = None
 
     def __init__(
         self,
         args,
-        decode_task: str,
         dataset: torch.utils.data.Dataset
     ):
         super().__init__()
@@ -35,6 +35,7 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         # --- Modality Setup ---
         self.active_modalities = dataset.get_active_modalities()
         self.max_modalities_num = len(self.active_modalities)
+        self.max_groups_num = len(dataset.get_active_groups())
         print(f"Model initialized for modalities: {self.active_modalities}")
 
         # ======================================================================
@@ -47,26 +48,23 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
             image_input_dim = 1024 * 2 + 1
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.embed_dim),
-                
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.image_proj)
 
         # ----- Genomics Branch (genomics-genomics) -----
         if 'genomics-genomics' in self.active_modalities:
             print("Initializing Genomics Encoder")
+            genomic_input_dim = 512
             self.genomics_encoder = nn.Sequential(
-                nn.Linear(512, self.embed_dim),
+                nn.Linear(genomic_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-                
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.genomics_encoder)
 
@@ -74,13 +72,13 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         # Assuming inputs are pre-extracted BERT features (768 dim)
         if any('text' in modal for modal in self.active_modalities):
             print("Initializing Text Encoder (Linear Projector)")
+            text_input_dim = 768
             self.text_proj = nn.Sequential(
-                nn.Linear(768, self.embed_dim),
+                nn.Linear(text_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.text_proj)
 
@@ -95,12 +93,10 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
                     
                     self.tabular_encoders[mod_name] = nn.Sequential(
                         nn.Linear(in_dim, self.embed_dim),
+                        nn.GELU(),
                         nn.LayerNorm(self.embed_dim),
-
-                        nn.Linear(self.embed_dim, self.embed_dim),
-                        nn.ReLU(),
-                        nn.LayerNorm(self.embed_dim),
-                        nn.Dropout(self.dropout_rate)
+                        nn.Dropout(self.dropout_rate),
+                        nn.Linear(self.embed_dim, self.embed_dim) 
                     )
                     init_kaiming_norm(self.tabular_encoders[mod_name])
                 except (ValueError, IndexError):
