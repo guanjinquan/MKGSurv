@@ -27,9 +27,6 @@ from modules.fusion_modules.surv_path import SurvPath
 from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
 from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
 from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
-from modules.fusion_modules.MedKGAT_fusion_healnet import MedKGATFusion_healnet
-from modules.fusion_modules.MedKGAT_fusion_healnet_group import HealNet_Group
-from modules.fusion_modules.MedKGAT_fusion_healnet_group_v4 import HealNet_Group_v4
 
 # --- Common Modules ---
 from modules.base_modules.align_utils import AlignmentModule
@@ -125,12 +122,6 @@ class ModelInterface(nn.Module):
             self.fusion_module = MedKGATFusion_without_intra(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion_without_inter':
             self.fusion_module = MedKGATFusion_without_inter(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_healnet':
-            self.fusion_module = MedKGATFusion_healnet(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_healnet_group':
-            self.fusion_module = HealNet_Group(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_healnet_group_v4':
-            self.fusion_module = HealNet_Group_v4(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 

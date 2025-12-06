@@ -18,17 +18,17 @@ import copy
 import hashlib
 
 
-class TCGA_LUAD_Dataset(MultiModalDataset):
+class TCGA_LUSC_Dataset(MultiModalDataset):
 
     VALID_MODALITIES = [
         "tabular-clinical-9", 
         "genomics-genomics",
         "image-pathology", 
-
+  
         "text-pathology", 
         "text-treatment",
-        "tabular-treatment-9", 
-        "tabular-pathology-21", 
+        "tabular-treatment-7", 
+        "tabular-pathology-22", 
     ]
 
     def _read_pickle(self, path: str) -> Any:
@@ -48,7 +48,6 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             print(f"Error loading data file {path}: {e}")
             # 不要重新抛出异常，返回None让调用者处理
             return None
-
     def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
         """
         Args:
@@ -70,7 +69,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(current_file_dir, "../../")) 
         
-        self.dataset_dir = os.path.join(project_root, "Data", "TCGA-LUAD")
+        self.dataset_dir = os.path.join(project_root, "Data", "TCGA-LUSC")
         self.processed_dir = os.path.join(self.dataset_dir, "processed")
         
         print(f"Path Debugging:")
@@ -89,7 +88,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         print(f"Active modalities: {self.modalities}")
 
         # --- 2. Load Patient Split ---
-        split_file = os.path.join(self.processed_dir, "luad_patients_5fold.json") 
+        split_file = os.path.join(self.processed_dir, "lusc_patients_5fold.json") 
         if not os.path.exists(split_file):
             raise FileNotFoundError(f"Split file not found: {split_file}")
 
@@ -202,7 +201,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             self.clinical_df = pd.read_csv(os.path.join(self.processed_dir, "clinical_data_aggregated.csv"), dtype=str)
             self.treatment_df = pd.read_csv(os.path.join(self.processed_dir, "treatment_data_aggregated.csv"), dtype=str)
             self.pathology_df = pd.read_csv(os.path.join(self.processed_dir, "pathology_aggregated.csv"), dtype=str)
-            self.labels_df = pd.read_csv(os.path.join(self.processed_dir, "luad_patient_labels.csv"), dtype=str)
+            self.labels_df = pd.read_csv(os.path.join(self.processed_dir, "lusc_patient_labels.csv"), dtype=str)
         except Exception as e:
             print(f"Error loading CSV files: {e}")
             raise
@@ -231,14 +230,14 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
         # Process Treatment Tabular
         self.treatment_tabular_dict = {}
-        if "tabular-treatment-9" in self.modalities:
+        if "tabular-treatment-7" in self.modalities:
             cols = [c for c in self.treatment_df.columns if c not in exclude_cols]
             for _, row in self.treatment_df.iterrows():
                 pid = row['cases.submitter_id']
                 self.treatment_tabular_dict[pid] = _process_row(row, cols)
 
         self.pathology_tabular_dict = {}
-        if "tabular-pathology-21" in self.modalities:
+        if "tabular-pathology-22" in self.modalities:
             cols = [c for c in self.pathology_df.columns if c not in exclude_cols]
             for _, row in self.pathology_df.iterrows():
                 pid = row['cases.submitter_id']
@@ -315,7 +314,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 if self.mode != 'train':
                     score_val = v['score']
                 else:
-                    score_val = rng.random() # Deterministic random value for this PID
+                    score_val = 0.0 # Deterministic random value for this PID
 
                 output_dict["medical-knowledge"][k] = {
                     "score": score_val,
@@ -323,6 +322,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                     "knowledge": torch.randn((1, 768), generator=g) 
                 }
 
+                
         # --- 2. Load Modalities ---
         modalities_found = []
 
@@ -335,12 +335,12 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
 
-            elif mod == "tabular-treatment-9":
+            elif mod == "tabular-treatment-7":
                 feature_data = self.treatment_tabular_dict.get(patient_id)
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
 
-            elif mod == "tabular-pathology-21":
+            elif mod == "tabular-pathology-22":
                 feature_data = self.pathology_tabular_dict.get(patient_id)
                 if feature_data is not None:
                     feature_data = torch.tensor(feature_data, dtype=torch.float32)
@@ -375,7 +375,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                         modalities_found.append(mod)
                 else:
                     modalities_found.append(mod)
-
+        
         # --- 3. Integrity Check ---
         if len(modalities_found) == 0:
             # print(f"Warning: No valid modalities found for {patient_id}, skipping...")
@@ -423,10 +423,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 else:
                     ori_data[mod] = lam * feat_a + (1 - lam) * feat_b
 
-        # 3. Medical-Knowledge 混合
-        # if self.args.
-
-        # 4. 标签混合 (H-Mixup Logic)
+        # 3. 标签混合 (H-Mixup Logic)
         t1 = float(ori_data['labels']['label_time'])
         e1 = int(ori_data['labels']['label_event'])
         t2 = float(other_data['labels']['label_time'])
@@ -446,6 +443,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
         # Weight = P*(y) / P_hat(y)
         # 如果是 Event (1): Weight = pi_star / pi_hat
         # 如果是 Censor(0): Weight = (1 - pi_star) / (1 - pi_hat)
+        
         if label_event == 1:
             weight = self.pi_star / self.pi_hat
         else:
@@ -500,7 +498,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
     def get_active_modalities(self):
         return self.modalities
-
+    
     def get_active_groups(self):
         group_names = [mod.split('-')[1] for mod in self.modalities]
         return list(set(group_names))

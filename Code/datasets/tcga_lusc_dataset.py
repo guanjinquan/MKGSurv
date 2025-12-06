@@ -314,7 +314,7 @@ class TCGA_LUSC_Dataset(MultiModalDataset):
                 if self.mode != 'train':
                     score_val = v['score']
                 else:
-                    score_val = 0.0 # Deterministic random value for this PID
+                    score_val = rng.random() # Deterministic random value for this PID
 
                 output_dict["medical-knowledge"][k] = {
                     "score": score_val,

@@ -1,3 +1,33 @@
+"""
+LUAD
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6219 ± 0.0443
+ - List = [0.6075745366639806, 0.5451688923802043, 0.6312056737588653, 0.6753760886777513, 0.6500765696784073]
+C-Index-IPCW_Validation Set: 0.6104 ± 0.0600
+ - List = [0.551093067254934, 0.5406578386370202, 0.6044094505874809, 0.6931671077518775, 0.6624660273959739]
+Test Summary:
+C-Index_Test Set: 0.6191 ± 0.0448
+ - List = [0.6735849056603773, 0.6455431754874652, 0.6442048517520216, 0.5736111111111111, 0.5584817970565453]
+C-Index-IPCW_Test Set: 0.5882 ± 0.0518
+ - List = [0.6031481093353119, 0.6740636892439275, 0.5949843203987918, 0.533028205227986, 0.5358337744949624]
+
+LUSC
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6307 ± 0.0230
+ - List = [0.6411007025761124, 0.6561264822134387, 0.6254089422028354, 0.5888827738029719, 0.6418532014575742]
+C-Index-IPCW_Validation Set: 0.6113 ± 0.0280
+ - List = [0.6461025659300393, 0.6267703013234573, 0.564089445623352, 0.5989241399446866, 0.6207045955523888]
+Test Summary:
+C-Index_Test Set: 0.6149 ± 0.0385
+ - List = [0.553072625698324, 0.6227224008574491, 0.5939887926642894, 0.6401098901098901, 0.664637857577602]
+C-Index-IPCW_Test Set: 0.6352 ± 0.0209
+ - List = [0.5964173459148006, 0.6316035061228511, 0.6447427924997314, 0.6468232438209114, 0.6562222555175241]
+Training run tcga_lusc_run001 finished.
+
+"""
+
 import os
 import sys
 import torch
@@ -46,26 +76,23 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             image_input_dim = 1024 * 2 + 1
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.embed_dim),
-                
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.image_proj)
 
         # ----- Genomics Branch (genomics-genomics) -----
         if 'genomics-genomics' in self.active_modalities:
             print("Initializing Genomics Encoder")
+            genomic_input_dim = 512
             self.genomics_encoder = nn.Sequential(
-                nn.Linear(512, self.embed_dim),
+                nn.Linear(genomic_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-                
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.genomics_encoder)
 
@@ -73,13 +100,13 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         # Assuming inputs are pre-extracted BERT features (768 dim)
         if any('text' in modal for modal in self.active_modalities):
             print("Initializing Text Encoder (Linear Projector)")
+            text_input_dim = 768
             self.text_proj = nn.Sequential(
-                nn.Linear(768, self.embed_dim),
+                nn.Linear(text_input_dim, self.embed_dim),
+                nn.GELU(),
                 nn.LayerNorm(self.embed_dim),
-
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate),
+                nn.Linear(self.embed_dim, self.embed_dim) 
             )
             init_kaiming_norm(self.text_proj)
 
@@ -91,15 +118,12 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                     # Parse dimension from name "tabular-clinical-9" -> 9
                     in_dim = int(mod_name.split('-')[-1])
                     print(f"Initializing Tabular Encoder for '{mod_name}' (In: {in_dim}, Out: {self.embed_dim})")
-                    
                     self.tabular_encoders[mod_name] = nn.Sequential(
                         nn.Linear(in_dim, self.embed_dim),
+                        nn.GELU(),
                         nn.LayerNorm(self.embed_dim),
-
-                        nn.Linear(self.embed_dim, self.embed_dim),
-                        nn.ReLU(),
-                        nn.LayerNorm(self.embed_dim),
-                        nn.Dropout(self.dropout_rate)
+                        nn.Dropout(self.dropout_rate),
+                        nn.Linear(self.embed_dim, self.embed_dim) 
                     )
                     init_kaiming_norm(self.tabular_encoders[mod_name])
                 except (ValueError, IndexError):

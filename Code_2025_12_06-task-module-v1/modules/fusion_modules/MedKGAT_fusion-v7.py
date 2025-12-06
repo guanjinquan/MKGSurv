@@ -1,3 +1,33 @@
+"""
+LUAD:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6197 ± 0.0407
+ - List = [0.5898468976631749, 0.5569520816967792, 0.6304176516942475, 0.66270783847981, 0.6584992343032159]
+C-Index-IPCW_Validation Set: 0.5955 ± 0.0691
+ - List = [0.5322252869279261, 0.5087898663111493, 0.5996876835537229, 0.6389012293398817, 0.6976634427969028]
+Test Summary:
+C-Index_Test Set: 0.6211 ± 0.0508
+ - List = [0.660377358490566, 0.685933147632312, 0.621967654986523, 0.5972222222222222, 0.5398915569326104]
+C-Index-IPCW_Test Set: 0.6035 ± 0.0567
+ - List = [0.6123382359444144, 0.697998264109131, 0.6159077576853468, 0.535587093514896, 0.5556119797657599]
+Training run tcga_luad_run001 finished.
+
+
+LUSC:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6406 ± 0.0242
+ - List = [0.6633489461358314, 0.6640316205533597, 0.6363140676117776, 0.5976884975233901, 0.6418532014575742]
+C-Index-IPCW_Validation Set: 0.6159 ± 0.0482
+ - List = [0.6699032717470398, 0.6673456595293706, 0.6163888483822326, 0.5784379696957523, 0.5475636786609986]
+Test Summary:
+C-Index_Test Set: 0.6194 ± 0.0455
+ - List = [0.5452513966480447, 0.597534833869239, 0.6459500764136525, 0.6291208791208791, 0.6792452830188679]
+C-Index-IPCW_Test Set: 0.6325 ± 0.0413
+ - List = [0.5761448894658118, 0.5894558004374028, 0.6740963611056202, 0.6677889137011686, 0.655020431176266]
+Training run tcga_lusc_run001 finished.
+"""
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -24,92 +54,62 @@ class FeedForward(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class EdgeBottleneckFusion(nn.Module):
+class SimpleGatedGCNLayer(nn.Module):
     """
-    [防过拟合终极方案] 边缘瓶颈融合层 (Edge-Centric Bottleneck Fusion) - Strict Pre-Norm
+    [极简主义设计] 门控图卷积层 (Vector-Level Gated GCN)
     
-    结构:
-    1. Read: Edge_Updated = Edge + Attn(Norm(Edge), Norm(Source), Norm(Source))
-    2. Write: Target_Updated = Target + Attn(Norm(Target), Norm(Edge_Updated), Norm(Edge_Updated))
-    3. FFN: Output = Target_Updated + FFN(Norm(Target_Updated))
+    跳出 Transformer 的 Attention 机制。
+    直接在 Vector 层面进行基于 Edge 的特征门控。
     
-    优势: 
-    Pre-Norm 结构保证了在深层网络中的梯度流动，防止梯度消失或爆炸。
-    对 Source 进行 Norm 保证了 Attention Key/Value 的分布稳定性。
+    公式:
+    Update = Linear(Source) * Sigmoid(Linear(Edge))
+    Target = Target + Update
+    
+    参数量极少，归纳偏置极强（Edge 显式控制信息流），非常适合防止过拟合。
     """
-    def __init__(self, embed_dim, num_heads=4, dropout=0.1):
+    def __init__(self, embed_dim, dropout=0.1):
         super().__init__()
+        # Source 变换
+        self.src_proj = nn.Linear(embed_dim, embed_dim)
         
-        # 1. Read Phase: Edge (Query) 查 Source (Key/Value)
-        self.read_query_norm = nn.LayerNorm(embed_dim)
-        self.read_source_norm = nn.LayerNorm(embed_dim) # 新增: 对 Source 进行 Norm
-        self.read_attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        
-        # 2. Write Phase: Target (Query) 查 Edge (Key/Value)
-        self.write_query_norm = nn.LayerNorm(embed_dim)
-        self.write_edge_norm = nn.LayerNorm(embed_dim) # 新增: 对 Updated Edge 进行 Norm
-        self.write_attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        # Edge 门控生成器
+        self.edge_gate = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.Sigmoid() 
+        )
         
         self.dropout = nn.Dropout(dropout)
-        
-        # Edge 映射
-        self.edge_proj = nn.Linear(embed_dim, embed_dim)
-        
-        # 3. FFN Phase
-        self.ffn_norm = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(embed_dim)
         self.ffn = FeedForward(embed_dim, dropout=dropout)
+        self.norm_ffn = nn.LayerNorm(embed_dim)
 
-    def forward(self, target, source, edge_feat, source_mask=None):
+    def forward(self, target, source, edge_feat):
         """
-        target: (B, Lt, D) - Residual Stream
-        source: (B, Ls, D) - Residual Stream
-        edge_feat: (B, D)
+        输入都是已经 Pooling 过的向量: (B, D)
         """
-        # --- Step 1: Prepare Edge Query ---
-        edge_q = self.edge_proj(edge_feat).unsqueeze(1) # (B, 1, D)
+        # 1. Message Passing
+        # 源节点特征变换
+        src_feat = self.src_proj(source) # (B, D)
         
-        # --- Step 2: READ Phase (Filtering) ---
-        # Q=Norm(Edge), K=Norm(Source), V=Norm(Source)
+        # Edge 生成门控系数 (0~1)
+        # 含义：Edge 认为 Source 的哪些特征对 Target 是有用的？
+        gate = self.edge_gate(edge_feat) # (B, D)
         
-        # Mask handling
-        key_padding_mask = None
-        if source_mask is not None:
-            key_padding_mask = (source_mask == 0)
-            if key_padding_mask.all(dim=1).any():
-                key_padding_mask = key_padding_mask.clone()
-                key_padding_mask[key_padding_mask.all(dim=1), 0] = False
+        # 加权消息
+        message = src_feat * gate
         
-        # Strict Pre-Norm inputs
-        edge_q_norm = self.read_query_norm(edge_q)
-        source_norm = self.read_source_norm(source) # Normalize Key/Value
+        # 2. Residual Update
+        # 类似于 ResNet Block
+        out = self.norm(target + self.dropout(message))
         
-        edge_context, _ = self.read_attn(edge_q_norm, source_norm, source_norm, key_padding_mask=key_padding_mask)
+        # 3. FFN (Point-wise MLP)
+        out = self.norm_ffn(out + self.ffn(out))
         
-        # Residual Update for Edge
-        updated_edge = edge_q + self.dropout(edge_context)
-        
-        # --- Step 3: WRITE Phase (Broadcasting) ---
-        # Q=Norm(Target), K=Norm(Updated_Edge), V=Norm(Updated_Edge)
-        
-        target_norm = self.write_query_norm(target)
-        edge_kv_norm = self.write_edge_norm(updated_edge) # Normalize Key/Value
-        
-        target_context, _ = self.write_attn(target_norm, edge_kv_norm, edge_kv_norm)
-        
-        # Residual Update for Target
-        x = target + self.dropout(target_context)
-        
-        # --- Step 4: FFN Phase ---
-        # Output = x + FFN(Norm(x))
-        x_norm = self.ffn_norm(x)
-        x = x + self.ffn(x_norm)
-        
-        return x
+        return out
 
 class SelfAttnEncoder(nn.Module):
     """
-    标准的 Self-Attention 用于组内特征提取
-    [修改]: 移除最后的 self.norm，使其成为纯粹的 Pre-Norm 残差块。
+    标准的 Self-Attention 用于组内特征提取 (保持不变，处理序列信息)
     """
     def __init__(self, embed_dim, num_heads=4, dropout=0.1):
         super().__init__()
@@ -120,9 +120,9 @@ class SelfAttnEncoder(nn.Module):
             dropout=dropout, 
             activation='gelu',
             batch_first=True,
-            norm_first=True # Pre-Norm Setting: x + Attn(Norm(x))
+            norm_first=True 
         )
-        # 移除了 self.norm，因为在 Pre-Norm 架构中，Layer 的输出应该是未 Norm 的残差流
+        self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x, mask=None):
         src_key_padding_mask = (mask == 0) if mask is not None else None
@@ -138,7 +138,8 @@ class SelfAttnEncoder(nn.Module):
             all_masked = src_key_padding_mask.all(dim=1)
             out[all_masked] = 0.0
             
-        return out # 返回 Raw Residual Stream
+        return self.norm(out)
+
 
 class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
@@ -147,11 +148,12 @@ class MedKGATFusion(nn.Module):
              ff_dropout_rate: float = 0.1, 
              attn_dropout_rate: float = 0.1, 
              num_intra_layers: int = 1, 
-             num_inter_layers: int = 2): 
+             num_inter_layers: int = 1): 
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
+        # 极简模式下，Dropout 可以稍微低一点，或者保持标准
         self.drop_edge_ratio = 0.1 
 
         # 1. Knowledge Projection
@@ -159,31 +161,32 @@ class MedKGATFusion(nn.Module):
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(self.embed_dim, self.embed_dim)
         )
 
         # 2. Intra-Group Refinement (Seq -> Seq)
+        # 组内还是需要处理序列信息的，这里保留 Transformer 是合理的
         self.intra_group_layers = nn.ModuleList([
             SelfAttnEncoder(embed_dim, num_heads=4, dropout=attn_dropout_rate)
             for _ in range(num_intra_layers)
         ])
 
-        # 3. Inter-Group Interaction (Seq -> Edge -> Seq)
-        # 使用 Strict Pre-Norm 的 EdgeBottleneckFusion
+        # 3. Inter-Group Interaction (Vector -> Vector)
+        # [核心改变] 放弃 Transformer，使用 Gated GCN
         self.num_inter_layers = num_inter_layers
         self.inter_layers = nn.ModuleList([
-            EdgeBottleneckFusion(embed_dim, num_heads=4, dropout=attn_dropout_rate)
+            SimpleGatedGCNLayer(embed_dim, dropout=attn_dropout_rate)
             for _ in range(num_inter_layers)
         ])
         
         # 4. Global Fusion
-        # [关键]: Pre-Norm 架构需要在最后的 Pooling/Prediction 之前加一个 Final Norm
-        self.final_norm = nn.LayerNorm(embed_dim) 
-        
+        # 最后简单的聚合
         self.fusion_mlp = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
             nn.GELU(),
-            nn.Linear(embed_dim, embed_dim)
+            nn.Linear(embed_dim, embed_dim),
+            nn.LayerNorm(embed_dim)
         )
         
         # Learnable Temp
@@ -229,99 +232,92 @@ class MedKGATFusion(nn.Module):
         # 1. Project Edge Knowledge
         projected_edges = {k: self.know_proj(v) for k, v in fusion_knowledge.items()}
 
-        # 2. Intra-Group Processing
+        # 2. Intra-Group Processing (处理序列)
         processed_embeddings = self._intra_group_process(embeddings, masks, embeddings_groups)
 
-        # 3. Construct Group Sequences
-        group_seqs = [] 
-        group_masks = []
+        # 3. [关键步骤] Early Pooling (序列 -> 向量)
+        # 在进入复杂的组间交互之前，先把每个组变成一个向量。
+        # 这极大地减少了噪声，强制模型关注全局语义。
+        group_vecs = [] 
+        group_validity_list = []
         
         for group_indices in embeddings_groups:
             curr_feats = [processed_embeddings[i] for i in group_indices]
             curr_masks = [masks[i] for i in group_indices]
             
-            g_feat = torch.cat(curr_feats, dim=1) # (B, L_total, D)
+            g_feat = torch.cat(curr_feats, dim=1)
             g_mask = torch.cat(curr_masks, dim=1)
             
-            group_seqs.append(g_feat)
-            group_masks.append(g_mask)
+            # Pool immediately!
+            pooled, valid = masked_mean_pool(g_feat, g_mask)
+            group_vecs.append(pooled) # (B, D)
+            group_validity_list.append(valid) # (B,)
 
-        # 4. Inter-Group Interaction (Edge Bottleneck)
-        current_group_seqs = group_seqs
+        # 4. Inter-Group Interaction (Gated GCN)
+        # 现在的操作对象是向量列表，而非序列
+        current_group_vecs = group_vecs
         
         for layer_idx in range(self.num_inter_layers):
-            bottleneck_layer = self.inter_layers[layer_idx]
+            gcn_layer = self.inter_layers[layer_idx]
             
-            next_step_seqs = [v.clone() for v in current_group_seqs]
-            node_updates = {i: [] for i in range(len(group_seqs))}
+            next_step_vecs = [v.clone() for v in current_group_vecs]
+            node_updates = {i: [] for i in range(len(group_vecs))}
             
             for (idx_a, idx_b) in edge_keys:
                 if self.training and self.drop_edge_ratio > 0.0 and random.random() < self.drop_edge_ratio:
                     continue
 
                 edge_feat = projected_edges[(idx_a, idx_b)]
+                # 如果 Edge 是序列，也 Pool 成向量
                 if edge_feat.dim() == 3:
                     e_mask = fusion_knowledge_mask.get((idx_a, idx_b))
                     edge_feat, _ = masked_mean_pool(edge_feat, e_mask)
                 
-                seq_a = current_group_seqs[idx_a]
-                mask_a = group_masks[idx_a]
-                seq_b = current_group_seqs[idx_b]
-                mask_b = group_masks[idx_b]
+                vec_a = current_group_vecs[idx_a]
+                vec_b = current_group_vecs[idx_b]
                 
-                # A 更新 B (必须经过 Edge 瓶颈)
-                update_b = bottleneck_layer(target=seq_b, source=seq_a, edge_feat=edge_feat, source_mask=mask_a)
+                # A 更新 B (使用 Gated GCN)
+                # B = B + Linear(A) * Sigmoid(Edge)
+                update_b = gcn_layer(target=vec_b, source=vec_a, edge_feat=edge_feat)
                 node_updates[idx_b].append(update_b)
                 
                 # B 更新 A
-                update_a = bottleneck_layer(target=seq_a, source=seq_b, edge_feat=edge_feat, source_mask=mask_b)
+                update_a = gcn_layer(target=vec_a, source=vec_b, edge_feat=edge_feat)
                 node_updates[idx_a].append(update_a)
             
-            # Aggregate Updates
-            for i in range(len(group_seqs)):
+            # Aggregate Updates (Mean)
+            for i in range(len(group_vecs)):
                 updates = node_updates[i]
                 if updates:
+                    # 所有邻居发来的更新取平均
                     aggregated_update = torch.stack(updates, dim=0).mean(dim=0)
-                    next_step_seqs[i] = aggregated_update
+                    # 因为 GCN Layer 内部已经加了 Residual 和 Norm，这里直接赋值即可
+                    # 但为了多邻居聚合的稳定性，我们通常在这里做替换
+                    next_step_vecs[i] = aggregated_update
             
-            current_group_seqs = next_step_seqs
+            current_group_vecs = next_step_vecs
 
-        # 5. Late Pooling & Global Fusion
-        group_vecs = []
-        group_validity_list = []
-
-        # Apply Final Norm BEFORE Pooling
-        # 这是 Pre-Norm 架构的标准做法 (e.g., ViT 的 ln_f)
-        # 确保 Pooling 层接收到的是经过缩放的、数值稳定的特征
-        for i, g_seq in enumerate(current_group_seqs):
-            # (B, L, D) -> Norm -> (B, L, D)
-            g_seq_norm = self.final_norm(g_seq)
-            
-            # Pooling
-            pooled, valid = masked_mean_pool(g_seq_norm, group_masks[i])
-            group_vecs.append(pooled)
-            group_validity_list.append(valid)
-
+        # 5. Global Fusion
+        # current_group_vecs 已经是交互好的向量列表了
+        
         # (B, Num_Groups, D)
-        global_stack = torch.stack(group_vecs, dim=1)
+        global_stack = torch.stack(current_group_vecs, dim=1)
         global_mask_tensor = torch.stack(group_validity_list, dim=1)
         
-        # Final Embedding
+        # 简单的加权平均融合，不再使用 Transformer
         fused_embedding, _ = masked_mean_pool(global_stack, global_mask_tensor)
-        
-        # Output MLP (Pre-Norm style input from fusion_norm, but here we just MLP)
-        # Note: fused_embedding is derived from Normalized Inputs, so it is relatively stable.
         fused_embedding = self.fusion_mlp(fused_embedding)
 
         # --- Loss Calculation ---
+        # 使用 GCN 更新后的向量计算 Loss
         loss_dict = self._compute_kl_loss(
-            group_vecs, 
+            current_group_vecs, 
             group_validity_list, 
             edge_keys, 
             groups_relationships
         )
         
-        self.save_points(group_vecs, group_validity_list, groups_relationships)
+        self.save_points(current_group_vecs, group_validity_list, groups_relationships)
 
         return {
             "fused_embedding": fused_embedding,
@@ -345,6 +341,7 @@ class MedKGATFusion(nn.Module):
             if score.dim() == 0: score = score.expand(embeddings_list[0].shape[0])
             if score.sum() > 0: has_valid_data = True
 
+            # embeddings_list 已经是 (B, D)，直接计算
             ea = F.normalize(embeddings_list[idx_a], p=2, dim=1)
             eb = F.normalize(embeddings_list[idx_b], p=2, dim=1)
             sim = torch.sum(ea * eb, dim=1)

@@ -4,22 +4,27 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from typing import Dict, Any, List, Tuple, Optional
+from collections import defaultdict
 
 # Add parent directory to path for module imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 from modules.base_modules.surv_loss import CustomCoxPHLoss, mean_by_event
-from general_utils.metrics import survival_metrics, multiple_classification_metrics
+from modules.general_utils.metrics import survival_metrics, multiple_classification_metrics
 from modules.base_modules.init_weights import init_kaiming_norm
 
-class TCGA_LUAD_SurvivalPred(nn.Module):
+
+
+
+class OSCCSurvivalPred(nn.Module):
 
     # Required Class Atributes
     METRICS_FN = None
     embed_dim = None
     max_modalities_num = None
     max_groups_num = None
-
+    
     def __init__(
         self,
         args,
@@ -34,7 +39,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         self.active_modalities = dataset.get_active_modalities()
         self.max_modalities_num = len(self.active_modalities)
         self.max_groups_num = len(dataset.get_active_groups())
-        print(f"Model initialized for modalities: {self.active_modalities}")
+        print(f"OSCC Model initialized for modalities: {self.active_modalities}")
 
         # ======================================================================
         # 1. Encoders / Projection Layers
@@ -42,60 +47,43 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         # ----- Image Branch (image-pathology) -----
         if 'image-pathology' in self.active_modalities:
-            print("Initializing Image Projection")
-            image_input_dim = 1024 * 2 + 1
+            image_input_dim = 1024 * 2 + 1 
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
                 nn.Linear(self.embed_dim, self.embed_dim),
-                
                 nn.ReLU(),
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
             init_kaiming_norm(self.image_proj)
 
-        # ----- Genomics Branch (genomics-genomics) -----
-        if 'genomics-genomics' in self.active_modalities:
-            print("Initializing Genomics Encoder")
-            self.genomics_encoder = nn.Sequential(
-                nn.Linear(512, self.embed_dim),
+        # ----- Text Branch (text-clinical / text-pathology / text-treatment) -----
+        # Assuming inputs are pre-extracted BERT features (768 dim)
+        if any('text' in modal for modal in self.active_modalities):
+            self.text_proj = nn.Sequential(
+                nn.Linear(768, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
-                
                 nn.Linear(self.embed_dim, self.embed_dim),
                 nn.ReLU(),
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.genomics_encoder)
-
-        # ----- Text Branch (text-pathology / text-treatment) -----
-        # Assuming inputs are pre-extracted BERT features (768 dim)
-        if any('text' in modal for modal in self.active_modalities):
-            print("Initializing Text Encoder (Linear Projector)")
-            self.text_proj = nn.Sequential(
-                nn.Linear(768, self.embed_dim),
-                nn.LayerNorm(self.embed_dim),
-
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
-                nn.LayerNorm(self.embed_dim),
-            )
             init_kaiming_norm(self.text_proj)
 
         # ----- Tabular Branch (from CSVs) -----
+        # Handles: tabular-metadata-4, tabular-history-9, tabular-blood-5, etc.
         self.tabular_encoders = nn.ModuleDict()
         for mod_name in self.active_modalities:
             if "tabular" in mod_name:
                 try:
-                    # Parse dimension from name "tabular-clinical-9" -> 9
+                    # Parse dimension from name "tabular-metadata-4" -> 4
                     in_dim = int(mod_name.split('-')[-1])
                     print(f"Initializing Tabular Encoder for '{mod_name}' (In: {in_dim}, Out: {self.embed_dim})")
                     
                     self.tabular_encoders[mod_name] = nn.Sequential(
                         nn.Linear(in_dim, self.embed_dim),
                         nn.LayerNorm(self.embed_dim),
-
                         nn.Linear(self.embed_dim, self.embed_dim),
                         nn.ReLU(),
                         nn.LayerNorm(self.embed_dim),
@@ -111,6 +99,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         self.out_dim = 1
         self.loss_fn = CustomCoxPHLoss(reduction='none')
         self.METRICS_FN = survival_metrics
+        print("Task: Survival Prediction (CoxPH)")
 
         self.prediction_head = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim // 2),
@@ -123,50 +112,56 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
     def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Handles padding for a list of variable length tensors.
-        
-        Args:
-            data_list: List of length B. Elements are either Tensor(N, D) or None.
-        
-        Returns:
-            padded_batch: (B, Max_N, D) on self.device
-            mask_batch: (B, Max_N) on self.device (1 for data, 0 for padding/None)
+        Handles padding for a list of variable length tensors (Bags).
         """
         device = self.device
         batch_size = len(data_list)
         
-        # 1. Identify valid tensors and determine dimensions
-        valid_tensors = [t for t in data_list if t is not None]
-        
-        if not valid_tensors:
-            print("WARNING: No valid tensors found in batch. Returning empty tensors.")
-            return None, None
-        # Determine max sequence length in this batch
-        # Note: data_list elements can be (N, D) or just (D,). If (D,), treat as (1, D)
-        max_seq_len = 0
-        input_dim = 0
-        
         processed_list = []
+        valid_input_dim = None
+        max_seq_len = 0
+
+        # 1. 预处理所有数据，过滤无效数据，并确定维度
         for t in data_list:
+            # 情况A: 此时就是 None
             if t is None:
                 processed_list.append(None)
                 continue
             
-            # Ensure tensor is on device and float
             t = t.to(device).float()
-            if t.dim() == 1:
-                t = t.unsqueeze(0) # (D,) -> (1, D)
             
+            # 情况B: Tensor 是空的 (例如 shape是 [0] 或 [])
+            if t.numel() == 0:
+                processed_list.append(None)
+                continue
+
+            # 统一维度: 如果是 (D,) 转为 (1, D)
+            if t.dim() == 1:
+                t = t.unsqueeze(0) 
+            
+            # 记录最大长度
             current_len = t.shape[0]
             if current_len > max_seq_len:
                 max_seq_len = current_len
             
-            input_dim = t.shape[1]
+            # 锁定 input_dim (只取第一个有效数据的维度)
+            if valid_input_dim is None:
+                valid_input_dim = t.shape[1]
+            elif t.shape[1] != valid_input_dim:
+                # 可选：如果有数据维度不一致（比如有的768有的1024），这里可以报警
+                # print(f"Warning: Inconsistent dim {t.shape[1]} vs {valid_input_dim}")
+                pass
+
             processed_list.append(t)
 
-        # 2. Create Padded Tensor and Mask
-        padded_batch = torch.zeros(batch_size, max_seq_len, input_dim, device=device)
-        mask_batch = torch.zeros(batch_size, max_seq_len, device=device) # Float or Bool
+        # 2. 如果整个 batch 都没有有效数据
+        if valid_input_dim is None or max_seq_len == 0:
+            return None, None
+
+        # 3. 创建 Padded Tensor 和 Mask
+        # 使用确定好的 valid_input_dim，而不是循环中最后那个 t 的维度
+        padded_batch = torch.zeros(batch_size, max_seq_len, valid_input_dim, device=device)
+        mask_batch = torch.zeros(batch_size, max_seq_len, device=device)
 
         for i, t in enumerate(processed_list):
             if t is not None:
@@ -175,7 +170,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 padded_batch[i, :length, :] = t
                 # Fill mask
                 mask_batch[i, :length] = 1.0
-            # else: Leave as zeros (masked out)
 
         return padded_batch, mask_batch
 
@@ -234,9 +228,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             if mod_name == 'image-pathology':
                 encoded_feat = self.image_proj(padded_features)
                 
-            elif mod_name == 'genomics-genomics':
-                encoded_feat = self.genomics_encoder(padded_features)
-            
             elif 'text' in mod_name:
                 encoded_feat = self.text_proj(padded_features)
                 
@@ -344,8 +335,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         valid_embeddings = pooled_embeddings[patient_mask]
         
         if valid_embeddings.shape[0] == 0:
-            print("Warning: decode valid_embeddings is empty.")
-            return {"logits": logits, "loss": loss}
+             print("Warning: decode valid_embeddings is empty.")
+             return {"logits": logits, "loss": loss}
 
         # 4. batch['labels'] 是 {'label_Y': [...], 'label_c': [...]}
         weights_list = [batch['labels'][i]['sample_weight'] for i in range(batch_size)]
@@ -374,4 +365,3 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         return {"logits": logits, "loss": loss, "loss_tensor": full_loss_tensor}
         
-

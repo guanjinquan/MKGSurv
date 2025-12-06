@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 # ================= Configuration =================
 # You can modify these paths as needed
-ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
+ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_deepseek.json"
 KNOWLEDGE_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/pairs_knowledge_qwen.json"
 OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge.pkl"
 MAX_AUGMENTATIONS = 10

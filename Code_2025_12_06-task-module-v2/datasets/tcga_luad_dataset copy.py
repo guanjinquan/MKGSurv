@@ -288,10 +288,9 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             kdata = self.knowledge_dict.get(patient_id, None)
             output_dict["medical-knowledge"] = {}
             for k, v in kdata.items():
-                knowledge = random.choice(v['knowledge_list']) if self.mode == 'train' else v['knowledge_list'][0]
                 output_dict["medical-knowledge"][k] = {
                     "score": v['score'],
-                    "knowledge": knowledge
+                    "knowledge": random.choice(v['knowledge_list'])
                 }
         else:
             kdata = self.knowledge_dict.get(patient_id, None)
@@ -424,7 +423,25 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                     ori_data[mod] = lam * feat_a + (1 - lam) * feat_b
 
         # 3. Medical-Knowledge 混合
-        # if self.args.
+        if self.args.use_medical_knowledge:
+            kdata_a = ori_data["medical-knowledge"]
+            kdata_b = other_data["medical-knowledge"]
+
+            for k, v in kdata_a.items():
+                max_len = max(kdata_a[k]["knowledge"].shape[0], kdata_b[k]["knowledge"].shape[0])
+                len_a = kdata_a[k]["knowledge"].shape[0]
+                len_b = kdata_b[k]["knowledge"].shape[0]
+
+                pad_a = torch.zeros((max_len, v["knowledge"].shape[1]), dtype=v["knowledge"].dtype)
+                pad_a[:len_a] = v["knowledge"]
+                
+                pad_b = torch.zeros((max_len, kdata_b[k]["knowledge"].shape[1]), dtype=kdata_b[k]["knowledge"].dtype)
+                pad_b[:len_b] = kdata_b[k]["knowledge"]
+                
+                kdata_a[k] = {
+                    "score": lam * v["score"] + (1 - lam) * kdata_b[k]["score"],
+                    "knowledge": lam * pad_a + (1 - lam) * pad_b
+                }
 
         # 4. 标签混合 (H-Mixup Logic)
         t1 = float(ori_data['labels']['label_time'])
@@ -500,9 +517,4 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
 
     def get_active_modalities(self):
         return self.modalities
-
-    def get_active_groups(self):
-        group_names = [mod.split('-')[1] for mod in self.modalities]
-        return list(set(group_names))
-
     
