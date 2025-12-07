@@ -1,34 +1,3 @@
-"""
-LUAD:
---- Testing Complete ---
-Validation Summary:
-C-Index_Validation Set: 0.6318 ± 0.0384
- - List = [0.6486704270749396, 0.5632364493322859, 0.6193853427895981, 0.6730007917656373, 0.6546707503828484]
-C-Index-IPCW_Validation Set: 0.6169 ± 0.0494
- - List = [0.6113462647657963, 0.5347952526521419, 0.6021764065824189, 0.6656026247931581, 0.6703884690733689]
-Test Summary:
-C-Index_Test Set: 0.6314 ± 0.0706
- - List = [0.7446540880503144, 0.665041782729805, 0.6212938005390836, 0.5909722222222222, 0.5352439969016266]
-C-Index-IPCW_Test Set: 0.5908 ± 0.0588
- - List = [0.6613102877165369, 0.6486050055225381, 0.5849656472018314, 0.556027669500528, 0.5029022661882725]
-Training run tcga_luad_run001 finished.
-
-LUSC:
---- Testing Complete ---
-Validation Summary:
-C-Index_Validation Set: 0.6552 ± 0.0461
- - List = [0.6492974238875878, 0.665725578769057, 0.7066521264994547, 0.5712713263621354, 0.6829776158250911]
-C-Index-IPCW_Validation Set: 0.6315 ± 0.0349
- - List = [0.6767785908496243, 0.6061105184452996, 0.6470660342972969, 0.5782198110968834, 0.649336351213548]
-Test Summary:
-C-Index_Test Set: 0.6483 ± 0.0379
- - List = [0.6581005586592179, 0.6886387995712755, 0.5950076413652573, 0.6137362637362638, 0.6859403530127814]
-C-Index-IPCW_Test Set: 0.6648 ± 0.0170
- - List = [0.6870494945032224, 0.6808557798164303, 0.6603864167256442, 0.6405272680930871, 0.6552475202776205]
-Training run tcga_lusc_run001 finished.
-
-"""
-
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -63,6 +32,74 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+# class SafeCrossAttnEncoder(nn.Module):
+#     """
+#     升级版交叉注意力模块。
+#     结构: CrossAttention -> Add & Norm -> FeedForward -> Add & Norm
+#     包含了防 NaN 的安全机制。
+#     """
+#     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
+#         super().__init__()
+#         # 为 Query 单独准备一个 Norm
+#         self.norm_q = nn.LayerNorm(embed_dim)
+#         # 为 FFN 准备一个 Norm
+#         self.norm_ffn = nn.LayerNorm(embed_dim)
+#         self.dropout = nn.Dropout(dropout)
+#         # 1. Attention 部分
+#         self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+#         # 2. FFN 部分  
+#         self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
+
+#     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
+#                 key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+#         """
+#         query: (B, Lq, D)
+#         key:   (B, Lk, D)
+#         value: (B, Lk, D)
+#         key_padding_mask: (B, Lk), True 为 padding
+#         """
+
+#         # 1. 保存残差 (原始 Query)
+#         residual = query
+
+#         # 2. Pre-Norm (只对 Query 进行归一化，因为它是主要的信息流)
+#         query_norm = self.norm_q(query)
+        
+#         # --- 核心修复逻辑 (Safe Logic) ---
+#         if key_padding_mask is not None:
+#             # 检测哪些样本的所有 Key 都是 Padding
+#             all_masked_rows = key_padding_mask.all(dim=1) # (B,) bool
+
+#             if all_masked_rows.any():
+#                 # 只有当存在全 Mask 的情况时，才进行克隆和修改
+#                 key_padding_mask = key_padding_mask.clone()
+#                 # 将全 Mask 行的第一个位置设为 False (有效)，防止 Softmax NaN
+#                 key_padding_mask[all_masked_rows, 0] = False
+#         else:
+#             all_masked_rows = None  
+
+#         # --- 1. Attention Block ---
+#         # 正常计算 MHA
+#         attn_out, _ = self.mha(query_norm, key, value, key_padding_mask=key_padding_mask)
+            
+#         # 清理垃圾值：将那些原本全无效的行的输出置为 0
+#         if all_masked_rows is not None and all_masked_rows.any():
+#             attn_out[all_masked_rows] = 0.0
+
+#         # Residual + Norm (Post-Norm 风格)
+#         x = self.norm(residual + self.dropout(attn_out))
+        
+#         # --- 2. FFN Block (新增逻辑) ---
+#         x = x + self.ffn(self.norm_ffn(x))
+        
+#         # 如果 Query 本身有无效行（例如全是 padding），FFN 可能会产生非零偏差
+#         # 但通常 Query Mask 由外部控制，或者在下一步会被 mask 掉，这里暂不做额外 mask 处理
+        
+#         # Residual + Norm
+#         x = x + self.dropout(x)
+
+#         return x
+
 # --- SafeCrossAttnEncoder ---
 class SafeCrossAttnEncoder(nn.Module):
     """
@@ -72,9 +109,7 @@ class SafeCrossAttnEncoder(nn.Module):
     """
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
         super().__init__()
-        self.norm_q = nn.LayerNorm(embed_dim)
-        self.norm_kv = nn.LayerNorm(embed_dim)
-        self.norm_ffn = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
         self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
@@ -90,9 +125,9 @@ class SafeCrossAttnEncoder(nn.Module):
         key_padding_mask: (B, Lk), True 为 padding
         """
 
-        query = self.norm_q(query)
-        key = self.norm_kv(key)
-        value = self.norm_kv(value)
+        query = self.norm(query)
+        key = self.norm(key)
+        value = self.norm(value)
         
         # --- 核心修复逻辑 (Safe Logic) ---
         if key_padding_mask is not None:
@@ -116,11 +151,15 @@ class SafeCrossAttnEncoder(nn.Module):
             attn_out[all_masked_rows] = 0.0
 
         # Residual + Norm (Post-Norm 风格)
-        x = query + self.dropout(attn_out)
+        x = self.norm(query + self.dropout(attn_out))
         
         # --- 2. FFN Block (新增逻辑) ---
-        ffn_out = self.ffn(self.norm_ffn(x))
-
+        ffn_out = self.ffn(x)
+        
+        # 如果 Query 本身有无效行（例如全是 padding），FFN 可能会产生非零偏差
+        # 但通常 Query Mask 由外部控制，或者在下一步会被 mask 掉，这里暂不做额外 mask 处理
+        
+        # Residual + Norm
         x = x + self.dropout(ffn_out)
 
         return x
@@ -166,39 +205,44 @@ class EdgeContextualizer(nn.Module):
 
 
 
-
-class MedKGATFusion(nn.Module):
+class MedKGATFusion_without_intra(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
             max_groups: int = 10, 
-            ff_dropout_rate: float = 0.25, 
+            ff_dropout_rate: float = 0.1, 
             attn_dropout_rate: float = 0.1, 
             num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
-        self.drop_edge_ratio = 0.2
+        self.drop_edge_ratio = 0.1
+        self.logit_scale = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
-
-            nn.Linear(self.embed_dim, self.embed_dim * 2),
-            GELU(),
+            nn.ReLU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
 
         # 2. Intra-group Interaction
-        self.num_intra_layers = num_intra_layers
-        self.intra_group_transformer = nn.ModuleList([
-            SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
-            for _ in range(num_intra_layers)
-        ])
+        # Updated: Accepts num_intra_layers to stack transformer blocks
+        # encoder_layer = nn.TransformerEncoderLayer(
+        #     d_model=self.embed_dim,
+        #     nhead=8,
+        #     activation=F.gelu,
+        #     batch_first=True
+        # )
+        # self.intra_group_transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_intra_layers)
+
+        self.intra_group_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
 
         # 3. GAT Interaction Components (Inter-Group)
+        # Updated: Create a ModuleList to store independent weights for each layer
         self.num_inter_layers = num_inter_layers
         self.shared_inter_layer = nn.ModuleDict({
             'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
@@ -207,6 +251,13 @@ class MedKGATFusion(nn.Module):
         })
 
         # 4. Global Aggregation
+        # global_encoder_layer = nn.TransformerEncoderLayer(
+        #     d_model=self.embed_dim,
+        #     nhead=8,
+        #     activation=F.gelu,
+        #     batch_first=True
+        # )
+        # self.global_transformer = nn.TransformerEncoder(global_encoder_layer, num_layers=1)
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
 
         # 5. Post Fusion Norm
@@ -236,18 +287,17 @@ class MedKGATFusion(nn.Module):
                 padding_mask[all_masked_rows, 0] = False
 
             # The TransformerEncoder handles num_layers internally
-            for i in range(self.num_intra_layers):
-                concat_feat = self.intra_group_transformer[i](
-                    query=concat_feat, 
-                    key=concat_feat, 
-                    value=concat_feat, 
-                    key_padding_mask=padding_mask
-                )
+            transformed = self.intra_group_transformer(
+                query=concat_feat, 
+                key=concat_feat, 
+                value=concat_feat, 
+                key_padding_mask=padding_mask
+            )
+            
+            if all_masked_rows.any():
+                transformed[all_masked_rows] = 0.0
 
-                if all_masked_rows.any():
-                    concat_feat[all_masked_rows] = 0.0
-
-            split_feats = torch.split(concat_feat, lengths, dim=1)
+            split_feats = torch.split(transformed, lengths, dim=1)
             
             for i, idx in enumerate(group_indices):
                 updated_embeddings[idx] = split_feats[i]
@@ -314,7 +364,7 @@ class MedKGATFusion(nn.Module):
             current_proj_knowledge[k] = self.know_proj(v)
 
         # 2. Intra-Group Interaction (Multi-layer handled inside TransformerEncoder)
-        info_level_embeddings = self._intra_group_step(embeddings, masks, embeddings_groups)
+        info_level_embeddings = embeddings # self._intra_group_step(embeddings, masks, embeddings_groups)
 
         # 3. Create Group-Level Embeddings
         group_embeddings = []
@@ -494,7 +544,7 @@ class MedKGATFusion(nn.Module):
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": fusion_loss,
+                "total_loss": 2 * fusion_loss,
             }
         }
 

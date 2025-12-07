@@ -2,31 +2,30 @@
 LUAD:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6318 ± 0.0384
- - List = [0.6486704270749396, 0.5632364493322859, 0.6193853427895981, 0.6730007917656373, 0.6546707503828484]
-C-Index-IPCW_Validation Set: 0.6169 ± 0.0494
- - List = [0.6113462647657963, 0.5347952526521419, 0.6021764065824189, 0.6656026247931581, 0.6703884690733689]
+C-Index_Validation Set: 0.6447 ± 0.0403
+ - List = [0.6510878323932313, 0.5883739198743126, 0.6170212765957447, 0.7070467141726049, 0.6600306278713629]
+C-Index-IPCW_Validation Set: 0.6163 ± 0.0736
+ - List = [0.6092443628740457, 0.5073841380828914, 0.5708269185000593, 0.6947884632860251, 0.6994604080758369]
 Test Summary:
-C-Index_Test Set: 0.6314 ± 0.0706
- - List = [0.7446540880503144, 0.665041782729805, 0.6212938005390836, 0.5909722222222222, 0.5352439969016266]
-C-Index-IPCW_Test Set: 0.5908 ± 0.0588
- - List = [0.6613102877165369, 0.6486050055225381, 0.5849656472018314, 0.556027669500528, 0.5029022661882725]
+C-Index_Test Set: 0.6233 ± 0.0370
+ - List = [0.6811320754716981, 0.6399721448467967, 0.6064690026954178, 0.6194444444444445, 0.5693261037955074]
+C-Index-IPCW_Test Set: 0.5820 ± 0.0561
+ - List = [0.5976442922238177, 0.6737406201730509, 0.57755760194379, 0.5597655861194173, 0.5011177910810823]
 Training run tcga_luad_run001 finished.
 
-LUSC:
+LUSC：
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6552 ± 0.0461
- - List = [0.6492974238875878, 0.665725578769057, 0.7066521264994547, 0.5712713263621354, 0.6829776158250911]
-C-Index-IPCW_Validation Set: 0.6315 ± 0.0349
- - List = [0.6767785908496243, 0.6061105184452996, 0.6470660342972969, 0.5782198110968834, 0.649336351213548]
+C-Index_Validation Set: 0.6366 ± 0.0524
+ - List = [0.6088992974238876, 0.7001693958215698, 0.6815703380588877, 0.5536598789212989, 0.6387298282144717]
+C-Index-IPCW_Validation Set: 0.6269 ± 0.0206
+ - List = [0.6173956059994212, 0.6601081774808326, 0.6402620326687407, 0.6026451360949341, 0.6141195148762778]
 Test Summary:
-C-Index_Test Set: 0.6483 ± 0.0379
- - List = [0.6581005586592179, 0.6886387995712755, 0.5950076413652573, 0.6137362637362638, 0.6859403530127814]
-C-Index-IPCW_Test Set: 0.6648 ± 0.0170
- - List = [0.6870494945032224, 0.6808557798164303, 0.6603864167256442, 0.6405272680930871, 0.6552475202776205]
+C-Index_Test Set: 0.6232 ± 0.0587
+ - List = [0.5664804469273743, 0.6854233654876741, 0.5888945491594498, 0.5719780219780219, 0.7029823493609252]
+C-Index-IPCW_Test Set: 0.6388 ± 0.0290
+ - List = [0.6032360158552696, 0.6793171133114276, 0.6585956312548982, 0.6092725156233953, 0.6438260231240012]
 Training run tcga_lusc_run001 finished.
-
 """
 
 import sys
@@ -73,7 +72,6 @@ class SafeCrossAttnEncoder(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
         super().__init__()
         self.norm_q = nn.LayerNorm(embed_dim)
-        self.norm_kv = nn.LayerNorm(embed_dim)
         self.norm_ffn = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
@@ -91,8 +89,6 @@ class SafeCrossAttnEncoder(nn.Module):
         """
 
         query = self.norm_q(query)
-        key = self.norm_kv(key)
-        value = self.norm_kv(value)
         
         # --- 核心修复逻辑 (Safe Logic) ---
         if key_padding_mask is not None:
@@ -178,15 +174,15 @@ class MedKGATFusion(nn.Module):
 
         self.args = args
         self.embed_dim = embed_dim
-        self.drop_edge_ratio = 0.2
+        self.drop_edge_ratio = 0.1
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
 
-            nn.Linear(self.embed_dim, self.embed_dim * 2),
-            GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+            nn.GELU(),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
@@ -494,7 +490,7 @@ class MedKGATFusion(nn.Module):
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": fusion_loss,
+                "total_loss": 2 * fusion_loss,
             }
         }
 

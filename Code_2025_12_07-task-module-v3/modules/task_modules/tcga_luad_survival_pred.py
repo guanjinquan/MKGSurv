@@ -19,7 +19,6 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
     
 
-
 class TCGA_LUAD_SurvivalPred(nn.Module):
 
     # Required Class Atributes
@@ -55,8 +54,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
-
                 nn.Linear(self.embed_dim, self.embed_dim * 2),
+                
                 GELU(),
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
@@ -88,7 +87,6 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 nn.Linear(self.embed_dim, self.embed_dim * 2),
                 GELU(),
                 nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate),
             )
             init_kaiming_norm(self.text_proj)
 
@@ -122,8 +120,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         self.METRICS_FN = survival_metrics
 
         self.prediction_head = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim // 2),
+            nn.GELU(),
             nn.LayerNorm(self.embed_dim // 2),
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)

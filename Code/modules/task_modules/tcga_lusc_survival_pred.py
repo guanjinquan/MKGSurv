@@ -88,6 +88,7 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
                 nn.Linear(self.embed_dim, self.embed_dim * 2),
                 GELU(),
                 nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate),
             )
             init_kaiming_norm(self.text_proj)
 
@@ -121,8 +122,8 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
         self.METRICS_FN = survival_metrics
 
         self.prediction_head = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+            GELU(),
             nn.LayerNorm(self.embed_dim // 2),
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)

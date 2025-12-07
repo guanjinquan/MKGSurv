@@ -1,33 +1,34 @@
 """
-LUAD:
 
+LUAD:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6619 ± 0.0507
- - List = [0.6261079774375503, 0.5978004713275726, 0.6635145784081954, 0.7474267616785432, 0.6745788667687596]
-C-Index-IPCW_Validation Set: 0.6389 ± 0.0664
- - List = [0.5345859396606253, 0.5971254881660049, 0.653726251454195, 0.7219440824156911, 0.68694318755086]
+C-Index_Validation Set: 0.6407 ± 0.0375
+ - List = [0.6309427880741337, 0.6135113904163394, 0.6028368794326241, 0.7094220110847189, 0.6470137825421133]
+C-Index-IPCW_Validation Set: 0.6182 ± 0.0510
+ - List = [0.5885328740251995, 0.5827329486964161, 0.577976500214701, 0.7138902992824184, 0.6278105754432728]
 Test Summary:
-C-Index_Test Set: 0.6351 ± 0.0554
- - List = [0.6679245283018868, 0.7019498607242339, 0.6347708894878706, 0.6347222222222222, 0.5360185902401239]
-C-Index-IPCW_Test Set: 0.6058 ± 0.0647
- - List = [0.5872802763619888, 0.7280911525022538, 0.5849054790227088, 0.5939493659901761, 0.534863565209256]
+C-Index_Test Set: 0.6181 ± 0.0579
+ - List = [0.7050314465408805, 0.6525069637883009, 0.6037735849056604, 0.5972222222222222, 0.5321456235476375]
+C-Index-IPCW_Test Set: 0.5874 ± 0.0704
+ - List = [0.6342459759299754, 0.6895274799173379, 0.5650923482356913, 0.5663185589600637, 0.4816592796311304]
 Training run tcga_luad_run001 finished.
+
+
 
 LUSC:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6511 ± 0.0283
- - List = [0.6481264637002342, 0.6561264822134387, 0.6804798255179935, 0.5993395707209687, 0.6715252472670484]
-C-Index-IPCW_Validation Set: 0.6331 ± 0.0261
- - List = [0.6621544737898237, 0.6268615609044177, 0.6108983585577029, 0.6010693255116392, 0.6646579379863221]
+C-Index_Validation Set: 0.6641 ± 0.0349
+ - List = [0.6282201405152225, 0.6967814793901751, 0.7006543075245365, 0.6169510181618052, 0.6777719937532535]
+C-Index-IPCW_Validation Set: 0.6254 ± 0.0216
+ - List = [0.6557614460781788, 0.6421273021833708, 0.5990993065171191, 0.6042001031942795, 0.6257068746889193]
 Test Summary:
-C-Index_Test Set: 0.6437 ± 0.0477
- - List = [0.6106145251396649, 0.7170418006430869, 0.5894039735099338, 0.6203296703296703, 0.6810712111990261]
-C-Index-IPCW_Test Set: 0.6575 ± 0.0305
- - List = [0.6593431678186635, 0.7135359697960075, 0.6482277784028136, 0.6442319306823843, 0.6220844491416886]
+C-Index_Test Set: 0.6478 ± 0.0429
+ - List = [0.623463687150838, 0.7020364415862809, 0.5970453387671931, 0.6203296703296703, 0.6962872793670115]
+C-Index-IPCW_Test Set: 0.6618 ± 0.0169
+ - List = [0.6586215467046926, 0.6897220315277263, 0.6665146635875505, 0.6376914094473894, 0.6562184694618709]
 Training run tcga_lusc_run001 finished.
-
 """
 import sys
 import os
@@ -168,7 +169,7 @@ class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
             max_groups: int = 10, 
-            ff_dropout_rate: float = 0.25, 
+            ff_dropout_rate: float = 0.1, 
             attn_dropout_rate: float = 0.1, 
             num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
@@ -182,8 +183,8 @@ class MedKGATFusion(nn.Module):
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
 
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim * 2),
+            GELU(),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
