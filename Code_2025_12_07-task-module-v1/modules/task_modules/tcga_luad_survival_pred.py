@@ -12,13 +12,6 @@ from modules.base_modules.surv_loss import CustomCoxPHLoss, mean_by_event
 from general_utils.metrics import survival_metrics, multiple_classification_metrics
 from modules.base_modules.init_weights import init_kaiming_norm
 
-
-class GELU(nn.Module):
-    def forward(self, x):
-        x, gates = x.chunk(2, dim = -1)
-        return x * F.gelu(gates)
-    
-
 class TCGA_LUAD_SurvivalPred(nn.Module):
 
     # Required Class Atributes
@@ -53,26 +46,19 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             image_input_dim = 1024 * 2 + 1
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
+                nn.Dropout(self.dropout_rate),
                 nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.embed_dim * 2),
-                
-                GELU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
             )
             init_kaiming_norm(self.image_proj)
 
         # ----- Genomics Branch (genomics-genomics) -----
         if 'genomics-genomics' in self.active_modalities:
             print("Initializing Genomics Encoder")
+            genomic_input_dim = 512
             self.genomics_encoder = nn.Sequential(
-                nn.Linear(512, self.embed_dim),
+                nn.Linear(genomic_input_dim, self.embed_dim),
+                nn.Dropout(self.dropout_rate),
                 nn.LayerNorm(self.embed_dim),
-                
-                nn.Linear(self.embed_dim, self.embed_dim * 2),
-                GELU(),
-                nn.LayerNorm(self.embed_dim),
-                nn.Dropout(self.dropout_rate)
             )
             init_kaiming_norm(self.genomics_encoder)
 
@@ -80,12 +66,10 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         # Assuming inputs are pre-extracted BERT features (768 dim)
         if any('text' in modal for modal in self.active_modalities):
             print("Initializing Text Encoder (Linear Projector)")
+            text_input_dim = 768
             self.text_proj = nn.Sequential(
-                nn.Linear(768, self.embed_dim),
-                nn.LayerNorm(self.embed_dim),
-
-                nn.Linear(self.embed_dim, self.embed_dim * 2),
-                GELU(),
+                nn.Linear(text_input_dim, self.embed_dim),
+                nn.Dropout(self.dropout_rate),
                 nn.LayerNorm(self.embed_dim),
             )
             init_kaiming_norm(self.text_proj)
@@ -98,15 +82,10 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                     # Parse dimension from name "tabular-clinical-9" -> 9
                     in_dim = int(mod_name.split('-')[-1])
                     print(f"Initializing Tabular Encoder for '{mod_name}' (In: {in_dim}, Out: {self.embed_dim})")
-                    
                     self.tabular_encoders[mod_name] = nn.Sequential(
                         nn.Linear(in_dim, self.embed_dim),
+                        nn.Dropout(self.dropout_rate),
                         nn.LayerNorm(self.embed_dim),
-
-                        nn.Linear(self.embed_dim, self.embed_dim * 2),
-                        GELU(),
-                        nn.LayerNorm(self.embed_dim),
-                        nn.Dropout(self.dropout_rate)
                     )
                     init_kaiming_norm(self.tabular_encoders[mod_name])
                 except (ValueError, IndexError):
@@ -121,7 +100,7 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
         self.prediction_head = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.GELU(),
+            nn.ReLU(),
             nn.LayerNorm(self.embed_dim // 2),
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)

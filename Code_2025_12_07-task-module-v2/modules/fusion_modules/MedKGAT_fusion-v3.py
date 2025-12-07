@@ -1,3 +1,32 @@
+"""
+LUAD:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6342 ± 0.0558
+ - List = [0.613215149073328, 0.5396700706991359, 0.6501182033096927, 0.7062549485352335, 0.6615620214395099]
+C-Index-IPCW_Validation Set: 0.6217 ± 0.0651
+ - List = [0.5789199920376061, 0.5214644926326388, 0.629071308433475, 0.6838614085364165, 0.695107189859216]
+Test Summary:
+C-Index_Test Set: 0.6460 ± 0.0408
+ - List = [0.7213836477987421, 0.6190807799442897, 0.6570080862533693, 0.6180555555555556, 0.6142525174283501]
+C-Index-IPCW_Test Set: 0.5911 ± 0.0429
+ - List = [0.6246614122530576, 0.6352625526408026, 0.6103741261659738, 0.5655955793232511, 0.5195511053736713]
+Training run tcga_luad_run001 finished.
+
+LUSC:
+Validation Summary:
+C-Index_Validation Set: 0.6556 ± 0.0405
+ - List = [0.6598360655737705, 0.6442687747035574, 0.7121046892039259, 0.5883324160704458, 0.6736074960957834]
+C-Index-IPCW_Validation Set: 0.6191 ± 0.0334
+ - List = [0.6769391348529116, 0.6183999092810708, 0.5964075106149141, 0.5783630733618672, 0.6255765559822759]
+Test Summary:
+C-Index_Test Set: 0.6254 ± 0.0357
+ - List = [0.5743016759776536, 0.6366559485530546, 0.6057055527254203, 0.628021978021978, 0.682288496652465]
+C-Index-IPCW_Test Set: 0.6447 ± 0.0119
+ - List = [0.6235068567687639, 0.6505717170389996, 0.6522340441608075, 0.6403600363699401, 0.6569611122234329]
+Training run tcga_lusc_run001 finished.
+"""
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -42,7 +71,6 @@ class SafeCrossAttnEncoder(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
         super().__init__()
         self.norm_q = nn.LayerNorm(embed_dim)
-        self.norm_kv = nn.LayerNorm(embed_dim)
         self.norm_ffn = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
@@ -50,8 +78,8 @@ class SafeCrossAttnEncoder(nn.Module):
         # 2. FFN 部分  
         self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
 
-    def forward(self, query: torch.Tensor, context: torch.Tensor, 
-                context_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
+                key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         query: (B, Lq, D)
         key:   (B, Lk, D)
@@ -60,24 +88,23 @@ class SafeCrossAttnEncoder(nn.Module):
         """
 
         query = self.norm_q(query)
-        context = self.norm_kv(context)
         
         # --- 核心修复逻辑 (Safe Logic) ---
-        if context_padding_mask is not None:
+        if key_padding_mask is not None:
             # 检测哪些样本的所有 Key 都是 Padding
-            all_masked_rows = context_padding_mask.all(dim=1) # (B,) bool
+            all_masked_rows = key_padding_mask.all(dim=1) # (B,) bool
 
             if all_masked_rows.any():
                 # 只有当存在全 Mask 的情况时，才进行克隆和修改
-                context_padding_mask = context_padding_mask.clone()
+                key_padding_mask = key_padding_mask.clone()
                 # 将全 Mask 行的第一个位置设为 False (有效)，防止 Softmax NaN
-                context_padding_mask[all_masked_rows, 0] = False
+                key_padding_mask[all_masked_rows, 0] = False
         else:
             all_masked_rows = None  
 
         # --- 1. Attention Block ---
         # 正常计算 MHA
-        attn_out, _ = self.mha(query, context, context, key_padding_mask=context_padding_mask)
+        attn_out, _ = self.mha(query, key, value, key_padding_mask=key_padding_mask)
             
         # 清理垃圾值：将那些原本全无效的行的输出置为 0
         if all_masked_rows is not None and all_masked_rows.any():
@@ -92,7 +119,6 @@ class SafeCrossAttnEncoder(nn.Module):
         x = x + self.dropout(ffn_out)
 
         return x
-
 
 
 
@@ -135,6 +161,7 @@ class EdgeContextualizer(nn.Module):
 
 
 
+
 class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
@@ -152,9 +179,8 @@ class MedKGATFusion(nn.Module):
         self.know_proj = nn.Sequential(
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
-            
-            nn.Linear(self.embed_dim, self.embed_dim * 2),
-            GELU(),
+            nn.ReLU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
@@ -168,20 +194,21 @@ class MedKGATFusion(nn.Module):
 
         # 3. GAT Interaction Components (Inter-Group)
         self.num_inter_layers = num_inter_layers
-        self.shared_inter_layer = nn.ModuleDict({
-            'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
-            'node_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
-            'edge_updater': EdgeContextualizer(embed_dim, num_heads=8)
-        })
+        self.inter_group_transformer = nn.ModuleList()
+        self.shared_edge_updater = EdgeContextualizer(embed_dim, num_heads=8)
+        for i in range(max_groups):
+            self.inter_group_transformer.append(
+                nn.ModuleDict({
+                    'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
+                    'node_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
+                })
+            )
 
         # 4. Global Aggregation
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
 
         # 5. Post Fusion Norm
-        self.post_fusion_layer = nn.Sequential(
-            nn.LayerNorm(self.embed_dim * max_groups),
-            nn.Linear(self.embed_dim * max_groups, self.embed_dim),
-        )
+        self.post_fusion_norm = nn.LayerNorm(embed_dim)
 
     def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
@@ -210,8 +237,9 @@ class MedKGATFusion(nn.Module):
             for i in range(self.num_intra_layers):
                 concat_feat = self.intra_group_transformer[i](
                     query=concat_feat, 
-                    context=concat_feat, 
-                    context_padding_mask=padding_mask
+                    key=concat_feat, 
+                    value=concat_feat, 
+                    key_padding_mask=padding_mask
                 )
 
                 if all_masked_rows.any():
@@ -238,16 +266,18 @@ class MedKGATFusion(nn.Module):
         # Step 1: Edge queries Source to get relevant info (Gating)
         gated_source = layer_modules['edge_to_node_attn'](
             query=edge_feat, 
-            context=source_node, 
-            context_padding_mask=source_padding_mask
+            key=source_node, 
+            value=source_node, 
+            key_padding_mask=source_padding_mask
         )
         
         # Step 2: Target queries Gated Source to update itself
         # Note: Key/Value mask depends on Edge because gated_source has shape of Edge
         updated_target = layer_modules['node_to_node_attn'](
             query=target_node,
-            context=gated_source,
-            context_padding_mask=edge_padding_mask
+            key=gated_source,
+            value=gated_source,
+            key_padding_mask=edge_padding_mask
         )
         
         if target_mask is not None:
@@ -313,10 +343,11 @@ class MedKGATFusion(nn.Module):
         current_group_embeddings = group_embeddings # Points to current node features
 
         for layer_idx in range(self.num_inter_layers):
-            layer_modules = self.shared_inter_layer
-            num_groups = len(current_group_embeddings)
 
             for (idx_a, idx_b) in edge_keys:
+                layer_module_A = self.inter_group_transformer[idx_a]
+                layer_module_B = self.inter_group_transformer[idx_b]
+
                 edge_feat = current_proj_knowledge.get((idx_a, idx_b))
 
                 if self.training and getattr(self, 'drop_edge_ratio', 0.0) > 0.0:
@@ -335,7 +366,7 @@ class MedKGATFusion(nn.Module):
 
                 # --- GNN Update Logic for this Layer ---
                 # Update Edge Features
-                updated_edge_feat = layer_modules['edge_updater'](
+                updated_edge_feat = self.shared_edge_updater(
                     edge_feat, edge_mask, 
                     feat_a, mask_a, 
                     feat_b, mask_b
@@ -349,7 +380,7 @@ class MedKGATFusion(nn.Module):
                     target_node=feat_b, target_mask=mask_b,
                     source_node=feat_a, source_mask=mask_a,
                     edge_feat=updated_edge_feat, edge_mask=edge_mask,
-                    layer_modules=layer_modules
+                    layer_modules=layer_module_B
                 )
                 current_group_embeddings[idx_b] = update_for_b
 
@@ -358,7 +389,7 @@ class MedKGATFusion(nn.Module):
                     target_node=feat_a, target_mask=mask_a,
                     source_node=feat_b, source_mask=mask_b,
                     edge_feat=updated_edge_feat, edge_mask=edge_mask,
-                    layer_modules=layer_modules
+                    layer_modules=layer_module_A
                 )
                 current_group_embeddings[idx_a] = update_for_a
 
@@ -414,19 +445,24 @@ class MedKGATFusion(nn.Module):
         self.save_points(final_group_embeddings, group_masks, groups_relationships)
 
         # 7. Global Aggregation
-        for idx in range(len(final_group_embeddings)):
-            padding_mask = (group_masks[idx] == 0)
+        global_concat = torch.cat(final_group_embeddings, dim=1)
+        global_mask = torch.cat(group_masks, dim=1)
+        global_padding_mask = (global_mask == 0)
 
-            final_group_embeddings[idx] = self.global_transformer(
-                query=final_group_embeddings[idx], 
-                context=final_group_embeddings[idx],
-                context_padding_mask=padding_mask
-            )
+        all_masked_rows = global_padding_mask.all(dim=1)
+        if all_masked_rows.any():
+            global_padding_mask = global_padding_mask.clone()
+            global_padding_mask[all_masked_rows, 0] = False
+
+        global_transformed = self.global_transformer(
+            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask)
         
-            final_group_embeddings[idx], _ = masked_mean_pool(final_group_embeddings[idx], group_masks[idx])
+        if all_masked_rows.any():
+            global_transformed[all_masked_rows] = 0.0
+        
+        fused_embedding, _ = masked_mean_pool(global_transformed, global_mask)
              
-        fused_embedding = torch.cat(final_group_embeddings, dim=-1)
-        fused_embedding = self.post_fusion_layer(fused_embedding)
+        fused_embedding = self.post_fusion_norm(fused_embedding)
 
         # 8. Compute KL Divergence Loss
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)

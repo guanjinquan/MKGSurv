@@ -1,3 +1,35 @@
+"""
+LUAD:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6703 ± 0.0309
+ - List = [0.6390008058017728, 0.6575019638648861, 0.6414499605988968, 0.6983372921615202, 0.7151607963246555]
+C-Index-IPCW_Validation Set: 0.6559 ± 0.0585
+ - List = [0.5767545112603643, 0.6185625427795685, 0.6374665771085828, 0.7193556702255106, 0.7273119965340266]
+Test Summary:
+C-Index_Test Set: 0.6373 ± 0.0419
+ - List = [0.6993710691823899, 0.6323119777158774, 0.6502695417789758, 0.6361111111111111, 0.56855151045701]
+C-Index-IPCW_Test Set: 0.6098 ± 0.0533
+ - List = [0.6605040553807308, 0.6512236097982989, 0.637352428114625, 0.581431598563321, 0.5184082863377155]
+Training run tcga_luad_run001 finished.
+
+
+LUSC:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6576 ± 0.0140
+ - List = [0.6481264637002342, 0.6589497459062676, 0.6788440567066522, 0.6378646119977985, 0.6642373763664758]
+C-Index-IPCW_Validation Set: 0.6374 ± 0.0188
+ - List = [0.6614319681389793, 0.644380569767053, 0.6174421226863575, 0.6503434446492535, 0.6133011652372993]
+Test Summary:
+C-Index_Test Set: 0.6236 ± 0.0451
+ - List = [0.5519553072625698, 0.6736334405144695, 0.6250636780438105, 0.5994505494505494, 0.667681071211199]
+C-Index-IPCW_Test Set: 0.6413 ± 0.0267
+ - List = [0.5882601730610004, 0.6566786593542298, 0.6583712183858041, 0.6549701389726483, 0.6480277796983439]
+Training run tcga_lusc_run001 finished.
+
+"""
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -95,7 +127,6 @@ class SafeCrossAttnEncoder(nn.Module):
 
 
 
-
 class EdgeContextualizer(nn.Module):
     """
     使用Edge作为Query，连接的节点特征作为Key/Value。
@@ -122,8 +153,8 @@ class EdgeContextualizer(nn.Module):
 
         # 3. Edge更新: Edge query Context
         # Edge mask自身不需要传入attn mask，因为它是query，长度不变，padding位置的输出后续会被mask掉或忽略
-        updated_edge = self.cross_attn(query=edge_feat, key=context_feat, value=context_feat, 
-                                     key_padding_mask=key_padding_mask)
+        updated_edge = self.cross_attn(
+            query=edge_feat, context=context_feat, context_padding_mask=key_padding_mask)
         
         # 4. Apply Edge Mask: 确保无效的 Edge Token 输出保持为 0
         # updated_edge: (B, Le, D), edge_mask: (B, Le)
@@ -132,6 +163,7 @@ class EdgeContextualizer(nn.Module):
         
         return updated_edge
     
+
 
 
 
@@ -152,9 +184,8 @@ class MedKGATFusion(nn.Module):
         self.know_proj = nn.Sequential(
             nn.Linear(768, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
-            
-            nn.Linear(self.embed_dim, self.embed_dim * 2),
-            GELU(),
+            nn.ReLU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
