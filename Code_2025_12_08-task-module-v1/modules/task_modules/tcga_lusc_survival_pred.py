@@ -12,7 +12,15 @@ from modules.base_modules.surv_loss import CustomCoxPHLoss, mean_by_event
 from general_utils.metrics import survival_metrics, multiple_classification_metrics
 from modules.base_modules.init_weights import init_kaiming_norm
 
-class TCGA_LUAD_SurvivalPred(nn.Module):
+
+
+class GELU(nn.Module):
+    def forward(self, x):
+        x, gates = x.chunk(2, dim = -1)
+        return x * F.gelu(gates)
+    
+
+class TCGA_LUSC_SurvivalPred(nn.Module):
 
     # Required Class Atributes
     METRICS_FN = None
@@ -47,9 +55,9 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             self.image_proj = nn.Sequential(
                 nn.Linear(image_input_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.embed_dim),
                 
-                nn.ReLU(),
+                nn.Linear(self.embed_dim, self.embed_dim * 2),
+                GELU(),
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
@@ -62,8 +70,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 nn.Linear(512, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
                 
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
+                nn.Linear(self.embed_dim, self.embed_dim * 2),
+                GELU(),
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
@@ -77,9 +85,10 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                 nn.Linear(768, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
 
-                nn.Linear(self.embed_dim, self.embed_dim),
-                nn.ReLU(),
+                nn.Linear(self.embed_dim, self.embed_dim * 2),
+                GELU(),
                 nn.LayerNorm(self.embed_dim),
+                nn.Dropout(self.dropout_rate),
             )
             init_kaiming_norm(self.text_proj)
 
@@ -96,8 +105,8 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
                         nn.Linear(in_dim, self.embed_dim),
                         nn.LayerNorm(self.embed_dim),
 
-                        nn.Linear(self.embed_dim, self.embed_dim),
-                        nn.ReLU(),
+                        nn.Linear(self.embed_dim, self.embed_dim * 2),
+                        GELU(),
                         nn.LayerNorm(self.embed_dim),
                         nn.Dropout(self.dropout_rate)
                     )
@@ -113,13 +122,14 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
         self.METRICS_FN = survival_metrics
 
         self.prediction_head = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2),
-            nn.ReLU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+            GELU(),
             nn.LayerNorm(self.embed_dim // 2),
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)
         )
         init_kaiming_norm(self.prediction_head)
+
 
     def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -298,11 +308,11 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
 
                     # Pad and mask the MK data
                     mk_feat, mk_mask = self._pad_and_mask_modality(pair_data_list)
-                    score_tensor = torch.tensor(score_list, device=device, dtype=torch.float32)
+                    score_tensor = torch.tensor(score_list, device=device)
 
                 else:
                     # Using 768 as default BERT dim
-                    score_tensor = torch.ones(batch_size, 1, device=device, dtype=torch.float32)
+                    score_tensor = torch.ones(batch_size, 1, device=device)
                     mk_feat = torch.randn(batch_size, 1, 768, device=device)
                     mk_mask = torch.ones(batch_size, 1, device=device)
 

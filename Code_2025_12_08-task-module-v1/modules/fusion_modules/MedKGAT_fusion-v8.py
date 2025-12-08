@@ -1,31 +1,33 @@
+# 相比于v7 多了一个layernorm在ffn， key和value也多了layernorm
+
 """
-ALL SELU Network
 LUAD:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6724 ± 0.0440
- - List = [0.6960183767228177, 0.6559226430298146, 0.7450514647664291, 0.6469661150512215, 0.6182246661429693]
-C-Index-IPCW_Validation Set: 0.6419 ± 0.0531
- - List = [0.7240640206305587, 0.6131871410641827, 0.6778088589046618, 0.6221974814025566, 0.5722331172946622]
+C-Index_Validation Set: 0.6561 ± 0.0605
+ - List = [0.6647864625302176, 0.5530243519245875, 0.6319936958234831, 0.714172604908947, 0.7166921898928025]
+C-Index-IPCW_Validation Set: 0.6425 ± 0.0677
+ - List = [0.6285202278859509, 0.5355524477220494, 0.6175742297555923, 0.7095259052991877, 0.7211168894860391]
 Test Summary:
-C-Index_Test Set: 0.6450 ± 0.0621
- - List = [0.533694810224632, 0.6974842767295597, 0.6326388888888889, 0.6536388140161725, 0.7075208913649025]
-C-Index-IPCW_Test Set: 0.6183 ± 0.0798
- - List = [0.5139308161006798, 0.6543902178554775, 0.5886069549782139, 0.58355068953283, 0.7508401913424299]
+C-Index_Test Set: 0.6438 ± 0.0588
+ - List = [0.7056603773584905, 0.6768802228412256, 0.6704851752021563, 0.6291666666666667, 0.5367931835786213]
+C-Index-IPCW_Test Set: 0.6223 ± 0.0622
+ - List = [0.6534400862864214, 0.714152224045169, 0.6278716965575413, 0.5867654124560462, 0.5293128390982701]
 Training run tcga_luad_run001 finished.
+
 
 LUSC:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6681 ± 0.0396
- - List = [0.6892243623112962, 0.6604215456674473, 0.6075949367088608, 0.7273718647764449, 0.6561264822134387]
-C-Index-IPCW_Validation Set: 0.6454 ± 0.0312
- - List = [0.659165167714776, 0.6683116893930034, 0.5993109308042736, 0.6814213394315042, 0.6186456143461236]
+C-Index_Validation Set: 0.6526 ± 0.0331
+ - List = [0.6428571428571429, 0.6465273856578204, 0.7170119956379498, 0.6246560264171711, 0.6319625195210827]
+C-Index-IPCW_Validation Set: 0.6293 ± 0.0228
+ - List = [0.663186292951893, 0.6241428349292487, 0.6433235983076712, 0.620157177519418, 0.595590957905098]
 Test Summary:
-C-Index_Test Set: 0.6714 ± 0.0204
- - List = [0.7011564211807669, 0.6458100558659218, 0.6620879120879121, 0.6591951095262354, 0.6886387995712755]
-C-Index-IPCW_Test Set: 0.6790 ± 0.0196
- - List = [0.671550964585662, 0.6623468195749981, 0.6570094023997478, 0.7066067417077688, 0.6973010251772963]
+C-Index_Test Set: 0.6332 ± 0.0385
+ - List = [0.6022346368715084, 0.6902465166130761, 0.5899133978604177, 0.6175824175824176, 0.6658551430310408]
+C-Index-IPCW_Test Set: 0.6696 ± 0.0123
+ - List = [0.653721753399275, 0.6881138056924959, 0.6727523308178898, 0.6584814521478697, 0.6747880157954376]
 Training run tcga_lusc_run001 finished.
 """
 
@@ -43,10 +45,10 @@ import random
 
 
 # --- 基础组件 ---
-class SELU(nn.Module):
+class GELU(nn.Module):
     def forward(self, x):
         x, gates = x.chunk(2, dim = -1)
-        return x * F.selu(gates)
+        return x * F.gelu(gates)
     
 
 class FeedForward(nn.Module):
@@ -54,9 +56,11 @@ class FeedForward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
-            SELU(),  # ReLU之后要跟LayerNorm，但是SELU之后本身就是高斯分布，不需要再归一化
+            GELU(),  # ReLU之后要跟LayerNorm，但是GeLU之后本身就是高斯分布，不需要再归一化
+            nn.LayerNorm(dim * mult),
+            nn.Dropout(dropout),
             nn.Linear(dim * mult, dim),
-            nn.Dropout(dropout)
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -72,9 +76,7 @@ class SafeCrossAttnEncoder(nn.Module):
     """
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
         super().__init__()
-        self.norm_q = nn.LayerNorm(embed_dim)
-        self.norm_kv = nn.LayerNorm(embed_dim)
-        self.norm_ffn = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
         self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
@@ -90,9 +92,9 @@ class SafeCrossAttnEncoder(nn.Module):
         key_padding_mask: (B, Lk), True 为 padding
         """
 
-        query = self.norm_q(query)
-        key = self.norm_kv(key)
-        value = self.norm_kv(value)
+        query = self.norm(query)
+        key = self.norm(key)
+        value = self.norm(value)
         
         # --- 核心修复逻辑 (Safe Logic) ---
         if key_padding_mask is not None:
@@ -119,7 +121,7 @@ class SafeCrossAttnEncoder(nn.Module):
         x = query + self.dropout(attn_out)
         
         # --- 2. FFN Block (新增逻辑) ---
-        ffn_out = self.ffn(self.norm_ffn(x))
+        ffn_out = self.ffn(self.norm(x))
 
         x = x + self.dropout(ffn_out)
 
@@ -153,8 +155,8 @@ class EdgeContextualizer(nn.Module):
 
         # 3. Edge更新: Edge query Context
         # Edge mask自身不需要传入attn mask，因为它是query，长度不变，padding位置的输出后续会被mask掉或忽略
-        updated_edge = self.cross_attn(
-            query=edge_feat, key=context_feat, value=context_feat, key_padding_mask=key_padding_mask)
+        updated_edge = self.cross_attn(query=edge_feat, key=context_feat, value=context_feat, 
+                                     key_padding_mask=key_padding_mask)
         
         # 4. Apply Edge Mask: 确保无效的 Edge Token 输出保持为 0
         # updated_edge: (B, Le, D), edge_mask: (B, Le)
@@ -173,12 +175,12 @@ class MedKGATFusion(nn.Module):
             max_groups: int = 10, 
             ff_dropout_rate: float = 0.25, 
             attn_dropout_rate: float = 0.1, 
-            num_intra_layers: int = 1, num_inter_layers: int = 2):
+            num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
-        self.drop_edge_ratio = 0.2
+        self.drop_edge_ratio = 0.1
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -186,7 +188,7 @@ class MedKGATFusion(nn.Module):
             nn.LayerNorm(self.embed_dim),
 
             nn.Linear(self.embed_dim, self.embed_dim * 2),
-            SELU(),
+            GELU(),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
@@ -494,7 +496,7 @@ class MedKGATFusion(nn.Module):
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": 1.5 * fusion_loss,
+                "total_loss": fusion_loss,
             }
         }
 

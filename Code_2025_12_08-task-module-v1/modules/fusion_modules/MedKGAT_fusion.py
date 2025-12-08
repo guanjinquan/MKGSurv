@@ -1,31 +1,30 @@
 """
-ALL SELU Network
 LUAD:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6724 ± 0.0440
- - List = [0.6960183767228177, 0.6559226430298146, 0.7450514647664291, 0.6469661150512215, 0.6182246661429693]
-C-Index-IPCW_Validation Set: 0.6419 ± 0.0531
- - List = [0.7240640206305587, 0.6131871410641827, 0.6778088589046618, 0.6221974814025566, 0.5722331172946622]
+C-Index_Validation Set: 0.6632 ± 0.0547
+ - List = [0.6960183767228177, 0.6317485898468976, 0.7323832145684878, 0.6808510638297872, 0.575019638648861]
+C-Index-IPCW_Validation Set: 0.6470 ± 0.0591
+ - List = [0.7220180311016072, 0.6169946264540274, 0.7047146000357601, 0.6293615733140098, 0.5617640598665706]
 Test Summary:
-C-Index_Test Set: 0.6450 ± 0.0621
- - List = [0.533694810224632, 0.6974842767295597, 0.6326388888888889, 0.6536388140161725, 0.7075208913649025]
-C-Index-IPCW_Test Set: 0.6183 ± 0.0798
- - List = [0.5139308161006798, 0.6543902178554775, 0.5886069549782139, 0.58355068953283, 0.7508401913424299]
+C-Index_Test Set: 0.6464 ± 0.0833
+ - List = [0.5112316034082107, 0.7534591194968554, 0.6208333333333333, 0.6354447439353099, 0.7110027855153204]
+C-Index-IPCW_Test Set: 0.6185 ± 0.0884
+ - List = [0.4892697436918146, 0.6546310834607328, 0.6021922449828262, 0.5868085156003535, 0.7593500138228303]
 Training run tcga_luad_run001 finished.
 
 LUSC:
 --- Testing Complete ---
 Validation Summary:
-C-Index_Validation Set: 0.6681 ± 0.0396
- - List = [0.6892243623112962, 0.6604215456674473, 0.6075949367088608, 0.7273718647764449, 0.6561264822134387]
-C-Index-IPCW_Validation Set: 0.6454 ± 0.0312
- - List = [0.659165167714776, 0.6683116893930034, 0.5993109308042736, 0.6814213394315042, 0.6186456143461236]
+C-Index_Validation Set: 0.6800 ± 0.0413
+ - List = [0.7064029151483602, 0.6744730679156908, 0.6064942212438085, 0.7290076335877863, 0.6837944664031621]
+C-Index-IPCW_Validation Set: 0.6507 ± 0.0475
+ - List = [0.7170525231411174, 0.6963104590433415, 0.5970389826616841, 0.6319419339983285, 0.6111638403682395]
 Test Summary:
-C-Index_Test Set: 0.6714 ± 0.0204
- - List = [0.7011564211807669, 0.6458100558659218, 0.6620879120879121, 0.6591951095262354, 0.6886387995712755]
-C-Index-IPCW_Test Set: 0.6790 ± 0.0196
- - List = [0.671550964585662, 0.6623468195749981, 0.6570094023997478, 0.7066067417077688, 0.6973010251772963]
+C-Index_Test Set: 0.6631 ± 0.0456
+ - List = [0.7218502738892271, 0.6312849162011173, 0.6153846153846154, 0.6321956189505858, 0.714898177920686]
+C-Index-IPCW_Test Set: 0.6749 ± 0.0155
+ - List = [0.6662173541415626, 0.6651180472574184, 0.6620549665387901, 0.676666837053792, 0.704375116368041]
 Training run tcga_lusc_run001 finished.
 """
 
@@ -43,10 +42,10 @@ import random
 
 
 # --- 基础组件 ---
-class SELU(nn.Module):
+class GELU(nn.Module):
     def forward(self, x):
         x, gates = x.chunk(2, dim = -1)
-        return x * F.selu(gates)
+        return x * F.gelu(gates)
     
 
 class FeedForward(nn.Module):
@@ -54,7 +53,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
-            SELU(),  # ReLU之后要跟LayerNorm，但是SELU之后本身就是高斯分布，不需要再归一化
+            GELU(),  # ReLU之后要跟LayerNorm，但是GeLU之后本身就是高斯分布，不需要再归一化
             nn.Linear(dim * mult, dim),
             nn.Dropout(dropout)
         )
@@ -153,8 +152,8 @@ class EdgeContextualizer(nn.Module):
 
         # 3. Edge更新: Edge query Context
         # Edge mask自身不需要传入attn mask，因为它是query，长度不变，padding位置的输出后续会被mask掉或忽略
-        updated_edge = self.cross_attn(
-            query=edge_feat, key=context_feat, value=context_feat, key_padding_mask=key_padding_mask)
+        updated_edge = self.cross_attn(query=edge_feat, key=context_feat, value=context_feat, 
+                                     key_padding_mask=key_padding_mask)
         
         # 4. Apply Edge Mask: 确保无效的 Edge Token 输出保持为 0
         # updated_edge: (B, Le, D), edge_mask: (B, Le)
@@ -186,7 +185,7 @@ class MedKGATFusion(nn.Module):
             nn.LayerNorm(self.embed_dim),
 
             nn.Linear(self.embed_dim, self.embed_dim * 2),
-            SELU(),
+            GELU(),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
         )
