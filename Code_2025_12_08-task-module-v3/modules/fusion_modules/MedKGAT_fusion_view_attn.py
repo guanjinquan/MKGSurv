@@ -50,7 +50,7 @@ class SafeCrossAttnEncoder(nn.Module):
         self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
-                key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> torch.Tensor:
+                key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         query: (B, Lq, D)
         key:   (B, Lk, D)
@@ -75,7 +75,7 @@ class SafeCrossAttnEncoder(nn.Module):
 
         # --- 1. Attention Block ---
         # 正常计算 MHA
-        attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
+        attn_out, _ = self.mha(query, key, value, key_padding_mask=key_padding_mask)
             
         # 清理垃圾值：将那些原本全无效的行的输出置为 0
         if all_masked_rows is not None and all_masked_rows.any():
@@ -89,8 +89,6 @@ class SafeCrossAttnEncoder(nn.Module):
 
         x = x + self.dropout(ffn_out)
 
-        if need_weights:
-            return x, attn_weights
         return x
 
 
@@ -422,17 +420,15 @@ class MedKGATFusion(nn.Module):
             global_padding_mask = global_padding_mask.clone()
             global_padding_mask[all_masked_rows, 0] = False
 
-        global_transformed, attn_weights = self.global_transformer(
-            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask, need_weights=True)
+        global_transformed = self.global_transformer(
+            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask)
         
         if all_masked_rows.any():
             global_transformed[all_masked_rows] = 0.0
         
         fused_embedding, _ = masked_mean_pool(global_transformed, global_mask)
+             
         fused_embedding = self.post_fusion_norm(fused_embedding)
-
-        if not self.training: # 通常只在验证/测试时保存分析，或者是为了调试
-            self.view_groups_contribution(attn_weights, global_concat, group_masks)
 
         # 8. Compute KL Divergence Loss
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
@@ -459,159 +455,14 @@ class MedKGATFusion(nn.Module):
             
             if valid_patients.sum() > 0:
                 fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
-    
-        if not self.training:  # 只在验证/测试时保存
-             # 假设你在 args 里定义了一个 save_umap_path
-            if hasattr(self.args, 'save_umap_path') and self.args.save_umap_path:
-                self.save_features_for_umap(final_group_embeddings, group_masks, fused_embedding)
-
+            
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
                 "total_loss": 2 * fusion_loss,
             }
         }
-    
-    def save_features_for_umap(self, group_embeddings, group_masks, fused_embedding):
-        """
-        保存特征用于 UMAP 可视化。
-        将保存为 JSONL，每行包含：
-        {
-            "groups": [[dim1, dim2...], [dim1, dim2...] ...],  # 各个组的池化特征
-            "fused": [dim1, dim2...]                           # 融合后的特征
-        }
-        """
-        import os
-        import json
-        
-        # 确保路径存在
-        save_path = self.args.save_umap_path
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-        batch_size = fused_embedding.shape[0]
-        
-        # 1. 对每个 Group 进行 Pooling (Mean Pooling)，变成 (B, D)
-        # 这一步是为了把 Sequence 变成 Vector，才能画点
-        pooled_groups = []
-        for i, (g_feat, g_mask) in enumerate(zip(group_embeddings, group_masks)):
-            # 这里复用你代码里的 masked_mean_pool
-            # 如果 masked_mean_pool 返回 (emb, mask)，取 [0]
-            # 假设你的 masked_mean_pool 逻辑如下：
-            denom = g_mask.sum(dim=1, keepdim=True).clamp(min=1e-9)
-            masked_feat = g_feat * g_mask.unsqueeze(-1)
-            mean_emb = masked_feat.sum(dim=1) / denom # (B, D)
-            pooled_groups.append(mean_emb.detach().cpu())
-
-        # 2. 融合特征已经是 (B, D) 了
-        fused_emb = fused_embedding.detach().cpu()
-
-        # 3. 写入文件
-        with open(save_path, 'a', encoding='utf-8') as f:
-            for b in range(batch_size):
-                record = {
-                    "groups": [pg[b].tolist() for pg in pooled_groups], # List of lists
-                    "fused": fused_emb[b].tolist()
-                }
-                f.write(json.dumps(record) + "\n")
-
-    def view_groups_contribution(self, attn_weights: torch.Tensor, values: torch.Tensor, group_masks: List[torch.Tensor]):
-        """
-        方案1实现：基于范数(Energy)的贡献度分析。
-        保存格式：与之前一致，JSONL 每行一个列表 [g0_ratio, g1_ratio, ...]
-        
-        Args:
-            attn_weights: (B, L, L) or (B, H, L, L) - 注意力权重
-            values: (B, L, D) - Transformer 的输入 (即 Global Concat)
-            group_masks: List[(B, L_g)]
-        """
-        if not hasattr(self.args, 'view_groups_attention_path') or self.args.view_groups_attention_path is None:
-            return
-        
-        save_path = self.args.view_groups_attention_path
-        # 为了区分，建议修改一下文件名，或者保持原样覆盖
-        # save_path = save_path.replace('.jsonl', '_contribution.jsonl') 
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-        if attn_weights is None or values is None:
-            return
-
-        # 1. 维度与数据检查
-        # 如果是多头 (B, H, L, L)，先平均成 (B, L, L)
-        if attn_weights.dim() == 4:
-            attn_weights = attn_weights.mean(dim=1)
-
-        # 确保 attn 是 (B, L, L)
-        if attn_weights.shape[0] != group_masks[0].shape[0]:
-            attn_weights = attn_weights.permute(1, 0, 2)
-            
-        # 确保 values 是 (B, L, D)
-        if values.shape[0] != group_masks[0].shape[0]:
-            values = values.transpose(0, 1)
-
-        # 2. 强制 Softmax 检查 (Contribution 分析必须基于概率)
-        check_sum = attn_weights[0, 0, :].sum().item()
-        if check_sum > 1.1 or check_sum < 0.9:
-            # print("[Info] Applying Softmax for contribution analysis...")
-            attn_weights = torch.softmax(attn_weights, dim=-1)
-
-        # 3. 准备 Mask 和 Offsets
-        global_mask = torch.cat(group_masks, dim=1).float() # (B, L_total)
-        num_valid_queries = global_mask.sum(dim=1, keepdim=True).clamp(min=1.0) # (B, 1)
-
-        group_lengths = [gm.shape[1] for gm in group_masks]
-        offsets = [0]
-        for l in group_lengths:
-            offsets.append(offsets[-1] + l)
-
-        # 4. 核心计算循环：计算每个组的 Energy
-        group_energy_list = []
-
-        for i in range(len(group_masks)):
-            start, end = offsets[i], offsets[i+1]
-            
-            # A. 取出该组对应的 Attention 概率 (B, L_total, L_group)
-            # 代表：每个 Token 对该组分配了多少关注
-            attn_slice = attn_weights[:, :, start:end]
-            
-            # B. 取出该组对应的 Feature Values (B, L_group, D)
-            value_slice = values[:, start:end, :]
-            
-            # C. 矩阵乘法：加权求和
-            # (B, L_total, L_group) @ (B, L_group, D) -> (B, L_total, D)
-            # 含义：该组特征实际上向 Residual Stream 注入了多少更新向量
-            weighted_update = torch.bmm(attn_slice, value_slice)
-            
-            # D. 计算能量 (L2 Norm)
-            # (B, L_total) -> 每个位置收到的来自该组的更新强度
-            update_norm = torch.norm(weighted_update, p=2, dim=-1)
-            
-            # E. Mask 掉 Padding 位置 (我们只关心有效 Token 收到的贡献)
-            update_norm = update_norm * global_mask
-            
-            # F. 平均化：得到该样本中，该组的平均贡献强度
-            avg_energy = update_norm.sum(dim=1) / num_valid_queries.squeeze(-1) # (B,)
-            
-            group_energy_list.append(avg_energy)
-
-        # 5. 堆叠与归一化 (转为比例)
-        # 结果 shape: (B, Num_Groups)
-        group_energies = torch.stack(group_energy_list, dim=1)
-        
-        # 计算总能量，归一化成 0~1 的比例，方便和之前的 Attention Score 对比
-        total_energy = group_energies.sum(dim=1, keepdim=True)
-        contribution_ratios = group_energies / torch.clamp(total_energy, min=1e-9)
-
-        # 6. 保存到 JSONL
-        batch_ratios = contribution_ratios.detach().cpu().tolist()
-        
-        try:
-            with open(save_path, 'a', encoding='utf-8') as f:
-                for sample_ratios in batch_ratios:
-                    # 格式: [0.85, 0.10, 0.05]
-                    f.write(json.dumps(sample_ratios) + "\n")
-        except Exception as e:
-            print(f"Warning: Failed to save contribution scores: {e}")
-            
     def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
         if self.args.points_save_path is None:
             return 

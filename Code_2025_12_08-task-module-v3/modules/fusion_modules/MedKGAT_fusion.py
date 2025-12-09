@@ -1,3 +1,22 @@
+"""
+
+LUAD:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6278 ± 0.0595
+ - List = [0.6914241960183767, 0.5793714746172441, 0.6935866983372921, 0.6304176516942475, 0.5443833464257659]
+C-Index-IPCW_Validation Set: 0.6114 ± 0.0745
+ - List = [0.6956163600283107, 0.5174109370040318, 0.6819038379586689, 0.6311054414259185, 0.531146816399386]
+Test Summary:
+C-Index_Test Set: 0.6299 ± 0.0634
+ - List = [0.5383423702556158, 0.7238993710691823, 0.5868055555555556, 0.6401617250673854, 0.6601671309192201]
+C-Index-IPCW_Test Set: 0.5979 ± 0.0638
+ - List = [0.5157434146668128, 0.6695260553772572, 0.5410494311683957, 0.5931222869899677, 0.670245588973929]
+Training run tcga_luad_run001 finished.
+
+
+"""
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -254,6 +273,136 @@ class MedKGATFusion(nn.Module):
 
         return updated_target
     
+    def _compute_group_pairwise_kl_loss(self, 
+                                        attn_weights: torch.Tensor, 
+                                        group_masks: List[torch.Tensor], 
+                                        groups_relationships: Dict[Tuple[int, int], torch.Tensor]) -> torch.Tensor:
+        """
+        计算 Group-Level 的 Pairwise KL Loss。
+        
+        逻辑：
+        1. 将 Token-level Attention 聚合为 Group-level Attention Matrix (B, N_groups, N_groups)。
+        2. 提取所有 Group Pairs (i, j) 的 Attention Mean。
+        3. 提取所有 Group Pairs (i, j) 的 Ground Truth Score。
+        4. 将两者分别归一化为概率分布，计算 KL 散度。
+        """
+        # 1. 维度检查与修正
+        if attn_weights.dim() == 4: attn_weights = attn_weights.mean(dim=1) # (B, H, L, L) -> (B, L, L)
+        if attn_weights.shape[0] != group_masks[0].shape[0]: attn_weights = attn_weights.permute(1, 0, 2)
+        
+        # 确保是概率 (Safety check)
+        if attn_weights[0, 0, :].sum() > 1.1: attn_weights = torch.softmax(attn_weights, dim=-1)
+
+        batch_size = attn_weights.shape[0]
+        num_groups = len(group_masks)
+        
+        # 2. 准备 Offsets 和 Global Mask
+        # global_mask = torch.cat(group_masks, dim=1).float() # (B, L_total)
+        group_lengths = [gm.shape[1] for gm in group_masks]
+        offsets = [0]
+        for l in group_lengths: offsets.append(offsets[-1] + l)
+
+        # 3. 收集成对的 Attention Mean 和 Target Score
+        pred_pairs_list = []   # 存储预测的 Attention 强度
+        target_pairs_list = [] # 存储真实的 Edge Score
+        
+        # 遍历所有可能的 Pair (i, j)
+        # 这里的策略：我们关注 Upper Triangle (无向图关系) 或者 所有非对角线关系
+        # 根据你的 groups_relationships 结构，通常是无向的，所以我们取 i < j
+        valid_pair_found = False
+
+        for i in range(num_groups):
+            for j in range(num_groups):
+                if i == j: continue # 跳过自环，或者根据需求保留
+                if i > j: continue  # 只取上三角，避免重复 (i,j) 和 (j,i)
+
+                # --- A. 计算 Predicted Attention Mean (i -> j) ---
+                start_i, end_i = offsets[i], offsets[i+1]
+                start_j, end_j = offsets[j], offsets[j+1]
+                
+                # Slice: Queries from Group i, Keys from Group j
+                # Shape: (B, Li, Lj)
+                block_attn = attn_weights[:, start_i:end_i, start_j:end_j]
+                
+                # Mask: 只有当 Query 和 Key 都有效时，Attention 才有效
+                # mask_i: (B, Li), mask_j: (B, Lj)
+                mask_i = group_masks[i].float()
+                mask_j = group_masks[j].float()
+                
+                # pairwise_mask: (B, Li, Lj)
+                block_mask = mask_i.unsqueeze(2) * mask_j.unsqueeze(1)
+                
+                # 计算 Mean Attention (Sum / Count)
+                # 加上 1e-9 防止除零
+                valid_counts = block_mask.sum(dim=(1, 2)) # (B,)
+                sum_attn = (block_attn * block_mask).sum(dim=(1, 2)) # (B,)
+                
+                mean_attn_score = sum_attn / torch.clamp(valid_counts, min=1.0)
+                
+                # 如果这个 pair 完全无效(valid_counts=0)，mean_attn_score 应该是 0 (或者被mask掉)
+                # 这里简单处理：如果 valid_counts 是 0，mean 也是 0
+                mean_attn_score = mean_attn_score * (valid_counts > 0).float()
+
+                # --- B. 获取 Target Score ---
+                # 尝试获取 (i, j) 或 (j, i)
+                edge_score = groups_relationships.get((i, j), groups_relationships.get((j, i), None))
+                
+                if edge_score is None:
+                    # 如果没有定义关系，设为 0 (弱关系)
+                    edge_score = torch.zeros(batch_size, device=attn_weights.device)
+                else:
+                    if edge_score.dim() > 1: edge_score = edge_score.view(-1)
+                    if edge_score.dim() == 0: edge_score = edge_score.expand(batch_size)
+                
+                # 只有当该 pair 在当前 batch 确实存在有效 token 时，才计入 Loss
+                # 我们使用 block_mask 的 valid性来判断
+                # (B,)
+                pair_is_valid = (valid_counts > 0).float()
+                
+                # 为了批量处理，我们先不管 invalid 的 batch sample，全部存下来，最后 mask
+                pred_pairs_list.append(mean_attn_score)   # List of (B,)
+                target_pairs_list.append(edge_score)      # List of (B,)
+                
+                valid_pair_found = True
+
+        if not valid_pair_found or len(pred_pairs_list) == 0:
+            return torch.tensor(0.0, device=attn_weights.device)
+
+        # 4. 堆叠构建分布向量
+        # Shape: (B, Num_Pairs)
+        preds = torch.stack(pred_pairs_list, dim=1) 
+        targets = torch.stack(target_pairs_list, dim=1)
+
+        # 5. Mask 掉那些全为 0 的样本 (比如 Modality Dropout 导致的)
+        # 如果一个样本的所有 Pair 预测都是 0 (意味着没有有效 Token)，这行数据不应计算 Loss
+        valid_samples_mask = (preds.sum(dim=1) > 0).float() # (B,)
+
+        # 6. 归一化为概率分布 (Softmax)
+        # 注意：Attention Mean 本身很小，直接 Softmax 会导致分布过于平滑(High Entropy)。
+        # 可以除以一个 temperature 让差异更明显
+        temperature = 0.05 
+        
+        # Log Softmax for Prediction (Input to KLDiv)
+        # 加上 1e-9 避免 log(0)
+        preds_log_probs = F.log_softmax(preds / temperature, dim=1)
+        
+        # Softmax for Targets
+        # Targets 也是 score，需要转为概率
+        targets_probs = F.softmax(targets / temperature, dim=1)
+        
+        # 7. 计算 KL Divergence
+        # reduction='none' 以便我们可以应用 valid_samples_mask
+        # Shape: (B, Num_Pairs) -> Sum over pairs -> (B,)
+        kl_loss = F.kl_div(preds_log_probs, targets_probs, reduction='none').sum(dim=1)
+        
+        # 8. 平均 Loss
+        if valid_samples_mask.sum() > 0:
+            final_loss = (kl_loss * valid_samples_mask).sum() / valid_samples_mask.sum()
+        else:
+            final_loss = torch.tensor(0.0, device=attn_weights.device)
+            
+        return final_loss
+
     def forward(
         self, 
         embeddings: List[torch.Tensor], 
@@ -308,7 +457,6 @@ class MedKGATFusion(nn.Module):
 
         # 4. Inter-Group Interaction (Multi-Layer GNN / GAT)
         # We loop self.num_inter_layers times
-        
         current_group_embeddings = group_embeddings # Points to current node features
 
         for layer_idx in range(self.num_inter_layers):
@@ -364,66 +512,20 @@ class MedKGATFusion(nn.Module):
         # Final embeddings after all GAT layers
         final_group_embeddings = current_group_embeddings
 
-        # ------------------------------------------------------------------
-        # 4b. Data Collection for KL Loss (Post-GAT)
-        # We iterate the edges one last time (using the FINAL edge/node states) 
-        # just to gather the lists needed for loss calculation.
-        # ------------------------------------------------------------------
-        all_edge_scores_list = []
-        all_valid_masks_list = []
-        all_edge_pairs_list = []
-        edge_score_valid_flag = False
-
-        # Note: We can use current_proj_knowledge (the latest edge feats) or original. 
-        # Usually, edge structure doesn't change, just features. We iterate keys.    
-        for (idx_a, idx_b) in edge_keys:
-            # Retrieve Ground Truth Edge Score
-            edge_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
-            if edge_score is None:
-                edge_score = torch.zeros(embeddings[0].shape[0], device=embeddings[0].device)
-            
-            if edge_score.dim() > 1:
-                edge_score = edge_score.view(-1)
-            if edge_score.dim() == 0:
-                edge_score = edge_score.expand(embeddings[0].shape[0])
-
-            has_a = group_validity_masks[idx_a].float()
-            has_b = group_validity_masks[idx_b].float()
-            pair_validity = has_a * has_b
-
-            edge_score_valid_flag |= edge_score.sum().item() > 0
-            all_edge_scores_list.append(edge_score)
-            all_valid_masks_list.append(pair_validity)
-            all_edge_pairs_list.append((idx_a, idx_b))
-
-        # 6. Compute Similarities on FINAL Embeddings 
-        all_cos_sims_list = []
-        
-        if len(all_edge_pairs_list) > 0 and edge_score_valid_flag:
-            final_pooled_results = [masked_mean_pool(g, m) for g, m in zip(final_group_embeddings, group_masks)]
-            final_pooled_group_embeddings = [res[0] for res in final_pooled_results]
-            final_pooled_group_embeddings = [F.normalize(g, p=2, dim=1) for g in final_pooled_group_embeddings]
-            
-            for idx_a, idx_b in all_edge_pairs_list:
-                sim = torch.sum(final_pooled_group_embeddings[idx_a] * final_pooled_group_embeddings[idx_b], dim=1)
-                sim = torch.clamp(sim, -1.0, 1.0)
-                all_cos_sims_list.append(sim)
-
-        # Save Points
-        self.save_points(final_group_embeddings, group_masks, groups_relationships)
-
         # 7. Global Aggregation
         global_concat = torch.cat(final_group_embeddings, dim=1)
         global_mask = torch.cat(group_masks, dim=1)
         global_padding_mask = (global_mask == 0)
-
+        
         all_masked_rows = global_padding_mask.all(dim=1)
         if all_masked_rows.any():
             global_padding_mask = global_padding_mask.clone()
             global_padding_mask[all_masked_rows, 0] = False
 
         global_transformed, attn_weights = self.global_transformer(
-            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask, need_weights=True)
+            query=global_concat, key=global_concat, value=global_concat, 
+            key_padding_mask=global_padding_mask, need_weights=True
+        )
         
         if all_masked_rows.any():
             global_transformed[all_masked_rows] = 0.0
@@ -431,88 +533,20 @@ class MedKGATFusion(nn.Module):
         fused_embedding, _ = masked_mean_pool(global_transformed, global_mask)
         fused_embedding = self.post_fusion_norm(fused_embedding)
 
-        if not self.training: # 通常只在验证/测试时保存分析，或者是为了调试
-            self.view_groups_contribution(attn_weights, global_concat, group_masks)
+        # [Analysis] 保存 Contribution 分析 (只在 Eval 时)
+        if not self.training:
+             self.view_groups_contribution(attn_weights, global_concat, group_masks)
 
-        # 8. Compute KL Divergence Loss
-        fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
-        
-        if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
-            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1)  # (Batch_Size, Num_Edges) stack all edge of one patient
-            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1)       # (Batch_Size, Num_Edges) stack all sim of one patient
-            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1)   # (Batch_Size, Num_Edges)
-
-            scores_masked = all_scores_tensor.clone().float()
-            scores_masked[all_masks_tensor == 0] = -1e9
-            target_probs = F.softmax(scores_masked, dim=1)
-
-            temperature = 0.1
-            sims_masked = all_sims_tensor.clone() / temperature
-            sims_masked[all_masks_tensor == 0] = -1e9
-            
-            pred_log_probs = F.log_softmax(sims_masked, dim=1)
-            
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
-            kl_loss_per_patient = kl_loss.sum(dim=1)
-            
-            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float()   # (Batch_Size, )
-            
-            if valid_patients.sum() > 0:
-                fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
-    
-        if not self.training:  # 只在验证/测试时保存
-             # 假设你在 args 里定义了一个 save_umap_path
-            if hasattr(self.args, 'save_umap_path') and self.args.save_umap_path:
-                self.save_features_for_umap(final_group_embeddings, group_masks, fused_embedding)
+        # =========================================================================================
+        # 8. Compute New Group-Level Pairwise KL Loss
+        attn_kl_loss = self._compute_group_pairwise_kl_loss(attn_weights, group_masks, groups_relationships)
 
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": 2 * fusion_loss,
+                "total_loss": attn_kl_loss, 
             }
         }
-    
-    def save_features_for_umap(self, group_embeddings, group_masks, fused_embedding):
-        """
-        保存特征用于 UMAP 可视化。
-        将保存为 JSONL，每行包含：
-        {
-            "groups": [[dim1, dim2...], [dim1, dim2...] ...],  # 各个组的池化特征
-            "fused": [dim1, dim2...]                           # 融合后的特征
-        }
-        """
-        import os
-        import json
-        
-        # 确保路径存在
-        save_path = self.args.save_umap_path
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-        batch_size = fused_embedding.shape[0]
-        
-        # 1. 对每个 Group 进行 Pooling (Mean Pooling)，变成 (B, D)
-        # 这一步是为了把 Sequence 变成 Vector，才能画点
-        pooled_groups = []
-        for i, (g_feat, g_mask) in enumerate(zip(group_embeddings, group_masks)):
-            # 这里复用你代码里的 masked_mean_pool
-            # 如果 masked_mean_pool 返回 (emb, mask)，取 [0]
-            # 假设你的 masked_mean_pool 逻辑如下：
-            denom = g_mask.sum(dim=1, keepdim=True).clamp(min=1e-9)
-            masked_feat = g_feat * g_mask.unsqueeze(-1)
-            mean_emb = masked_feat.sum(dim=1) / denom # (B, D)
-            pooled_groups.append(mean_emb.detach().cpu())
-
-        # 2. 融合特征已经是 (B, D) 了
-        fused_emb = fused_embedding.detach().cpu()
-
-        # 3. 写入文件
-        with open(save_path, 'a', encoding='utf-8') as f:
-            for b in range(batch_size):
-                record = {
-                    "groups": [pg[b].tolist() for pg in pooled_groups], # List of lists
-                    "fused": fused_emb[b].tolist()
-                }
-                f.write(json.dumps(record) + "\n")
 
     def view_groups_contribution(self, attn_weights: torch.Tensor, values: torch.Tensor, group_masks: List[torch.Tensor]):
         """

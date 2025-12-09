@@ -434,85 +434,109 @@ class MedKGATFusion(nn.Module):
         if not self.training: # 通常只在验证/测试时保存分析，或者是为了调试
             self.view_groups_contribution(attn_weights, global_concat, group_masks)
 
-        # 8. Compute KL Divergence Loss
+        # =========================================================================================
+        # 8. Compute Token-wise KL Divergence Loss
+        # Logic: 
+        #   1. Compute sim matrix between tokens of Group A and Group B -> Flatten -> Concatenate all pairs
+        #   2. Expand scalar Edge Score to match matrix shape -> Flatten -> Concatenate all pairs
+        #   3. Normalize both giant vectors (Prediction and Target)
+        #   4. Compute KL Div
+        # =========================================================================================
+        
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
         
-        if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
-            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1)  # (Batch_Size, Num_Edges) stack all edge of one patient
-            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1)       # (Batch_Size, Num_Edges) stack all sim of one patient
-            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1)   # (Batch_Size, Num_Edges)
+        # Lists to hold the flattened vectors for every pair
+        batch_all_pairs_logits = []  # Prediction: Cosine Similarities
+        batch_all_pairs_targets = [] # Target: Expanded Ground Truth Scores
+        batch_has_valid_pairs = False
 
-            scores_masked = all_scores_tensor.clone().float()
-            scores_masked[all_masks_tensor == 0] = -1e9
-            target_probs = F.softmax(scores_masked, dim=1)
+        if len(edge_keys) > 0:
+            for (idx_a, idx_b) in edge_keys:
+                # A. Retrieve Data
+                feat_a = final_group_embeddings[idx_a] # (B, La, D)
+                mask_a = group_masks[idx_a]            # (B, La)
+                feat_b = final_group_embeddings[idx_b] # (B, Lb, D)
+                mask_b = group_masks[idx_b]            # (B, Lb)
 
-            temperature = 0.1
-            sims_masked = all_sims_tensor.clone() / temperature
-            sims_masked[all_masks_tensor == 0] = -1e9
-            
-            pred_log_probs = F.log_softmax(sims_masked, dim=1)
-            
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
-            kl_loss_per_patient = kl_loss.sum(dim=1)
-            
-            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float()   # (Batch_Size, )
-            
-            if valid_patients.sum() > 0:
-                fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
-    
-        if not self.training:  # 只在验证/测试时保存
-             # 假设你在 args 里定义了一个 save_umap_path
-            if hasattr(self.args, 'save_umap_path') and self.args.save_umap_path:
-                self.save_features_for_umap(final_group_embeddings, group_masks, fused_embedding)
+                # B. Retrieve Ground Truth Score
+                edge_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
+                if edge_score is None:
+                    edge_score = torch.zeros(embeddings[0].shape[0], device=embeddings[0].device)
+                
+                if edge_score.dim() > 1: edge_score = edge_score.view(-1)
+                if edge_score.dim() == 0: edge_score = edge_score.expand(embeddings[0].shape[0])
+                # edge_score shape: (B,)
 
+                # C. Compute Token-wise Similarity Matrix (Prediction)
+                # Normalize features for Cosine Similarity
+                feat_a_norm = F.normalize(feat_a, p=2, dim=-1) # (B, La, D)
+                feat_b_norm = F.normalize(feat_b, p=2, dim=-1) # (B, Lb, D)
+                
+                # Matrix Mult: (B, La, D) @ (B, D, Lb) -> (B, La, Lb)
+                sim_matrix = torch.bmm(feat_a_norm, feat_b_norm.transpose(1, 2))
+                
+                # D. Create Validity Mask (B, La, Lb)
+                # Outer product of masks: 1 only if both token i and token j are valid
+                pairwise_mask = mask_a.unsqueeze(2) * mask_b.unsqueeze(1) # (B, La, 1) * (B, 1, Lb) -> (B, La, Lb)
+
+                # E. Expand Ground Truth Score to Matrix (Target)
+                # We want every valid token interaction (i, j) to have the value of the group score
+                target_matrix = edge_score.view(-1, 1, 1).expand(-1, feat_a.shape[1], feat_b.shape[1]) # (B, La, Lb)
+
+                # F. Flatten and Mask
+                # Flatten spatial dims: (B, La * Lb)
+                sim_flat = sim_matrix.view(feat_a.shape[0], -1)
+                target_flat = target_matrix.reshape(feat_a.shape[0], -1) # reshape is safer than view for expanded tensors sometimes
+                mask_flat = pairwise_mask.view(feat_a.shape[0], -1)
+
+                # G. Apply Masking immediately
+                # Set invalid positions to -1e9 so they disappear after Softmax/LogSoftmax
+                # Note: We clone to avoid in-place errors if needed, though masked_fill is usually fine
+                sim_flat = sim_flat.masked_fill(mask_flat == 0, -1e9)
+                target_flat = target_flat.masked_fill(mask_flat == 0, -1e9)
+
+                batch_all_pairs_logits.append(sim_flat)
+                batch_all_pairs_targets.append(target_flat)
+                
+                # Check if we have any valid data in this batch at all
+                if mask_flat.sum() > 0:
+                    batch_has_valid_pairs = True
+
+            # H. Concatenate All Pairs and Compute Loss
+            if batch_has_valid_pairs:
+                # Concatenate along dim 1 -> (B, Sum(La*Lb for all pairs))
+                total_logits = torch.cat(batch_all_pairs_logits, dim=1) 
+                total_targets = torch.cat(batch_all_pairs_targets, dim=1)
+
+                temperature = 0.1
+                
+                # Prediction Distribution: LogSoftmax over ALL token interactions across ALL pairs
+                pred_log_probs = F.log_softmax(total_logits / temperature, dim=1)
+                
+                # Target Distribution: Softmax over ALL token interactions across ALL pairs (based on scores)
+                # High score groups get high prob mass distributed among their tokens
+                target_probs = F.softmax(total_targets, dim=1)
+                
+                # KL Divergence
+                kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none') # (B, Total_Tokens)
+                kl_loss_per_patient = kl_loss.sum(dim=1) # (B,)
+                
+                # Normalize loss by number of valid patients
+                # A patient is valid if they had at least one valid interaction pair (checked via batch_has_valid_pairs, but let's be safe per row)
+                # Check targets sum != 0 (impossible due to softmax) or check if targets are not uniform due to all -1e9
+                # Simple check: max target prob > 0 implies valid softmax occurred
+                valid_patients = (target_probs.max(dim=1)[0] > 0).float()
+                
+                if valid_patients.sum() > 0:
+                    fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
+            
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
                 "total_loss": 2 * fusion_loss,
             }
         }
-    
-    def save_features_for_umap(self, group_embeddings, group_masks, fused_embedding):
-        """
-        保存特征用于 UMAP 可视化。
-        将保存为 JSONL，每行包含：
-        {
-            "groups": [[dim1, dim2...], [dim1, dim2...] ...],  # 各个组的池化特征
-            "fused": [dim1, dim2...]                           # 融合后的特征
-        }
-        """
-        import os
-        import json
         
-        # 确保路径存在
-        save_path = self.args.save_umap_path
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-        batch_size = fused_embedding.shape[0]
-        
-        # 1. 对每个 Group 进行 Pooling (Mean Pooling)，变成 (B, D)
-        # 这一步是为了把 Sequence 变成 Vector，才能画点
-        pooled_groups = []
-        for i, (g_feat, g_mask) in enumerate(zip(group_embeddings, group_masks)):
-            # 这里复用你代码里的 masked_mean_pool
-            # 如果 masked_mean_pool 返回 (emb, mask)，取 [0]
-            # 假设你的 masked_mean_pool 逻辑如下：
-            denom = g_mask.sum(dim=1, keepdim=True).clamp(min=1e-9)
-            masked_feat = g_feat * g_mask.unsqueeze(-1)
-            mean_emb = masked_feat.sum(dim=1) / denom # (B, D)
-            pooled_groups.append(mean_emb.detach().cpu())
-
-        # 2. 融合特征已经是 (B, D) 了
-        fused_emb = fused_embedding.detach().cpu()
-
-        # 3. 写入文件
-        with open(save_path, 'a', encoding='utf-8') as f:
-            for b in range(batch_size):
-                record = {
-                    "groups": [pg[b].tolist() for pg in pooled_groups], # List of lists
-                    "fused": fused_emb[b].tolist()
-                }
-                f.write(json.dumps(record) + "\n")
 
     def view_groups_contribution(self, attn_weights: torch.Tensor, values: torch.Tensor, group_masks: List[torch.Tensor]):
         """
