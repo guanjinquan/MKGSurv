@@ -37,18 +37,8 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
     --modalities "all"  \
-    --use_medical_knowledge \
-    --view_groups_attention_path "/home/Guanjq/NewWork/MedAlignFusion/Checkpoints/tcga_lusc/tcga_lusc_run001+medkgat_fusion/attn.jsonl"
-
+    --use_medical_knowledge
 
 
 echo "Training run ${RUN_ID} finished."
 
-# --- 分析结果 (Attention Score 统计) ---
-# Group ID   | Mean (均值)       | Variance (方差)   | Std Dev (标准差)  
-# -----------------------------------------------------------------
-# 0          | 121.192179      | 211.067476      | 14.528161      
-# 1          | 61.238652       | 203.776889      | 14.275044      
-# 2          | 0.611698        | 0.099745        | 0.315824       
-# 3          | 1.127825        | 1.589249        | 1.260654       
-# -----------------------------------------------------------------

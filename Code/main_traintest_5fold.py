@@ -23,7 +23,7 @@ if __name__ == '__main__':
     summary_of_folds_test = {}
     run_path = [args.model_task, args.runs_id + "+" + args.fusion_type]
 
-    for fold in [4,0,3,2,1]:
+    for fold in range(5):
         args.fold = fold
         
         # Training 

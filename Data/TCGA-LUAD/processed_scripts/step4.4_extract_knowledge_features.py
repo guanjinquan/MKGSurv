@@ -226,6 +226,10 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
 
 
 if __name__ == "__main__":
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+    
     # File Paths
     INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge.pkl"

@@ -37,8 +37,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_test_5fold.py \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
     --modalities "all"  \
-    --use_medical_knowledge \
-    --view_groups_attention_path "/home/Guanjq/NewWork/MedAlignFusion/Checkpoints/tcga_luad/tcga_luad_run001+medkgat_fusion/attn.jsonl"
+    --use_medical_knowledge
 
 
 echo "Training run ${RUN_ID} finished."

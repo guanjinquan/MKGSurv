@@ -16,6 +16,7 @@ from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
 from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
 from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
+from modules.task_modules.tcga_brca_survival_pred import TCGA_BRCA_SurvivalPred
 
 # --- Fusion Modules
 from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
@@ -79,6 +80,7 @@ class ModelInterface(nn.Module):
             "oscc_inhouse",
             "tcga_luad",
             "tcga_lusc",
+            "tcga_brca",
         ], f"Unknown model task: {model_task}"
 
         modalities = dataset.get_active_modalities()
@@ -98,6 +100,8 @@ class ModelInterface(nn.Module):
             self.task_head = TCGA_LUAD_SurvivalPred(args, dataset=dataset)
         elif model_task == "tcga_lusc":
             self.task_head = TCGA_LUSC_SurvivalPred(args, dataset=dataset)
+        elif model_task == "tcga_brca":
+            self.task_head = TCGA_BRCA_SurvivalPred(args, dataset=dataset)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 

@@ -7,6 +7,7 @@ from datasets.hancock_dataset import HANCOCKDataset
 from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
 from datasets.tcga_luad_dataset import TCGA_LUAD_Dataset
 from datasets.tcga_lusc_dataset import TCGA_LUSC_Dataset
+from datasets.tcga_brca_dataset import TCGA_BRCA_Dataset
 
 from datasets.dataset_sampler import MixUpBalancedBatchSampler
 import torch
@@ -78,5 +79,7 @@ def GetDataset(mode, args):
         return TCGA_LUAD_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == 'tcga_lusc':
         return TCGA_LUSC_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
+    elif dataset == 'tcga_brca':
+        return TCGA_BRCA_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

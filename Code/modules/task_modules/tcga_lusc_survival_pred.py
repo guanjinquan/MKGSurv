@@ -285,8 +285,8 @@ class TCGA_LUSC_SurvivalPred(nn.Module):
 
         # Iterate over all pairs of *successfully encoded* modalities
         valid_groups = sorted(list(modality_group_map.keys()))
-        if not self.training:
-            print("Groups Order:", list(valid_groups))
+        # if not self.training:
+        #     print("Groups Order:", list(valid_groups))
 
         for i in range(len(valid_groups)):
             for j in range(i + 1, len(valid_groups)):

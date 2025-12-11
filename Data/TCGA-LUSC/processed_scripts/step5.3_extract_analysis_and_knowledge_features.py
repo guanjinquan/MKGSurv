@@ -280,4 +280,8 @@ def process_data_fusion(analysis_path: str, knowledge_path: str, output_path: st
     print(f"Done. Processed {len(final_dataset)} patients.")
 
 if __name__ == "__main__":
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+    
     process_data_fusion(ANALYSIS_FILE, KNOWLEDGE_FILE, OUTPUT_FILE, MAX_AUGMENTATIONS)

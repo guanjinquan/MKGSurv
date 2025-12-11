@@ -31,6 +31,8 @@ MANIFEST
 Data/draw
 Data/TCGA-LUAD/*
 Data/TCGA-LUSC/*
+Data/TCGA-BRCA/*
+Data/*TCGA*/*
 Data/HANCOCK/*
 Data/Multi-OSCCPI-Dataset/*
 Results/*
