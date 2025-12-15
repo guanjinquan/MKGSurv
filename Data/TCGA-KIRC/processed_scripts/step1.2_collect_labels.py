@@ -62,7 +62,7 @@ Treatment_ID_COL = '5_classes' # This will contain SUB-TYPES initially
 
 # --- File Paths ---
 # Ensure these paths are correct for your environment
-BASE_PATH = '/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC'
+BASE_PATH = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC'
 SOURCE_PATH = os.path.join(BASE_PATH, 'source')
 PROCESSED_PATH = os.path.join(BASE_PATH, 'processed')
 
@@ -75,7 +75,6 @@ PATIENT_LIST_PKL = os.path.join(SOURCE_PATH, 'kirc_patients.pkl')
 
 # Output file
 OUTPUT_CSV = os.path.join(PROCESSED_PATH, 'kirc_patient_labels.csv')
-# OUTPUT_ID_LIST = os.path.join(PROCESSED_PATH, 'lusc_final_patient_ids.txt')
 
 
 def build_id_map(all_files):

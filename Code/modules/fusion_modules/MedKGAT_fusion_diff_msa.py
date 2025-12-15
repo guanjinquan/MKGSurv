@@ -135,7 +135,7 @@ class EdgeContextualizer(nn.Module):
 
 
 
-class MedKGATFusion(nn.Module):
+class MedKGATFusion_diff_msa(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
             max_groups: int = 10, 

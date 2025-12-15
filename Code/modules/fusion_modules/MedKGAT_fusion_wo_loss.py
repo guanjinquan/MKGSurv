@@ -456,8 +456,5 @@ class MedKGATFusion_wo_loss(nn.Module):
     
         return {
             "fused_embedding": fused_embedding,
-            # "loss_dict": {
-            #     "total_loss": 2 * fusion_loss,
-            # }
         }
     

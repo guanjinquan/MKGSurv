@@ -8,6 +8,7 @@ from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
 from datasets.tcga_luad_dataset import TCGA_LUAD_Dataset
 from datasets.tcga_lusc_dataset import TCGA_LUSC_Dataset
 from datasets.tcga_brca_dataset import TCGA_BRCA_Dataset
+from datasets.tcga_kirc_dataset import TCGA_KIRC_Dataset
 
 from datasets.dataset_sampler import MixUpBalancedBatchSampler
 import torch
@@ -81,5 +82,7 @@ def GetDataset(mode, args):
         return TCGA_LUSC_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == 'tcga_brca':
         return TCGA_BRCA_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
+    elif dataset == 'tcga_kirc':
+        return TCGA_KIRC_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     else:
         raise ValueError(f"Dataset {dataset} not supported")

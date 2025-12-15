@@ -7,12 +7,12 @@ import sys
 
 # --- 1. 配置路径和参数 ---
 # (请根据您的实际环境确认路径)
-HALLMARK_FILE = Path("/home/Zhengzx/MedAlignFusion/Data/MMP_hallmarks_signatures.csv")
-RNA_FILE = Path("/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/source/HiSeqV2_PANCAN")
-PATIENT_FILE = Path("/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patient_labels.csv")
+HALLMARK_FILE = Path("/home/Guanjq/NewWork/MedAlignFusion/Data/MMP_hallmarks_signatures.csv")
+RNA_FILE = Path("/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source/HiSeqV2_PANCAN")
+PATIENT_FILE = Path("/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patient_labels.csv")
 
 # 输出文件路径
-OUTPUT_FILE = Path("/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/processed/features_rna.pkl")
+OUTPUT_FILE = Path("/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_rna.pkl")
 
 # 参数设定
 TARGET_DIM = 512  # 目标维度 (Padding/Truncate 到此长度)

@@ -1,172 +1,320 @@
 import os
-import re # 导入正则表达式模块
+import re
 import pandas as pd
 import pdfplumber
-from tqdm import tqdm # 用于显示漂亮的进度条
+from tqdm import tqdm
+from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+import pypdf   
 
 # --- 用户配置 ---
-# 请将此路径修改为您 TCGA-LUSC 报告的根目录
-# 也就是包含所有患者 ID 文件夹的 'reports' 目录
-# 适配BCRA数据的正确路径
-BASE_REPORTS_DIR = "/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/source/reports"
-OUTPUT_CSV = "/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/processed/tcga_kirc_reports.csv"
-# --- 用户配置结束 ---r
+# 路径配置
+BASE_REPORTS_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source/reports"
+OUTPUT_CSV = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/tcga_kirc_reports.csv"
+
+# API 配置 (Qwen/通义千问)
+API_KEY = os.environ.get("QWEN_API_KEY", None)
+BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+MODEL_NAME = "qwen-turbo"
+
+# 多线程配置
+MAX_WORKERS = 10 
+# --- 用户配置结束 ---
+
+# 初始化 OpenAI 客户端
+client = None
+if API_KEY and "sk-" in API_KEY:
+    client = OpenAI(
+        api_key=API_KEY,
+        base_url=BASE_URL,
+    )
+else:
+    print("[警告] 未检测到有效的 API Key。")
+
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 def extract_pdf_text(filepath):
     """
-    从单个 PDF 文件中提取所有文本，并清理符号。
+    健壮的 PDF 文本提取函数。
+    策略：优先使用 pdfplumber，如果因格式错误(如 invalid float value)失败，
+    则降级使用 pypdf 进行提取。
     """
     if filepath is None or not os.path.exists(filepath):
         return None
-        
-    full_text = ""
+    
+    text_content = ""
+    
+    # --- 方法 A: 尝试 pdfplumber ---
     try:
         with pdfplumber.open(filepath) as pdf:
-            # 遍历 PDF 的每一页
             for page in pdf.pages:
-                # 提取当前页的文本
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
-        
-        # --- 新增的清理步骤 ---
-        if full_text:
-            # 1. 替换连续两个或更多非字母、非数字、非空白的符号为空格
-            #    [^\w\s] 匹配任何不是（^）字母数字（\w）或空白（\s）的字符
-            #    {2,}    匹配 2 次或更多
-            cleaned_text = re.sub(r'([^\w\s]){2,}', ' ', full_text)
-            
-            # 2. 额外清理：将多个空白字符（包括换行符）替换为单个空格
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-            
-            # 3. 移除开头和结尾的空白
-            return cleaned_text.strip()
-        else:
-            return None # 如果 full_text 为空，返回 None
-        # --- 清理步骤结束 ---
-
+                # 某些页面可能解析失败，单独捕获页面的错误
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+                except Exception:
+                    continue  # 单页失败不影响整体
     except Exception as e:
-        print(f"  [警告] 无法读取 PDF {filepath}: {e}")
-        return None
+        # pdfplumber 彻底失败（比如文件头损坏），记录一下但不打印巨量日志
+        pass
+
+    # --- 方法 B: 如果 pdfplumber 没提取到内容，使用 pypdf 救急 ---
+    # pypdf 对 '/P0' 这种颜色错误容忍度极高
+    if not text_content.strip():
+        try:
+            reader = pypdf.PdfReader(filepath)
+            temp_text = []
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    temp_text.append(extracted)
+            text_content = "\n".join(temp_text)
+        except Exception as e:
+            # 如果两个库都挂了，那这个 PDF 可能是损坏的二进制文件
+            print(f"[提取失败] {os.path.basename(filepath)} 无法被解析。")
+            return None
+
+    # --- 统一的后处理 ---
+    if text_content:
+        # 清洗特殊符号和多余空格
+        cleaned_text = re.sub(r'([^\w\s]){2,}', ' ', text_content)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        return cleaned_text.strip()
+    
+    return None
 
 def read_annotation_notes_from_txt(filepath):
-    """
-    读取 .txt 文件 (TSV 格式), 并提取 'notes' 列的内容。
-    """
+    """读取 .txt 文件 (TSV 格式), 并提取 'notes' 列的内容。"""
     if filepath is None or not os.path.exists(filepath):
         return None
-        
     try:
-        # 1. 使用 pandas 读取 TSV (Tab 分隔)
-        # on_bad_lines='skip' 会跳过任何格式错误的行
         df = pd.read_csv(filepath, sep='\t', on_bad_lines='skip')
-        
-        # 2. 检查 'notes' 列是否存在
         if 'notes' in df.columns:
-            # 3. 提取 'notes' 列, 过滤掉
-            #    可能的空值 (NaT/None), 转换为字符串
             notes_list = df['notes'].dropna().astype(str).tolist()
-            
-            # 4. 将所有 notes 合并成一个字符串, 用换行符分隔
-            if notes_list:
-                return "\n".join(notes_list)
-            else:
-                return None # 'notes' 列存在, 但没有内容
-        else:
-            print(f"  [警告] TXT 文件 {filepath} 中未找到 'notes' 列。")
-            return None # 文件存在, 但没有 'notes' 列
-
-    except pd.errors.EmptyDataError:
-         print(f"  [警告] TXT 文件 {filepath} 为空。")
-         return None
-    except Exception as e:
-        print(f"  [警告] 无法解析 TXT {filepath}: {e}")
+            return "\n".join(notes_list) if notes_list else None
+        return None
+    except:
         return None
 
-def create_reports_dataframe(base_dir):
-    """
-    遍历基础目录，提取信息并构建 DataFrame。
-    """
-    if not os.path.exists(base_dir):
-        print(f"错误：目录 '{base_dir}' 不存在。")
-        print("请检查 'BASE_REPORTS_DIR' 变量是否设置正确。")
-        return pd.DataFrame() # 返回一个空 DataFrame
-
-    data_rows = []
+def polish_report_with_llm(report_text, annotation_text):
+    """调用 Qwen API 对报告进行润色。"""
+    if not client:
+        return None
     
-    # 获取所有子目录（即 patient_id 文件夹）
-    patient_dirs = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+    r_text = report_text if report_text else 'N/A'
+    a_text = annotation_text if annotation_text else 'N/A'
     
-    if not patient_dirs:
-        print(f"错误：在 '{base_dir}' 中未找到任何患者ID子目录。")
-        return pd.DataFrame()
+    input_content = f"[Raw PDF Report]:\n{r_text}\n\n[Annotations]:\n{a_text}"
 
-    print(f"在 '{base_dir}' 中找到了 {len(patient_dirs)} 个患者ID目录。")
-    print("开始处理文件...")
+    system_prompt = """
+You are a senior pathologist and oncology expert. 
+You are processing a raw pathology report containing OCR noise and related annotation information.
+Your task is to reconstruct and polish this information to generate a structured, clear, and professional pathology review report.
 
-    # 使用 tqdm 创建一个进度条
-    for dir_name in tqdm(patient_dirs, desc="处理患者数据"):
-        patient_dir_path = os.path.join(base_dir, dir_name)
-        
-        pdf_path = None
-        txt_path = None
-        patient_id = None
-        
-        # 扫描文件夹内的文件
+Please follow these steps:
+1. **Cleaning and Filtering**: Remove OCR garbled text, headers, footers, administrative information irrelevant to the specific medical condition, or formatting characters.
+2. **Information Integration**: Logically integrate the content of the PDF report with the Annotation notes.
+3. **Knowledge Injection (Key)**:
+   - Identify key pathological features in the report (e.g., Grade, Stage, Receptor Status, Histological Subtype, etc.).
+   - When describing these features, briefly supplement their clinical significance in **Tumor Survival Analysis** (e.g., high expression of a certain marker is usually associated with poor prognosis).
+   - **Important**: If the input report and annotations are empty or "N/A", please generate a **general educational summary** of key pathological factors in Breast Cancer (BRCA) that affect patient survival (e.g., ER/PR/HER2 status, Ki-67, Nuclear Grade), explaining their clinical relevance.
+4. **Output Control**
+   - The output format must be enclosed within <output> tags.
+   - Maintain professional and objective language.
+   - Do not output any pleasantries; output the report content directly.
+
+Example Output Structure:
+<output>
+**Comprehensive Pathology Diagnostic Report**
+[Organized Diagnostic Conclusion / General Knowledge Summary in Detailed]
+[Detailed Pathological Description / Factor Explanations in Detailed]
+[Survival Analysis Interpretation: Explain the potential impact of extracted key indicators on prognosis with comprehensive medical knowledge]
+</output>
+
+Stop after the output is complete.
+"""
+
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': input_content}
+                ],
+            )
+            content = completion.choices[0].message.content
+            match = re.search(r'<output>(.*?)</output>', content, re.DOTALL)
+            if match:
+                return match.group(1).strip()
+        except Exception:
+            continue
+    return None
+
+def get_real_patient_id_from_dir(dir_path):
+    """
+    快速扫描目录下的 PDF 文件名，提取真正的 TCGA ID。
+    例如从 'TCGA-AC-A2FO.5A7EB73F....PDF' 中提取 'TCGA-AC-A2FO'
+    """
+    try:
+        for f in os.listdir(dir_path):
+            if f.lower().endswith('.pdf'):
+                # 假设文件名以点号分割，第一部分是 ID
+                return f.split('.')[0]
+    except:
+        return None
+    return None
+
+def process_single_patient(dir_name, base_dir):
+    """单个患者处理逻辑"""
+    patient_dir_path = os.path.join(base_dir, dir_name)
+    pdf_path = None
+    txt_path = None
+    
+    # 获取真正的 ID（文件名上的 ID）
+    real_patient_id = get_real_patient_id_from_dir(patient_dir_path)
+    
+    # 如果找不到 PDF 里的 ID，只能降级使用文件夹名（通常不会发生）
+    if not real_patient_id:
+        real_patient_id = dir_name
+
+    try:
+        if not os.path.exists(patient_dir_path):
+            return None
+
         for filename in os.listdir(patient_dir_path):
             if filename.lower().endswith('.pdf'):
                 pdf_path = os.path.join(patient_dir_path, filename)
-                patient_id = filename.split(".")[0]
-                
             elif filename == 'annotations.txt':
                 txt_path = os.path.join(patient_dir_path, filename)
         
-        if patient_id is None:
-            continue
-
-        # 提取数据
         report_text = extract_pdf_text(pdf_path)
-        # 更新了此处的函数调用
         annotation_text = read_annotation_notes_from_txt(txt_path)
         
-        # 添加到列表
-        row = {
-            'patient_id': patient_id,
-            'report_text': report_text, # PDF 中的文本 (已清理)
-            'annotation_text': annotation_text # annotations.txt 中的文本 (现在只有 notes)
-        }
-        data_rows.append(row)
+        polished_report = polish_report_with_llm(report_text, annotation_text)
 
-    # 创建 DataFrame
-    df = pd.DataFrame(data_rows)
-    return df
+        return {
+            'patient_id': real_patient_id, # 确保这里返回的是 TCGA-XXX
+            'original_report_text': report_text,
+            'original_annotation_text': annotation_text,
+            'llm_polished_report': polished_report
+        }
+    except Exception as e:
+        print(f"Error processing {dir_name}: {e}")
+        return None
+
+def main():
+    print("--- TCGA-BRCA 报告处理 (精确对齐修复版) ---")
+    
+    # 1. 建立“已完成”白名单 (Set)
+    # 我们只关心 CSV 里的 patient_id (如 TCGA-C8-A12N)
+    completed_ids = set()
+    existing_data_map = {} # 用于最后合并，防止丢数据
+
+    if os.path.exists(OUTPUT_CSV):
+        try:
+            print(f"读取 CSV: {OUTPUT_CSV}")
+            df_existing = pd.read_csv(OUTPUT_CSV)
+            
+            # 遍历每一行，检查 LLM 是否有效
+            for idx, row in df_existing.iterrows():
+                pid = str(row['patient_id']).strip()
+                llm_content = row.get('llm_polished_report')
+                
+                # 保存所有旧数据
+                existing_data_map[pid] = row.to_dict()
+
+                # 判断是否完成：内容非空且长度足够
+                if pd.notna(llm_content) and isinstance(llm_content, str) and len(llm_content) > 10:
+                    completed_ids.add(pid)
+            
+            print(f"CSV 中发现 {len(df_existing)} 条记录。")
+            print(f"其中 {len(completed_ids)} 条已包含有效 LLM 润色内容 (将被跳过)。")
+            
+        except Exception as e:
+            print(f"读取 CSV 出错: {e}")
+            return
+    else:
+        print("未找到 CSV，全量运行。")
+
+    # 2. 预扫描目录，构建任务列表
+    # 关键步骤：必须打开文件夹看一眼 PDF 文件名，才能知道它对应的 ID 是什么
+    all_dirs = [d for d in os.listdir(BASE_REPORTS_DIR) if os.path.isdir(os.path.join(BASE_REPORTS_DIR, d))]
+    tasks_to_process = []
+    
+    print(f"\n正在预扫描 {len(all_dirs)} 个目录以匹配 ID (Pre-scanning)...")
+    
+    # 这一步是单线程的，但只是读文件名，速度很快
+    for dir_name in tqdm(all_dirs, desc="ID匹配中"):
+        full_dir_path = os.path.join(BASE_REPORTS_DIR, dir_name)
+        
+        # 从文件夹内的 PDF 获取真正的 TCGA ID
+        real_id = get_real_patient_id_from_dir(full_dir_path)
+        
+        if not real_id:
+            # 如果没有 PDF 或者提取失败，这可能是一个坏数据，或者我们还是把它加进去尝试处理一下
+            # print(f"警告: 目录 {dir_name} 下未找到 PDF 或 ID 解析失败")
+            tasks_to_process.append(dir_name)
+            continue
+            
+        # 核心判断：如果这个真正的 ID 已经在 completed_ids 里，就跳过
+        if real_id in completed_ids:
+            continue
+        else:
+            # 没在白名单里，说明是漏网之鱼，或者是空的
+            tasks_to_process.append(dir_name)
+
+    todo_count = len(tasks_to_process)
+    skipped_count = len(all_dirs) - todo_count
+    
+    print(f"\n--- 任务统计 ---")
+    print(f"总目录数: {len(all_dirs)}")
+    print(f"已完成 (跳过): {skipped_count}")
+    print(f"待处理 (运行): {todo_count}")
+    
+    if todo_count == 0:
+        print("所有文件均已处理完毕！")
+        return
+
+    # 3. 多线程处理
+    print(f"\n启动线程池处理 {todo_count} 个任务...")
+    new_results = []
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_dir = {executor.submit(process_single_patient, d, BASE_REPORTS_DIR): d for d in tasks_to_process}
+        
+        for future in tqdm(as_completed(future_to_dir), total=todo_count, desc="LLM处理中"):
+            res = future.result()
+            if res:
+                # 无论成功失败，都记录下来
+                new_results.append(res)
+                if not res.get('llm_polished_report'):
+                    tqdm.write(f"警告: {res['patient_id']} 处理后 LLM 仍为空")
+
+    # 4. 合并数据
+    print("\n正在合并并保存...")
+    
+    # 策略：以 existing_data_map 为基础，用 new_results 更新它
+    for item in new_results:
+        pid = item['patient_id']
+        # 覆盖更新
+        existing_data_map[pid] = item
+        
+    final_rows = list(existing_data_map.values())
+    df_final = pd.DataFrame(final_rows)
+    
+    # 5. 保存
+    if os.path.exists(OUTPUT_CSV):
+        import shutil
+        shutil.copy(OUTPUT_CSV, OUTPUT_CSV + ".bak")
+        
+    df_final.to_csv(OUTPUT_CSV, index=False, encoding='utf-8-sig')
+    
+    final_valid = df_final['llm_polished_report'].notna().sum()
+    print(f"完成。当前 CSV 总行数: {len(df_final)}, 有效 LLM 记录: {final_valid}")
 
 if __name__ == "__main__":
-    print("--- TCGA 报告数据处理开始 ---")
-    
-    df = create_reports_dataframe(BASE_REPORTS_DIR)
-    
-    if not df.empty:
-        print(f"\n处理完毕。共处理 {len(df)} 条患者记录。")
-        
-        # 打印 DataFrame 的基本信息
-        print("\nDataFrame 概览 (前5行):")
-        print(df.head())
-        
-        print("\nDataFrame 信息:")
-        df.info()
-        
-        # 检查有多少 PDF 和 TXT 被成功读取
-        print(f"\n成功读取的 PDF 报告数量: {df['report_text'].notna().sum()}")
-        print(f"成功读取的 TXT 注释数量: {df['annotation_text'].notna().sum()}")
-        
-        # 保存到 CSV
-        try:
-            # 使用 utf-8-sig 编码确保 Excel 打开 CSV 时中文无乱码
-            df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8-sig')
-            print(f"\n数据已成功保存到: {OUTPUT_CSV}")
-        except Exception as e:
-            print(f"\n保存 CSV 文件时出错: {e}")
-            
-    else:
-        print("未处理任何数据，请检查您的 'BASE_REPORTS_DIR' 配置。")
+    main()

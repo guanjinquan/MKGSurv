@@ -5,12 +5,12 @@ import json
 import os
 
 # 定义输入和输出路径
-splits_dir = '/home/Zhengzx/DIMAF/src/data/data_files/tcga_kirc/splits'
-output_path = '/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patients_5fold.json'
+splits_dir = '/home/Guanjq/NewWork/DIMAF/src/data/data_files/tcga_kirc/splits'
+output_path = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patients_5fold.json'
 
 # 收集所有患者ID和生存信息
 all_patients = {}
-clinical_data_path = '/home/Zhengzx/DIMAF/src/data/data_files/tcga_kirc/clinical_data_all.csv'
+clinical_data_path = '/home/Guanjq/NewWork/DIMAF/src/data/data_files/tcga_kirc/clinical_data_all.csv'
 clinical_df = pd.read_csv(clinical_data_path)
 
 # 提取患者信息：case_id, dss_survival_days, dss_censorship

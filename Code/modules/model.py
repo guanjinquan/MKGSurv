@@ -17,6 +17,7 @@ from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
 from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
 from modules.task_modules.tcga_brca_survival_pred import TCGA_BRCA_SurvivalPred
+from modules.task_modules.tcga_kirc_survival_pred import TCGA_KIRC_SurvivalPred
 
 # --- Fusion Modules
 from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
@@ -29,6 +30,7 @@ from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
 from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
 from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
 from modules.fusion_modules.MedKGAT_fusion_wo_loss import MedKGATFusion_wo_loss
+from modules.fusion_modules.MedKGAT_fusion_diff_msa import MedKGATFusion_diff_msa
 # from modules.fusion_modules.MedKGAT_fusion_healnet import MedKGATFusion_healnet
 # from modules.fusion_modules.MedKGAT_fusion_healnet_group import HealNet_Group
 # from modules.fusion_modules.MedKGAT_fusion_healnet_group_v4 import HealNet_Group_v4
@@ -82,6 +84,7 @@ class ModelInterface(nn.Module):
             "tcga_luad",
             "tcga_lusc",
             "tcga_brca",
+            "tcga_kirc",
         ], f"Unknown model task: {model_task}"
 
         modalities = dataset.get_active_modalities()
@@ -103,6 +106,8 @@ class ModelInterface(nn.Module):
             self.task_head = TCGA_LUSC_SurvivalPred(args, dataset=dataset)
         elif model_task == "tcga_brca":
             self.task_head = TCGA_BRCA_SurvivalPred(args, dataset=dataset)
+        elif model_task == "tcga_kirc":
+            self.task_head = TCGA_KIRC_SurvivalPred(args, dataset=dataset)
         else:
             raise ValueError(f"Unknown model task: {model_task}")
 
@@ -127,7 +132,7 @@ class ModelInterface(nn.Module):
         elif self.fusion_type == 'medkgat_fusion':
             self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_wo_loss':
-            self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+            self.fusion_module = MedKGATFusion_wo_loss(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_without_intra':
             self.fusion_module = MedKGATFusion_without_intra(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion_without_inter':

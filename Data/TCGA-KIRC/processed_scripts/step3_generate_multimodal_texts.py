@@ -10,13 +10,13 @@ from tqdm import tqdm
 # 1. 路径与列定义 (Configuration)
 # =============================================================================
 
-BASE_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC"
+BASE_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC"
 SOURCE_DIR = os.path.join(BASE_DIR, "source")
 PROCESSED_DIR = os.path.join(BASE_DIR, "processed")
 
 # --- 原始数据源 (Raw Data TSVs) ---
-BIOSPECIMEN_DIR = os.path.join(SOURCE_DIR, "biospecimen.project-tcga-lusc.2025-11-08")
-CLINICAL_DIR = os.path.join(SOURCE_DIR, "clinical.project-tcga-lusc.2025-11-08")
+BIOSPECIMEN_DIR = os.path.join(SOURCE_DIR, "biospecimen.project-tcga-kirc.2025-12-11")
+CLINICAL_DIR = os.path.join(SOURCE_DIR, "clinical.project-tcga-kirc.2025-12-11")
 
 PATH_SLIDE_TSV = os.path.join(BIOSPECIMEN_DIR, "slide.tsv")
 PATH_SAMPLE_TSV = os.path.join(BIOSPECIMEN_DIR, "sample.tsv")
@@ -29,8 +29,8 @@ PATH_treatment_TEXT = os.path.join(PROCESSED_DIR, "text_treatment.csv")
 PATH_PATHOLOGY_AGG = os.path.join(PROCESSED_DIR, "pathology_aggregated.csv")
 
 # --- 其他资源 ---
-PATH_LABELS = os.path.join(PROCESSED_DIR, "lusc_patient_labels.csv")
-PATH_REPORTS = os.path.join(PROCESSED_DIR, "tcga_lusc_reports.csv")
+PATH_LABELS = os.path.join(PROCESSED_DIR, "kirc_patient_labels.csv")
+PATH_REPORTS = os.path.join(PROCESSED_DIR, "tcga_kirc_reports.csv")
 PATH_RNA = os.path.join(SOURCE_DIR, "HiSeqV2_PANCAN")
 PATH_HALLMARK = "/home/Guanjq/NewWork/MedAlignFusion/Data/MMP_hallmarks_signatures.csv"
 

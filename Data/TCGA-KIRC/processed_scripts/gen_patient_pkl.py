@@ -2,8 +2,8 @@ import pandas as pd
 import pickle
 
 # 使用DIMAF中的临床数据文件
-clinical_file = '/home/Zhengzx/DIMAF/src/data/data_files/tcga_kirc/clinical_data_all.csv'
-output_path = '/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/source/kirc_patients.pkl'
+clinical_file = '/home/Guanjq/NewWork/DIMAF/src/data/data_files/tcga_kirc/clinical_data_all.csv'
+output_path = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source/kirc_patients.pkl'
 
 # 读取临床数据
 df = pd.read_csv(clinical_file, sep=',', low_memory=False)

@@ -19,7 +19,7 @@ from modules.base_modules.panther_module import StructuredPANTHER
 # -------------------------------------------------------------------------
 # 2. CONFIGURATION
 # -------------------------------------------------------------------------
-BASE_DIR = "/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC"
+BASE_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC"
 CONF = {
     'h5_dir': f'{BASE_DIR}/h5_files',
     'csv_path': f'{BASE_DIR}/processed/kirc_patient_labels.csv',

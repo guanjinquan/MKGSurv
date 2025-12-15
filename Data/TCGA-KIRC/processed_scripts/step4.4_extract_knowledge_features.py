@@ -226,8 +226,8 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
 
 if __name__ == "__main__":
     # File Paths
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_deepseek.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/features_medical_knowledge.pkl"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_deepseek.json"
+    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge.pkl"
     
     # Run
     process_analysis_file(INPUT_FILE, OUTPUT_FILE)

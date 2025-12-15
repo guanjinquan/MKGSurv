@@ -3,12 +3,12 @@ import os
 import glob
 
 # 读取JSON文件
-json_path = '/home/Zhengzx/MedAlignFusion/Data/TCGA-BRCA/processed/brca_patients_5fold.json'
+json_path = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/brca_patients_5fold.json'
 with open(json_path, 'r') as f:
     data = json.load(f)
 
 # 获取所有H5文件
-h5_dir = '/home/Zhengzx/MedAlignFusion/Data/TCGA-BRCA/h5_files'
+h5_dir = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/h5_files'
 h5_files = glob.glob(os.path.join(h5_dir, '*.h5'))
 
 # 创建H5文件名集合（只包含患者ID部分）

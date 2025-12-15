@@ -13,8 +13,8 @@ BASE_URL = "https://api.deepseek.com"
 MODEL_NAME = "deepseek-reasoner"
 
 # File Paths
-INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_deepseek.json"
+INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/multimodal_texts.csv"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_deepseek.json"
 FAILED_LOG_PATH = "failed_ids_deepseek.log"
 
 # Threading Configuration
@@ -99,7 +99,7 @@ def construct_prompt(clinical, pathology, treatment, genomics):
     
     prompt = f"""
 You are a professional physician with expertise in medical knowledge across various departments. 
-This is data from a Lung Squamous Cell Carcinoma tumor patient in the TCGA-LUSC dataset to analyze the patient's survival risk.
+This is data from a Renal clear cell carcinoma (KIRC) tumor tumor patient in the TCGA-KIRC dataset to analyze the patient's survival risk.
 
 The clinical data: {clinical}
 

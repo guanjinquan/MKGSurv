@@ -601,8 +601,8 @@ def filter_unsupervised_features(
 def main():
     # --- 路径设置 ---
     # !! 重要: 请更新为您的实际路径 !!
-    base_path = '/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/source'
-    save_path = '/home/Zhengzx/MedAlignFusion/Data/TCGA-KIRC/processed'
+    base_path = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source'
+    save_path = '/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed'
     
     if not os.path.exists(save_path):
         os.makedirs(save_path)

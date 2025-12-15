@@ -99,7 +99,7 @@ def construct_prompt(clinical, pathology, treatment, genomics):
     
     prompt = f"""
 You are a professional physician with expertise in medical knowledge across various departments. 
-This is data from a Lung Squamous Cell Carcinoma tumor patient in the TCGA-BRCA dataset to analyze the patient's survival risk.
+This is data from a BRCA tumor patient in the TCGA-BRCA dataset to analyze the patient's survival risk.
 
 The clinical data: {clinical}
 

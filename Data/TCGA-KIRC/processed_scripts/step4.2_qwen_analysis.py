@@ -13,9 +13,9 @@ BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MODEL_NAME = "qwen-turbo"
 
 # File Paths
-INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/multimodal_texts.csv"
-OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_qwen.json"
-FAILED_LOG_PATH = "failed_ids_lusc_qwen.log"
+INPUT_CSV_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/multimodal_texts.csv"
+OUTPUT_JSON_PATH = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_qwen.json"
+FAILED_LOG_PATH = "failed_ids_kirc_qwen.log"
 
 # Threading Configuration
 MAX_WORKERS = 10 
@@ -96,7 +96,7 @@ def construct_prompt(clinical, pathology, treatment, genomics):
     
     prompt = f"""
 You are a professional physician with expertise in medical knowledge across various departments. 
-This is data from a Lung Squamous Cell Carcinoma tumor patient in the TCGA-LUSC dataset to analyze the patient's survival risk.
+This is data from a Renal clear cell carcinoma (KIRC) tumor tumor patient in the TCGA-KIRC dataset to analyze the patient's survival risk.
 
 The clinical data: {clinical}
 
@@ -218,7 +218,7 @@ def process_patients():
     
     all_patients = []
     for _, row in df.iterrows():
-        # TCGA-LUSC usually uses 'cases.submitter_id'
+        # TCGA-KIRC usually uses 'cases.submitter_id'
         raw_id = row.get('cases.submitter_id')
         
         if pd.isna(raw_id) or raw_id == "Not Available":
