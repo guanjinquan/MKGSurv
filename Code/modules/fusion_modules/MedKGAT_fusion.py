@@ -182,7 +182,7 @@ class MedKGATFusion(nn.Module):
     def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
         
-        for group_indices in groups:
+        for group_idx, group_indices in enumerate(groups):
             if not group_indices:
                 continue
                 

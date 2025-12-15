@@ -9,7 +9,7 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_lusc_run001"
+RUN_ID="tcga_lusc_run001_rerun"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.

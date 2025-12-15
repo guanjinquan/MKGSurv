@@ -171,6 +171,9 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
             raw_relationship = entry.get("relationship", "")
             raw_survival = entry.get("survival", "")
             
+            assert "relationship" in entry, "Missing 'relationship' field in analysis entry."
+            assert "survival" in entry, "Missing 'survival' field in analysis entry."
+            assert "score" in entry, "Missing 'score' field in analysis entry."
             # --- Prepare Text Batch (Original + Augmentations) ---
             # We will encode all variations in one go for efficiency
             
@@ -230,8 +233,8 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     
     # File Paths
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_deepseek.json"
-    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_qwen.json"
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_deepseek.json"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_qwen.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge.pkl"
     
     # Run
