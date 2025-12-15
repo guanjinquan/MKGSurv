@@ -1,0 +1,328 @@
+settings : Namespace(ckpt_path='../Checkpoints/', log_path='../Results', load_pth_path=None, points_save_path=None, view_groups_attention_path=None, save_umap_path=None, dataset='tcga_brca', modalities='genomics-genomics,image-pathology', debug_mode=False, fold=2, do_mixup=False, use_medical_knowledge=True, model_task='tcga_brca', decode_task='surv_pred', image_aggregater='panther', fusion_type='medkgat_fusion', with_multimodal_align=False, with_multimodal_vib=False, runs_id='tcga_brca_run002', acc_step=1, gpu_id='2', seed=109, learning_rate=5e-05, weight_decay=0.0001, num_epochs=50, batch_size=64, optimizer='AdamW', scheduler='CosineAnnealingLR', use_amp=False, use_ddp=False, freezed_backbone=False, finetune=False, continue_training=False, draw_kaplan_meier=False)
+valid epoch_0 : {'loss_total_loss_valid': 0.5650900642980229, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5650900642980229}
+metrics : {'C-Index_valid': 0.5492498369210698, 'C-Index-IPCW_valid': 0.5357295184437529}
+test epoch_0 : {'loss_total_loss_test': 0.7024007331241261, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.7024007331241261}
+metrics : {'C-Index_test': 0.32551143200962696, 'C-Index-IPCW_test': 0.32063903181461534}
+Best Score : 0
+Best Metrics : {}
+train epoch_1 : {'loss_total_loss_train': 2.8430260582403704, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 2.8430260582403704}
+metrics : {'C-Index_train': 0.7581817672458677, 'C-Index-IPCW_train': 0.7606405147918572}
+valid epoch_1 : {'loss_total_loss_valid': 0.6735818589275534, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.6735818589275534}
+metrics : {'C-Index_valid': 0.5290280495759948, 'C-Index-IPCW_valid': 0.5198837350748128}
+test epoch_1 : {'loss_total_loss_test': 0.9287340884858911, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9287340884858911}
+metrics : {'C-Index_test': 0.5782190132370638, 'C-Index-IPCW_test': 0.5218340405122648}
+Best Score : 0
+Best Metrics : {}
+train epoch_2 : {'loss_total_loss_train': 2.0445827923037787, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 2.0445827923037787}
+metrics : {'C-Index_train': 0.9190922790757662, 'C-Index-IPCW_train': 0.9167724257067227}
+valid epoch_2 : {'loss_total_loss_valid': 0.9892019632865082, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.9892019632865082}
+metrics : {'C-Index_valid': 0.542726679712981, 'C-Index-IPCW_valid': 0.5305495509778241}
+test epoch_2 : {'loss_total_loss_test': 1.004148082299666, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.004148082299666}
+metrics : {'C-Index_test': 0.6155234657039711, 'C-Index-IPCW_test': 0.6168587492210272}
+Best Score : 0
+Best Metrics : {}
+train epoch_3 : {'loss_total_loss_train': 1.7322398586706682, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.7322398586706682}
+metrics : {'C-Index_train': 0.9591919905236067, 'C-Index-IPCW_train': 0.9544790114848922}
+valid epoch_3 : {'loss_total_loss_valid': 0.8185952996665781, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.8185952996665781}
+metrics : {'C-Index_valid': 0.6164383561643836, 'C-Index-IPCW_valid': 0.613820346371031}
+test epoch_3 : {'loss_total_loss_test': 0.9416051005775278, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9416051005775278}
+metrics : {'C-Index_test': 0.6618531889290012, 'C-Index-IPCW_test': 0.6963088684842748}
+Best Score : 0
+Best Metrics : {}
+train epoch_4 : {'loss_total_loss_train': 1.6402517584237186, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.6402517584237186}
+metrics : {'C-Index_train': 0.9724139061103391, 'C-Index-IPCW_train': 0.9729339877982477}
+valid epoch_4 : {'loss_total_loss_valid': 0.7344134070656516, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.7344134070656516}
+metrics : {'C-Index_valid': 0.6490541422048272, 'C-Index-IPCW_valid': 0.6082358453181574}
+test epoch_4 : {'loss_total_loss_test': 0.9067195897752588, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9067195897752588}
+metrics : {'C-Index_test': 0.6732851985559567, 'C-Index-IPCW_test': 0.6480639144894835}
+Best Score : 0
+Best Metrics : {}
+train epoch_5 : {'loss_total_loss_train': 1.5278037569739602, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.5278037569739602}
+metrics : {'C-Index_train': 0.9784666827707562, 'C-Index-IPCW_train': 0.9732811340985366}
+valid epoch_5 : {'loss_total_loss_valid': 0.6331592148000543, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.6331592148000543}
+metrics : {'C-Index_valid': 0.6470971950424005, 'C-Index-IPCW_valid': 0.6135671418106305}
+test epoch_5 : {'loss_total_loss_test': 1.0490674891255118, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.0490674891255118}
+metrics : {'C-Index_test': 0.6456077015643803, 'C-Index-IPCW_test': 0.6204915189337424}
+Best Score : 0
+Best Metrics : {}
+train epoch_6 : {'loss_total_loss_train': 1.4667658697475086, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4667658697475086}
+metrics : {'C-Index_train': 0.9764216043584644, 'C-Index-IPCW_train': 0.9733439345652495}
+valid epoch_6 : {'loss_total_loss_valid': 0.9880800314924933, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.9880800314924933}
+metrics : {'C-Index_valid': 0.6112198303979126, 'C-Index-IPCW_valid': 0.6077246492347288}
+test epoch_6 : {'loss_total_loss_test': 1.2604033242572437, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2604033242572437}
+metrics : {'C-Index_test': 0.6353790613718412, 'C-Index-IPCW_test': 0.64694066058378}
+Best Score : 0
+Best Metrics : {}
+train epoch_7 : {'loss_total_loss_train': 1.4366266348145225, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4366266348145225}
+metrics : {'C-Index_train': 0.98426204067005, 'C-Index-IPCW_train': 0.9848751399341122}
+valid epoch_7 : {'loss_total_loss_valid': 0.8236681141636588, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.8236681141636588}
+metrics : {'C-Index_valid': 0.6366601435094585, 'C-Index-IPCW_valid': 0.6152581065619964}
+test epoch_7 : {'loss_total_loss_test': 1.0251860970800573, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.0251860970800573}
+metrics : {'C-Index_test': 0.6793020457280385, 'C-Index-IPCW_test': 0.6100864313848963}
+Best Score : 0
+Best Metrics : {}
+train epoch_8 : {'loss_total_loss_train': 1.435719457539645, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.435719457539645}
+metrics : {'C-Index_train': 0.9839501781052393, 'C-Index-IPCW_train': 0.9834976902424899}
+valid epoch_8 : {'loss_total_loss_valid': 0.8401164791800759, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.8401164791800759}
+metrics : {'C-Index_valid': 0.6223091976516634, 'C-Index-IPCW_valid': 0.5979094950138578}
+test epoch_8 : {'loss_total_loss_test': 0.9753014763647859, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9753014763647859}
+metrics : {'C-Index_test': 0.6468110709987966, 'C-Index-IPCW_test': 0.65892623995108}
+Best Score : 0
+Best Metrics : {}
+train epoch_9 : {'loss_total_loss_train': 1.400098510763862, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.400098510763862}
+metrics : {'C-Index_train': 0.9900970421157179, 'C-Index-IPCW_train': 0.9896951393630076}
+valid epoch_9 : {'loss_total_loss_valid': 1.0013955492864957, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0013955492864957}
+metrics : {'C-Index_valid': 0.6151337247227658, 'C-Index-IPCW_valid': 0.604666822253127}
+test epoch_9 : {'loss_total_loss_test': 1.3099102445624091, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.3099102445624091}
+metrics : {'C-Index_test': 0.6474127557160048, 'C-Index-IPCW_test': 0.6732934953404697}
+Best Score : 0
+Best Metrics : {}
+train epoch_10 : {'loss_total_loss_train': 1.3720896298235112, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3720896298235112}
+metrics : {'C-Index_train': 0.98853614354981, 'C-Index-IPCW_train': 0.9888739180753706}
+valid epoch_10 : {'loss_total_loss_valid': 1.0229653059081598, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0229653059081598}
+metrics : {'C-Index_valid': 0.6262230919765166, 'C-Index-IPCW_valid': 0.5994577073934765}
+test epoch_10 : {'loss_total_loss_test': 1.410597183487632, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.410597183487632}
+metrics : {'C-Index_test': 0.641395908543923, 'C-Index-IPCW_test': 0.6557150237820265}
+Best Score : 0
+Best Metrics : {}
+train epoch_11 : {'loss_total_loss_train': 1.355758929794485, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.355758929794485}
+metrics : {'C-Index_train': 0.9917705283533287, 'C-Index-IPCW_train': 0.9920289516568389}
+valid epoch_11 : {'loss_total_loss_valid': 1.1020425111055374, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.1020425111055374}
+metrics : {'C-Index_valid': 0.5949119373776908, 'C-Index-IPCW_valid': 0.5515451583749417}
+test epoch_11 : {'loss_total_loss_test': 1.3873025666583667, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.3873025666583667}
+metrics : {'C-Index_test': 0.6450060168471721, 'C-Index-IPCW_test': 0.6481454018769662}
+Best Score : 0
+Best Metrics : {}
+train epoch_12 : {'loss_total_loss_train': 1.3688346391374415, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3688346391374415}
+metrics : {'C-Index_train': 0.9895975334314027, 'C-Index-IPCW_train': 0.9910031244580738}
+valid epoch_12 : {'loss_total_loss_valid': 0.988006507808512, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.988006507808512}
+metrics : {'C-Index_valid': 0.6255707762557078, 'C-Index-IPCW_valid': 0.5821538776323626}
+test epoch_12 : {'loss_total_loss_test': 1.1920278075743804, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.1920278075743804}
+metrics : {'C-Index_test': 0.6528279181708785, 'C-Index-IPCW_test': 0.6152674427001659}
+Best Score : 0
+Best Metrics : {}
+train epoch_13 : {'loss_total_loss_train': 1.354409708218141, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.354409708218141}
+metrics : {'C-Index_train': 0.9895256464673107, 'C-Index-IPCW_train': 0.9904409489325631}
+valid epoch_13 : {'loss_total_loss_valid': 0.9954683313315565, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.9954683313315565}
+metrics : {'C-Index_valid': 0.6196999347684279, 'C-Index-IPCW_valid': 0.5752582929497503}
+test epoch_13 : {'loss_total_loss_test': 1.2923007465221665, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2923007465221665}
+metrics : {'C-Index_test': 0.6456077015643803, 'C-Index-IPCW_test': 0.6343643119729346}
+Best Score : 0
+Best Metrics : {}
+train epoch_14 : {'loss_total_loss_train': 1.3309944488785483, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3309944488785483}
+metrics : {'C-Index_train': 0.9920152611796123, 'C-Index-IPCW_train': 0.9918374338781465}
+valid epoch_14 : {'loss_total_loss_valid': 1.5101399912752889, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.5101399912752889}
+metrics : {'C-Index_valid': 0.5916503587736465, 'C-Index-IPCW_valid': 0.5808400630328996}
+test epoch_14 : {'loss_total_loss_test': 2.019914605400779, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.019914605400779}
+metrics : {'C-Index_test': 0.6528279181708785, 'C-Index-IPCW_test': 0.6813023996522094}
+Best Score : 0
+Best Metrics : {}
+train epoch_15 : {'loss_total_loss_train': 1.3404894200238315, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3404894200238315}
+metrics : {'C-Index_train': 0.9910508658414818, 'C-Index-IPCW_train': 0.9911303499950733}
+valid epoch_15 : {'loss_total_loss_valid': 1.374091425402598, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.374091425402598}
+metrics : {'C-Index_valid': 0.5766470971950424, 'C-Index-IPCW_valid': 0.5610076386730859}
+test epoch_15 : {'loss_total_loss_test': 1.6300665031779895, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.6300665031779895}
+metrics : {'C-Index_test': 0.6516245487364621, 'C-Index-IPCW_test': 0.6608983771556005}
+Best Score : 0.5766470971950424
+Best Metrics : {'C-Index_valid': 0.5766470971950424, 'C-Index-IPCW_valid': 0.5610076386730859}
+train epoch_16 : {'loss_total_loss_train': 1.333683274009011, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.333683274009011}
+metrics : {'C-Index_train': 0.9922071359440635, 'C-Index-IPCW_train': 0.9927747441544993}
+valid epoch_16 : {'loss_total_loss_valid': 1.1804312006993727, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.1804312006993727}
+metrics : {'C-Index_valid': 0.5818656229615133, 'C-Index-IPCW_valid': 0.5512447473912977}
+test epoch_16 : {'loss_total_loss_test': 1.630622304298661, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.630622304298661}
+metrics : {'C-Index_test': 0.6335740072202166, 'C-Index-IPCW_test': 0.6088780984346733}
+Best Score : 0.5818656229615133
+Best Metrics : {'C-Index_valid': 0.5818656229615133, 'C-Index-IPCW_valid': 0.5512447473912977}
+train epoch_17 : {'loss_total_loss_train': 1.3198740048841997, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3198740048841997}
+metrics : {'C-Index_train': 0.9929154339726164, 'C-Index-IPCW_train': 0.9933494688437629}
+valid epoch_17 : {'loss_total_loss_valid': 1.2617032135074788, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.2617032135074788}
+metrics : {'C-Index_valid': 0.5857795172863666, 'C-Index-IPCW_valid': 0.580835454433338}
+test epoch_17 : {'loss_total_loss_test': 1.6257121508771724, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.6257121508771724}
+metrics : {'C-Index_test': 0.6179302045728039, 'C-Index-IPCW_test': 0.5983394826662914}
+Best Score : 0.5857795172863666
+Best Metrics : {'C-Index_valid': 0.5857795172863666, 'C-Index-IPCW_valid': 0.580835454433338}
+train epoch_18 : {'loss_total_loss_train': 1.3056139214472338, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3056139214472338}
+metrics : {'C-Index_train': 0.9931728527337397, 'C-Index-IPCW_train': 0.9930396647810695}
+valid epoch_18 : {'loss_total_loss_valid': 1.3125714673237368, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3125714673237368}
+metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+test epoch_18 : {'loss_total_loss_test': 1.4790416116064244, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.4790416116064244}
+metrics : {'C-Index_test': 0.6359807460890493, 'C-Index-IPCW_test': 0.5935585640551808}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_19 : {'loss_total_loss_train': 1.304439677433534, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.304439677433534}
+metrics : {'C-Index_train': 0.9932220107312437, 'C-Index-IPCW_train': 0.9934816712499851}
+valid epoch_19 : {'loss_total_loss_valid': 1.2834412728182294, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.2834412728182294}
+metrics : {'C-Index_valid': 0.6001304631441617, 'C-Index-IPCW_valid': 0.5660960130347672}
+test epoch_19 : {'loss_total_loss_test': 1.519769232381474, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.519769232381474}
+metrics : {'C-Index_test': 0.6293622141997594, 'C-Index-IPCW_test': 0.6023551970161851}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_20 : {'loss_total_loss_train': 1.3145737160335889, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3145737160335889}
+metrics : {'C-Index_train': 0.9913386779881588, 'C-Index-IPCW_train': 0.9907262341495227}
+valid epoch_20 : {'loss_total_loss_valid': 1.1910355416211216, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.1910355416211216}
+metrics : {'C-Index_valid': 0.5909980430528375, 'C-Index-IPCW_valid': 0.5555503561603009}
+test epoch_20 : {'loss_total_loss_test': 1.6351583694869822, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.6351583694869822}
+metrics : {'C-Index_test': 0.6311672683513839, 'C-Index-IPCW_test': 0.5777743972085801}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_21 : {'loss_total_loss_train': 1.2964529611847617, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2964529611847617}
+metrics : {'C-Index_train': 0.9935211873612145, 'C-Index-IPCW_train': 0.9944249627776371}
+valid epoch_21 : {'loss_total_loss_valid': 1.417915714058009, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.417915714058009}
+metrics : {'C-Index_valid': 0.5916503587736465, 'C-Index-IPCW_valid': 0.5493045004703864}
+test epoch_21 : {'loss_total_loss_test': 1.6656615195626563, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.6656615195626563}
+metrics : {'C-Index_test': 0.6468110709987966, 'C-Index-IPCW_test': 0.6303812003278737}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_22 : {'loss_total_loss_train': 1.296147127043117, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.296147127043117}
+metrics : {'C-Index_train': 0.9938272355392236, 'C-Index-IPCW_train': 0.994410799872184}
+valid epoch_22 : {'loss_total_loss_valid': 1.4510212621905587, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4510212621905587}
+metrics : {'C-Index_valid': 0.5701239399869537, 'C-Index-IPCW_valid': 0.5617486571542317}
+test epoch_22 : {'loss_total_loss_test': 1.7955921976403757, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7955921976403757}
+metrics : {'C-Index_test': 0.6269554753309265, 'C-Index-IPCW_test': 0.6059521190763479}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_23 : {'loss_total_loss_train': 1.2682886800982736, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2682886800982736}
+metrics : {'C-Index_train': 0.9946417782720594, 'C-Index-IPCW_train': 0.995803397865304}
+valid epoch_23 : {'loss_total_loss_valid': 1.3110637326132168, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3110637326132168}
+metrics : {'C-Index_valid': 0.593607305936073, 'C-Index-IPCW_valid': 0.5548919898653133}
+test epoch_23 : {'loss_total_loss_test': 1.577620186588981, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.577620186588981}
+metrics : {'C-Index_test': 0.6456077015643803, 'C-Index-IPCW_test': 0.616827564468093}
+Best Score : 0.6053489889106327
+Best Metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5655474159855108}
+train epoch_24 : {'loss_total_loss_train': 1.2671783729033037, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2671783729033037}
+metrics : {'C-Index_train': 0.994032324819133, 'C-Index-IPCW_train': 0.9946588865331504}
+valid epoch_24 : {'loss_total_loss_valid': 1.5216654945503583, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.5216654945503583}
+metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+test epoch_24 : {'loss_total_loss_test': 1.877105180512775, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.877105180512775}
+metrics : {'C-Index_test': 0.6450060168471721, 'C-Index-IPCW_test': 0.6297388856032317}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_25 : {'loss_total_loss_train': 1.2705565609715201, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2705565609715201}
+metrics : {'C-Index_train': 0.9946808932378153, 'C-Index-IPCW_train': 0.9955436948086673}
+valid epoch_25 : {'loss_total_loss_valid': 1.7851329066536643, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.7851329066536643}
+metrics : {'C-Index_valid': 0.5805609915198956, 'C-Index-IPCW_valid': 0.5372394090007382}
+test epoch_25 : {'loss_total_loss_test': 2.322821057316932, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.322821057316932}
+metrics : {'C-Index_test': 0.6534296028880866, 'C-Index-IPCW_test': 0.6613339284164514}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_26 : {'loss_total_loss_train': 1.258182550018484, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.258182550018484}
+metrics : {'C-Index_train': 0.9942384712602789, 'C-Index-IPCW_train': 0.9944969369041177}
+valid epoch_26 : {'loss_total_loss_valid': 1.7523360218514095, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.7523360218514095}
+metrics : {'C-Index_valid': 0.5727332028701891, 'C-Index-IPCW_valid': 0.5292855677958376}
+test epoch_26 : {'loss_total_loss_test': 2.2071220258420166, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.2071220258420166}
+metrics : {'C-Index_test': 0.648014440433213, 'C-Index-IPCW_test': 0.6331643805674488}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_27 : {'loss_total_loss_train': 1.2671382156285373, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2671382156285373}
+metrics : {'C-Index_train': 0.9946650358192656, 'C-Index-IPCW_train': 0.9956608982908102}
+valid epoch_27 : {'loss_total_loss_valid': 1.3785380179231816, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3785380179231816}
+metrics : {'C-Index_valid': 0.5949119373776908, 'C-Index-IPCW_valid': 0.5585230891351232}
+test epoch_27 : {'loss_total_loss_test': 1.549105015668002, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.549105015668002}
+metrics : {'C-Index_test': 0.6450060168471721, 'C-Index-IPCW_test': 0.6092089879143843}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_28 : {'loss_total_loss_train': 1.2671224637465044, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2671224637465044}
+metrics : {'C-Index_train': 0.9953490191393756, 'C-Index-IPCW_train': 0.996406638705026}
+valid epoch_28 : {'loss_total_loss_valid': 1.4418654496019536, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4418654496019536}
+metrics : {'C-Index_valid': 0.5896934116112198, 'C-Index-IPCW_valid': 0.560044582905246}
+test epoch_28 : {'loss_total_loss_test': 1.7662559205835515, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7662559205835515}
+metrics : {'C-Index_test': 0.6365824308062575, 'C-Index-IPCW_test': 0.6049152468570701}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_29 : {'loss_total_loss_train': 1.263105183839798, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.263105183839798}
+metrics : {'C-Index_train': 0.9947686376204569, 'C-Index-IPCW_train': 0.9953332786383201}
+valid epoch_29 : {'loss_total_loss_valid': 1.473729907111688, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.473729907111688}
+metrics : {'C-Index_valid': 0.5844748858447488, 'C-Index-IPCW_valid': 0.5585423506916016}
+test epoch_29 : {'loss_total_loss_test': 1.8284692520445043, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.8284692520445043}
+metrics : {'C-Index_test': 0.6335740072202166, 'C-Index-IPCW_test': 0.6184734933601548}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_30 : {'loss_total_loss_train': 1.254698094996539, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.254698094996539}
+metrics : {'C-Index_train': 0.9954600210692235, 'C-Index-IPCW_train': 0.9962820469981921}
+valid epoch_30 : {'loss_total_loss_valid': 1.51742535084486, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.51742535084486}
+metrics : {'C-Index_valid': 0.5864318330071755, 'C-Index-IPCW_valid': 0.5516409432500331}
+test epoch_30 : {'loss_total_loss_test': 1.8957929746671156, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.8957929746671156}
+metrics : {'C-Index_test': 0.6341756919374247, 'C-Index-IPCW_test': 0.6056419526982255}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_31 : {'loss_total_loss_train': 1.2604210078716278, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2604210078716278}
+metrics : {'C-Index_train': 0.9957401687969346, 'C-Index-IPCW_train': 0.9967579053976253}
+valid epoch_31 : {'loss_total_loss_valid': 1.6977862939238548, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6977862939238548}
+metrics : {'C-Index_valid': 0.594259621656882, 'C-Index-IPCW_valid': 0.5729311683249377}
+test epoch_31 : {'loss_total_loss_test': 2.2427074421535838, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.2427074421535838}
+metrics : {'C-Index_test': 0.6492178098676293, 'C-Index-IPCW_test': 0.6244743381370467}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_32 : {'loss_total_loss_train': 1.2599101771007886, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2599101771007886}
+metrics : {'C-Index_train': 0.9961159896165623, 'C-Index-IPCW_train': 0.996774065219013}
+valid epoch_32 : {'loss_total_loss_valid': 1.7561480905860662, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.7561480905860662}
+metrics : {'C-Index_valid': 0.5746901500326158, 'C-Index-IPCW_valid': 0.5548938638841355}
+test epoch_32 : {'loss_total_loss_test': 2.268378155475313, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.268378155475313}
+metrics : {'C-Index_test': 0.6425992779783394, 'C-Index-IPCW_test': 0.6279168489595294}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_33 : {'loss_total_loss_train': 1.2454157823866063, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2454157823866063}
+metrics : {'C-Index_train': 0.995791441116912, 'C-Index-IPCW_train': 0.9965151479749109}
+valid epoch_33 : {'loss_total_loss_valid': 1.4694387804378162, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4694387804378162}
+metrics : {'C-Index_valid': 0.5929549902152642, 'C-Index-IPCW_valid': 0.5564109626543352}
+test epoch_33 : {'loss_total_loss_test': 1.9124222722920505, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9124222722920505}
+metrics : {'C-Index_test': 0.6395908543922985, 'C-Index-IPCW_test': 0.6205845584953419}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_34 : {'loss_total_loss_train': 1.2501688545400447, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2501688545400447}
+metrics : {'C-Index_train': 0.9962291058688835, 'C-Index-IPCW_train': 0.9968319187461324}
+valid epoch_34 : {'loss_total_loss_valid': 1.5382311154495587, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.5382311154495587}
+metrics : {'C-Index_valid': 0.5909980430528375, 'C-Index-IPCW_valid': 0.5578106365834643}
+test epoch_34 : {'loss_total_loss_test': 1.9454895014112645, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9454895014112645}
+metrics : {'C-Index_test': 0.6383874849578821, 'C-Index-IPCW_test': 0.6166222110330062}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_35 : {'loss_total_loss_train': 1.2405850264159115, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2405850264159115}
+metrics : {'C-Index_train': 0.9963110358647236, 'C-Index-IPCW_train': 0.9971296969247204}
+valid epoch_35 : {'loss_total_loss_valid': 1.6403545154766603, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6403545154766603}
+metrics : {'C-Index_valid': 0.5909980430528375, 'C-Index-IPCW_valid': 0.5567017282070817}
+test epoch_35 : {'loss_total_loss_test': 2.0961836142973467, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.0961836142973467}
+metrics : {'C-Index_test': 0.6395908543922985, 'C-Index-IPCW_test': 0.5943529990143988}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_36 : {'loss_total_loss_train': 1.259985010732304, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.259985010732304}
+metrics : {'C-Index_train': 0.9961588046466465, 'C-Index-IPCW_train': 0.9971800805612167}
+valid epoch_36 : {'loss_total_loss_valid': 1.7040167030963032, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.7040167030963032}
+metrics : {'C-Index_valid': 0.5909980430528375, 'C-Index-IPCW_valid': 0.5736093672884838}
+test epoch_36 : {'loss_total_loss_test': 2.129377993670377, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.129377993670377}
+metrics : {'C-Index_test': 0.6438026474127557, 'C-Index-IPCW_test': 0.6101861333958666}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_37 : {'loss_total_loss_train': 1.2434382872147993, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2434382872147993}
+metrics : {'C-Index_train': 0.9963078643810136, 'C-Index-IPCW_train': 0.9966781837226053}
+valid epoch_37 : {'loss_total_loss_valid': 1.6429155821149999, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6429155821149999}
+metrics : {'C-Index_valid': 0.5923026744944553, 'C-Index-IPCW_valid': 0.5755731853071826}
+test epoch_37 : {'loss_total_loss_test': 1.9898942925713279, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9898942925713279}
+metrics : {'C-Index_test': 0.6450060168471721, 'C-Index-IPCW_test': 0.6111400765940415}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_38 : {'loss_total_loss_train': 1.2247344038703225, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2247344038703225}
+metrics : {'C-Index_train': 0.996563697400282, 'C-Index-IPCW_train': 0.9973537228162525}
+valid epoch_38 : {'loss_total_loss_valid': 1.6447264084761792, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6447264084761792}
+metrics : {'C-Index_valid': 0.5896934116112198, 'C-Index-IPCW_valid': 0.5522796815991463}
+test epoch_38 : {'loss_total_loss_test': 2.090297216718847, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.090297216718847}
+metrics : {'C-Index_test': 0.6419975932611311, 'C-Index-IPCW_test': 0.6043963577821432}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_39 : {'loss_total_loss_train': 1.2398509030992335, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2398509030992335}
+metrics : {'C-Index_train': 0.9967508149391683, 'C-Index-IPCW_train': 0.9975681580232487}
+valid epoch_39 : {'loss_total_loss_valid': 1.6777205059135503, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6777205059135503}
+metrics : {'C-Index_valid': 0.5870841487279843, 'C-Index-IPCW_valid': 0.552917070415286}
+test epoch_39 : {'loss_total_loss_test': 2.058561211282557, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.058561211282557}
+metrics : {'C-Index_test': 0.6468110709987966, 'C-Index-IPCW_test': 0.6333677754442233}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+train epoch_40 : {'loss_total_loss_train': 1.2528095028617166, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2528095028617166}
+metrics : {'C-Index_train': 0.9965843120443966, 'C-Index-IPCW_train': 0.9970593343024634}
+valid epoch_40 : {'loss_total_loss_valid': 1.586097164587541, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.586097164587541}
+metrics : {'C-Index_valid': 0.5870841487279843, 'C-Index-IPCW_valid': 0.5536411369583389}
+test epoch_40 : {'loss_total_loss_test': 2.0156473842534153, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.0156473842534153}
+metrics : {'C-Index_test': 0.6335740072202166, 'C-Index-IPCW_test': 0.5961574000099666}
+Best Score : 0.6079582517938682
+Best Metrics : {'C-Index_valid': 0.6079582517938682, 'C-Index-IPCW_valid': 0.5636711962964346}
+Early stopping!!! on epoch 41
