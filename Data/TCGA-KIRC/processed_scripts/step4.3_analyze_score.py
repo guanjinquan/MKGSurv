@@ -51,8 +51,8 @@ def map_data_type(data_string):
         # 默认返回原字符串的小写形式
         return normalized
 
-file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_deepseek.json"
-# file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_qwen.json"
+# file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_deepseek.json"
+file = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_qwen.json"
 
 
 with open(file, 'r') as f:
@@ -69,4 +69,7 @@ for k, v in data.items():
         scores[pair].append(d['score'])
 
 for k, v in scores.items():
-    print(k, np.mean(v), np.std(v))
+    # print(k, np.mean(v), np.std(v))
+    mean = np.mean(v)
+    std = np.std(v)
+    print(k, f"{mean:.2f} ± {std:.2f}")
