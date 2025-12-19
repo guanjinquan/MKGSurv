@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 # --- 1. 定义文件路径 ---
-patient_list_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source/kirc_patients.pkl"
+patient_list_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/source/kirc_patients.json"
 labels_csv_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patient_labels.csv"
 output_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/kirc_patients_5fold.json"
 
@@ -15,7 +15,7 @@ RANDOM_SEED = 2026
 print("正在加载数据...")
 try:
     with open(patient_list_path, 'rb') as f:
-        original_patient_list = pickle.load(f)
+        original_patient_list = json.load(f)
     print(f"从 .pkl 加载了 {len(original_patient_list)} 个患者 ID。")
 except FileNotFoundError:
     print(f"错误: 找不到患者列表文件 {patient_list_path}")
@@ -154,8 +154,7 @@ for train_val_idx, test_idx in skf.split(patients, stratify_labels):
 
 # --- 6. 保存结果 ---
 result = {
-    "split_ratio": "7:1:2",
-    "strategy": "Stratified by (DFS_time > Mean) AND DFS_event",
+    "split_ratio": "6:2:2",
     "time_mean_threshold": float(time_mean),
     "random_seed": RANDOM_SEED,
     "n_folds": 5,

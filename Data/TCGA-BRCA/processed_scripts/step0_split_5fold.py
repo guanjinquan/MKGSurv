@@ -154,8 +154,7 @@ for train_val_idx, test_idx in skf.split(patients, stratify_labels):
 
 # --- 6. 保存结果 ---
 result = {
-    "split_ratio": "7:1:2",
-    "strategy": "Stratified by (DFS_time > Mean) AND DFS_event",
+    "split_ratio": "6:2:2",
     "time_mean_threshold": float(time_mean),
     "random_seed": RANDOM_SEED,
     "n_folds": 5,
