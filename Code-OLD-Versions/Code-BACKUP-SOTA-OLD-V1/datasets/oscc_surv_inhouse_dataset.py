@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import torch
 import copy
-import hashlib
 from typing import List, Dict, Any
 sys.path.append("/home/Guanjq/NewWork/MedAlignFusion/Code")
 from datasets.dataset_base import MultiModalDataset
@@ -209,54 +208,15 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
             },
         }
 
-        # if self.args.use_medical_knowledge:
-        #     output_dict["medical-knowledge"] = self.knowledge_dict.get(pid_str, None)
-        # else:
-        #     kdata = self.knowledge_dict.get(pid_str, None)
-        #     output_dict["medical-knowledge"] = {}
-        #     for k, v in kdata.items():
-        #         output_dict["medical-knowledge"][k] = {
-        #             "score": v['score'] if self.mode != 'train' else 0.0,
-        #             "knowledge": torch.randn_like(v['knowledge'])
-        #         }
-
         if self.args.use_medical_knowledge:
-            kdata = self.knowledge_dict.get(pid_str, None)
-            output_dict["medical-knowledge"] = {}
-            for k, v in kdata.items():
-                knowledge = random.choice(v['knowledge_list']) if self.mode == 'train' else v['knowledge_list'][0]
-                output_dict["medical-knowledge"][k] = {
-                    "score": v['score'],
-                    "knowledge": knowledge
-                }
+            output_dict["medical-knowledge"] = self.knowledge_dict.get(pid_str, None)
         else:
             kdata = self.knowledge_dict.get(pid_str, None)
             output_dict["medical-knowledge"] = {}
-
-            # 1. Generate seed (same as above)
-            if isinstance(pid_str, int):
-                pid_seed = pid_str
-            else:
-                pid_hash = hashlib.sha256(str(pid_str).encode('utf-8')).hexdigest()
-                pid_seed = int(pid_hash, 16) % (2**32)
-
-            # 2. Create local generators
-            rng = random.Random(pid_seed) # For python floats
-            g = torch.Generator()         # For torch tensors
-            g.manual_seed(pid_seed)
-
             for k, v in kdata.items():
-                # Determine score: if train, generate a random score seeded by PID
-                # otherwise use the existing score.
-                if self.mode != 'train':
-                    score_val = v['score']
-                else:
-                    score_val = rng.random() # Deterministic random value for this PID
-
                 output_dict["medical-knowledge"][k] = {
-                    "score": score_val,
-                    # Use the generator 'g' for torch operations
-                    "knowledge": torch.randn((1, 768), generator=g) 
+                    "score": v['score'] if self.mode != 'train' else 0.0,
+                    "knowledge": torch.randn_like(v['knowledge'])
                 }
 
         # 4. 加载特征 

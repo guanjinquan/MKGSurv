@@ -147,6 +147,7 @@ class MedKGATFusion(nn.Module):
         self.args = args
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
+        self.group_dropout = nn.Dropout(ff_dropout_rate)
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(

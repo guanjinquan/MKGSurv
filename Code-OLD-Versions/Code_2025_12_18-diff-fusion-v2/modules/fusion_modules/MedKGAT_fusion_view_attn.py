@@ -50,7 +50,7 @@ class SafeCrossAttnEncoder(nn.Module):
         self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
-                key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> torch.Tensor:
+                key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         query: (B, Lq, D)
         key:   (B, Lk, D)
@@ -75,7 +75,7 @@ class SafeCrossAttnEncoder(nn.Module):
 
         # --- 1. Attention Block ---
         # 正常计算 MHA
-        attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
+        attn_out, _ = self.mha(query, key, value, key_padding_mask=key_padding_mask)
             
         # 清理垃圾值：将那些原本全无效的行的输出置为 0
         if all_masked_rows is not None and all_masked_rows.any():
@@ -89,8 +89,6 @@ class SafeCrossAttnEncoder(nn.Module):
 
         x = x + self.dropout(ffn_out)
 
-        if need_weights:
-            return x, attn_weights
         return x
 
 
@@ -139,7 +137,7 @@ class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
             max_groups: int = 10, 
-            ff_dropout_rate: float = 0.25, 
+            ff_dropout_rate: float = 0.1, 
             attn_dropout_rate: float = 0.1, 
             num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
@@ -150,9 +148,9 @@ class MedKGATFusion(nn.Module):
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
-            nn.Linear(768, self.embed_dim * 2),
-            nn.LayerNorm(self.embed_dim * 2),
-            GELU(),
+            nn.Linear(768, self.embed_dim),
+            nn.LayerNorm(self.embed_dim),
+            nn.ReLU(),
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(ff_dropout_rate)
@@ -182,7 +180,7 @@ class MedKGATFusion(nn.Module):
     def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
         
-        for group_idx, group_indices in enumerate(groups):
+        for group_indices in groups:
             if not group_indices:
                 continue
                 
@@ -409,6 +407,9 @@ class MedKGATFusion(nn.Module):
                 sim = torch.clamp(sim, -1.0, 1.0)
                 all_cos_sims_list.append(sim)
 
+        # Save Points
+        self.save_points(final_group_embeddings, group_masks, groups_relationships)
+
         # 7. Global Aggregation
         global_concat = torch.cat(final_group_embeddings, dim=1)
         global_mask = torch.cat(group_masks, dim=1)
@@ -420,12 +421,13 @@ class MedKGATFusion(nn.Module):
             global_padding_mask[all_masked_rows, 0] = False
 
         global_transformed = self.global_transformer(
-            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask, need_weights=False)
+            query=global_concat, key=global_concat, value=global_concat, key_padding_mask=global_padding_mask)
         
         if all_masked_rows.any():
             global_transformed[all_masked_rows] = 0.0
         
         fused_embedding, _ = masked_mean_pool(global_transformed, global_mask)
+             
         fused_embedding = self.post_fusion_norm(fused_embedding)
 
         # 8. Compute KL Divergence Loss
@@ -453,11 +455,80 @@ class MedKGATFusion(nn.Module):
             
             if valid_patients.sum() > 0:
                 fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
-    
+            
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
                 "total_loss": 2 * fusion_loss,
             }
         }
-    
+
+    def save_points(self, final_group_embeddings, final_group_masks, groups_relationships):
+        if self.args.points_save_path is None:
+            return 
+
+        group_mean_embeddings = []
+        for i in range(len(final_group_embeddings)):
+            res = masked_mean_pool(final_group_embeddings[i], final_group_masks[i])
+            if isinstance(res, tuple):
+                mean_emb = res[0]
+            else:
+                mean_emb = res
+            group_mean_embeddings.append(mean_emb)
+
+        batch_size = final_group_embeddings[0].shape[0]
+        device = final_group_embeddings[0].device
+        
+        sum_edge_scores = torch.zeros((batch_size, 1), device=device)
+        sum_cos_sims = torch.zeros((batch_size, 1), device=device)
+        
+        raw_data_cache = {} 
+        valid_pairs = []
+
+        for (idx_a, idx_b), _ in groups_relationships.items():
+            raw_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
+            
+            if raw_score is not None:
+                if raw_score.dim() == 1:
+                    raw_score = raw_score.view(-1, 1)
+                
+                embed_a = group_mean_embeddings[idx_a]
+                embed_b = group_mean_embeddings[idx_b]
+                
+                raw_cos = torch.cosine_similarity(embed_a, embed_b, dim=1).view(-1, 1)
+                raw_cos_positive = torch.clamp(raw_cos, min=1e-9) 
+
+                sum_edge_scores += raw_score
+                sum_cos_sims += raw_cos_positive
+                
+                raw_data_cache[(idx_a, idx_b)] = (raw_cos_positive, raw_score)
+                valid_pairs.append((idx_a, idx_b))
+
+        sum_edge_scores = torch.clamp(sum_edge_scores, min=1e-9)
+        sum_cos_sims = torch.clamp(sum_cos_sims, min=1e-9)
+
+        if len(valid_pairs) > 0:
+            save_points_path = self.args.points_save_path
+            os.makedirs(os.path.dirname(save_points_path), exist_ok=True)
+            
+            current_batch_points = []
+            
+            for (idx_a, idx_b) in valid_pairs:
+                raw_cos, raw_score = raw_data_cache[(idx_a, idx_b)]
+                
+                norm_cos = raw_cos / sum_cos_sims
+                norm_score = raw_score / sum_edge_scores
+                
+                norm_cos_list = norm_cos.view(-1).detach().cpu().tolist()
+                norm_score_list = norm_score.view(-1).detach().cpu().tolist()
+                
+                for pat_idx in range(len(norm_cos_list)):
+                    current_batch_points.append([norm_cos_list[pat_idx], norm_score_list[pat_idx]])
+
+            if current_batch_points:
+                try:
+                    with open(save_points_path, 'a') as f:
+                        for point in current_batch_points:
+                            f.write(json.dumps(point) + "\n")
+                except Exception as e:
+                    print(f"Warning: Failed to save points data: {e}")

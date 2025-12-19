@@ -147,6 +147,7 @@ class MedKGATFusion(nn.Module):
         self.args = args
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
+        self.group_drop_ratio = 0.1
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -162,7 +163,7 @@ class MedKGATFusion(nn.Module):
         self.num_intra_layers = num_intra_layers
         self.intra_group_transformer = nn.ModuleList([
             SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
-            for _ in range(num_intra_layers)
+            for _ in range(max_groups)
         ])
 
         # 3. GAT Interaction Components (Inter-Group)
@@ -204,7 +205,7 @@ class MedKGATFusion(nn.Module):
 
             # The TransformerEncoder handles num_layers internally
             for i in range(self.num_intra_layers):
-                concat_feat = self.intra_group_transformer[i](
+                concat_feat = self.intra_group_transformer[group_idx](
                     query=concat_feat, 
                     key=concat_feat, 
                     value=concat_feat, 
@@ -410,8 +411,43 @@ class MedKGATFusion(nn.Module):
                 all_cos_sims_list.append(sim)
 
         # 7. Global Aggregation
+        # global_concat = self.group_dropout(global_concat)  # 没必要使用dropout，因为attn后面自带dropout的
+        current_group_masks = list(group_masks) # Shallow copy to preserve original masks for other calculations if needed
+
+        if self.training and self.group_drop_ratio > 0.0:
+            batch_size = embeddings[0].shape[0]
+            num_groups = len(final_group_embeddings)
+
+            # Generate random dropout mask: True means DROP, False means KEEP
+            # shape: (Batch, Num_Groups)
+            drop_decision = torch.rand((batch_size, num_groups), device=embeddings[0].device) < self.group_drop_ratio
+            
+            # SAFETY CHECK: Ensure at least one group is kept per sample to avoid NaN
+            all_dropped = drop_decision.all(dim=1) # (Batch,)
+            if all_dropped.any():
+                # For indices where everything was dropped, randomly select one group to keep
+                indices_to_keep = torch.randint(0, num_groups, (all_dropped.sum(),), device=embeddings[0].device)
+                
+                # Get the row indices that need fixing
+                dropped_rows = torch.where(all_dropped)[0]
+                
+                # Force decision to False (Keep) for the selected group
+                drop_decision[dropped_rows, indices_to_keep] = False
+
+            # Apply the decision to the masks
+            for g_idx in range(num_groups):
+                # If drop_decision[b, g] is True, we want mask to be 0
+                # If drop_decision[b, g] is False, we keep mask as is (multiply by 1)
+                # Expand to match sequence length dim: (Batch, 1)
+                should_drop = drop_decision[:, g_idx].unsqueeze(1) 
+                keep_factor = (~should_drop).float()
+                
+                # Update the mask for this group
+                current_group_masks[g_idx] = current_group_masks[g_idx] * keep_factor  # Drop Tokens -> 0
+
+        # Concatenate embeddings and modified masks
         global_concat = torch.cat(final_group_embeddings, dim=1)
-        global_mask = torch.cat(group_masks, dim=1)
+        global_mask = torch.cat(current_group_masks, dim=1)
         global_padding_mask = (global_mask == 0)
 
         all_masked_rows = global_padding_mask.all(dim=1)
