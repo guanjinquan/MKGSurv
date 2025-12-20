@@ -517,7 +517,7 @@ class MedKGATFusion(nn.Module):
             scores_masked[all_masks_tensor == 0] = -1e9
             target_probs = F.softmax(scores_masked, dim=1)
 
-            temperature = 0.1
+            temperature = 0.01
             sims_masked = all_sims_tensor.clone() / temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
@@ -534,7 +534,6 @@ class MedKGATFusion(nn.Module):
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": self.fusion_loss_weight * fusion_loss + F.tanh(-self.fusion_loss_weight),
-                "KL_loss": fusion_loss,
+                "total_loss": 5 * fusion_loss,
             }
         }

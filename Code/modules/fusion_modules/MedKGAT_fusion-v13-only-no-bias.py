@@ -1,4 +1,4 @@
-# 这个代码KIRC跑出来0.795，但是luad只有0.63
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
