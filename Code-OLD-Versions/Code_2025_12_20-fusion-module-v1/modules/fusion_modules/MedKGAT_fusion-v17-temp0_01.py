@@ -1,3 +1,36 @@
+"""
+
+
+LUAD:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6804 ± 0.0841
+ - List = [0.637389202256245, 0.5593087195600943, 0.6556343577620173, 0.7893903404592241, 0.7603369065849923]
+C-Index-IPCW_Validation Set: 0.6691 ± 0.0804
+ - List = [0.6160237409504632, 0.5766882091957213, 0.6278141880683478, 0.7322482267323863, 0.7925683449751468]
+Test Summary:
+C-Index_Test Set: 0.6622 ± 0.0343
+ - List = [0.7062893081761006, 0.6894150417827298, 0.648921832884097, 0.6590277777777778, 0.6072811773818745]
+C-Index-IPCW_Test Set: 0.6461 ± 0.0641
+ - List = [0.6564226989964612, 0.7605753738725904, 0.6334821689533868, 0.6108442379270418, 0.5689720320321486]
+Training run tcga_luad_run030 finished.
+
+KIRC:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.7988 ± 0.0378
+ - List = [0.8250728862973761, 0.7275494672754946, 0.8123123123123123, 0.8330995792426368, 0.7961019490254873]
+C-Index-IPCW_Validation Set: 0.7683 ± 0.0407
+ - List = [0.822175063673931, 0.7023049913067858, 0.7556240978576746, 0.7642095575578097, 0.7972964834689144]
+Test Summary:
+C-Index_Test Set: 0.7693 ± 0.0160
+ - List = [0.7914364640883977, 0.771689497716895, 0.7431318681318682, 0.7630890052356021, 0.7773109243697479]
+C-Index-IPCW_Test Set: 0.7443 ± 0.0262
+ - List = [0.7364693394487241, 0.7571100877438206, 0.779786495547676, 0.7001996890982279, 0.7480855200063526]
+Training run tcga_kirc_run033 finished.
+
+"""
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -147,7 +180,6 @@ class MedKGATFusion(nn.Module):
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
         self.group_drop_ratio = 0.25
-        self.log_temperature = nn.Parameter(torch.tensor(-2.6592))
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -518,7 +550,7 @@ class MedKGATFusion(nn.Module):
             scores_masked[all_masks_tensor == 0] = -1e9
             target_probs = F.softmax(scores_masked, dim=1)
 
-            temperature = self.log_temperature.exp().clamp(min=0.01, max=10)
+            temperature = 0.01
             sims_masked = all_sims_tensor.clone() / temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
@@ -536,6 +568,5 @@ class MedKGATFusion(nn.Module):
             "fused_embedding": fused_embedding,
             "loss_dict": {
                 "total_loss": 5 * fusion_loss,
-                "temperature": self.log_temperature.exp(),
             }
         }

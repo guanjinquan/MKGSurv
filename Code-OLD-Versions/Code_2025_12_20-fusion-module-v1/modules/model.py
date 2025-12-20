@@ -34,15 +34,9 @@ from modules.fusion_modules.MedKGAT_fusion_diff_msa import MedKGATFusion_diff_ms
 from modules.fusion_modules.MedKGAT_fusion_max_sim import MedKGATFusionMaxSim
 from modules.fusion_modules.MedKGAT_fusion_soft_sim import MedKGATFusionSoftSim
 from modules.fusion_modules.MedKGAT_fusion_student_t_sim import MedKGATFusionStudentT
-
-from modules.fusion_modules.MedKGAT_fusion_v1 import MedKGATFusion_v1
-from modules.fusion_modules.MedKGAT_fusion_v2 import MedKGATFusion_v2
-from modules.fusion_modules.MedKGAT_fusion_v5 import MedKGATFusion_v5
-from modules.fusion_modules.MedKGAT_fusion_v6 import MedKGATFusion_v6
-from modules.fusion_modules.MedKGAT_fusion_v7 import MedKGATFusion_v7
-from modules.fusion_modules.MedKGAT_fusion_v8 import MedKGATFusion_v8
-from modules.fusion_modules.MedKGAT_fusion_v9 import MedKGATFusion_v9
-
+# from modules.fusion_modules.MedKGAT_fusion_healnet import MedKGATFusion_healnet
+# from modules.fusion_modules.MedKGAT_fusion_healnet_group import HealNet_Group
+# from modules.fusion_modules.MedKGAT_fusion_healnet_group_v4 import HealNet_Group_v4
 
 # --- Common Modules ---
 from modules.base_modules.align_utils import AlignmentModule
@@ -155,23 +149,12 @@ class ModelInterface(nn.Module):
         elif self.fusion_type == 'medkgat_fusion_student_t':
             self.fusion_module = MedKGATFusionStudentT(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
 
-        elif self.fusion_type == 'medkgat_fusion_v1':
-            self.fusion_module = MedKGATFusion_v1(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v2':
-            self.fusion_module = MedKGATFusion_v2(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v5':
-            self.fusion_module = MedKGATFusion_v5(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v6':
-            self.fusion_module = MedKGATFusion_v6(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v7':
-            self.fusion_module = MedKGATFusion_v7(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v8':
-            self.fusion_module = MedKGATFusion_v8(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v9':
-            self.fusion_module = MedKGATFusion_v9(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v10':
-            self.fusion_module = MedKGATFusion_v10(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-
+        # elif self.fusion_type == 'medkgat_fusion_healnet':
+        #     self.fusion_module = MedKGATFusion_healnet(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        # elif self.fusion_type == 'medkgat_fusion_healnet_group':
+        #     self.fusion_module = HealNet_Group(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        # elif self.fusion_type == 'medkgat_fusion_healnet_group_v4':
+        #     self.fusion_module = HealNet_Group_v4(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 

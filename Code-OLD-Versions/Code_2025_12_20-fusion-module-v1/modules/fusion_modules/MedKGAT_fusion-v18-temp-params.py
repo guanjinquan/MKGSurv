@@ -1,3 +1,35 @@
+"""
+LUAD：
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.6811 ± 0.0472
+ - List = [0.6567284448025785, 0.600942655145326, 0.698187549251379, 0.7276326207442597, 0.722052067381317]
+C-Index-IPCW_Validation Set: 0.6661 ± 0.0347
+ - List = [0.6306980305371663, 0.6336860544027614, 0.6526927302475641, 0.6960261979002133, 0.71749645270096]
+Test Summary:
+C-Index_Test Set: 0.6349 ± 0.0650
+ - List = [0.6591194968553459, 0.7123955431754875, 0.648921832884097, 0.6388888888888888, 0.5151045701006971]
+C-Index-IPCW_Test Set: 0.6162 ± 0.0842
+ - List = [0.6135059445221623, 0.7465929667850246, 0.6269818738212083, 0.6130906405047333, 0.48093337960472077]
+Training run tcga_luad_run031 finished.
+
+KIRC:
+--- Testing Complete ---
+Validation Summary:
+C-Index_Validation Set: 0.8338 ± 0.0384
+ - List = [0.8411078717201166, 0.7640791476407914, 0.8273273273273273, 0.8639551192145862, 0.8725637181409296]
+C-Index-IPCW_Validation Set: 0.8034 ± 0.0495
+ - List = [0.8276679865603841, 0.725386644785177, 0.7722386974281024, 0.8232993346286483, 0.8683709639200164]
+Test Summary:
+C-Index_Test Set: 0.7723 ± 0.0607
+ - List = [0.7969613259668509, 0.802130898021309, 0.6510989010989011, 0.8075916230366492, 0.803921568627451]
+C-Index-IPCW_Test Set: 0.7459 ± 0.0410
+ - List = [0.7051984794940735, 0.8112626130193055, 0.7093351444216507, 0.7286128829361334, 0.7751676283839206]
+Training run tcga_kirc_run034 finished.
+
+如果使用temperature直接学习，那么训练初始化为0.07，训练了50个epoch之后还是0.071，因为学习率很小，而且模型参数一般变化不大的
+所以采用log_temperature是一个更好的方案
+"""
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -147,7 +179,7 @@ class MedKGATFusion(nn.Module):
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
         self.group_drop_ratio = 0.25
-        self.log_temperature = nn.Parameter(torch.tensor(-2.6592))
+        self.loss_temperature = nn.Parameter(torch.tensor(0.07))
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -518,7 +550,7 @@ class MedKGATFusion(nn.Module):
             scores_masked[all_masks_tensor == 0] = -1e9
             target_probs = F.softmax(scores_masked, dim=1)
 
-            temperature = self.log_temperature.exp().clamp(min=0.01, max=10)
+            temperature = self.loss_temperature  # default 0.1 
             sims_masked = all_sims_tensor.clone() / temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
@@ -536,6 +568,6 @@ class MedKGATFusion(nn.Module):
             "fused_embedding": fused_embedding,
             "loss_dict": {
                 "total_loss": 5 * fusion_loss,
-                "temperature": self.log_temperature.exp(),
+                "temperature": self.loss_temperature,
             }
         }

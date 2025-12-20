@@ -6,16 +6,16 @@ export HF_ENDPOINT="https://hf-mirror.com"
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
 GPU_ID=0
-export CUDA_VISIBLE_DEVICES=${GPU_ID}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_brca_run001_rerun"
+RUN_ID="tcga_brca_run001"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
 LR=5e-5              # Learning rate for the model head.
-NUM_EPOCHS=50        # Total number of training epochs.
+NUM_EPOCHS=60        # Total number of training epochs.
 
 
 # --- Execution ---
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_brca" \
     --dataset "tcga_brca" \
     --image_aggregater "panther" \
-    --fusion_type "medkgat_fusion" \
+    --fusion_type "medkgat_fusion_v1" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \

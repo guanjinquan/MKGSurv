@@ -19,12 +19,16 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
     
 
-class FeedForward(nn.Module):
+
+
+class ExpertFeedForward(nn.Module):
+    """
+    Standard FFN used as a single Expert.
+    """
     def __init__(self, dim, mult = 4, dropout = 0.1):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
-            nn.LayerNorm(dim * mult * 2), # Corrected: LayerNorm usually applied before activation or after linear
             GELU(),
             nn.Linear(dim * mult, dim),
             nn.Dropout(dropout)
@@ -34,22 +38,141 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+class MoEFeedForward(nn.Module):
+    """
+    Sparse Mixture-of-Experts (MoE) Layer with Shared Expert.
+    
+    Optimizations for Speed & Overfitting:
+    1. Shared Expert: Always active, captures common knowledge, stabilizes training.
+    2. Vectorized Dispatch: Loops only over experts (not top-k), batching inputs.
+    3. Reduced Expert Capacity: routing experts use smaller `mult` to prevent overfitting.
+    """
+    def __init__(self, dim, num_experts=4, num_selected=2, mult=4, dropout=0.1):
+        super().__init__()
+        self.dim = dim
+        self.num_experts = num_experts
+        self.num_selected = num_selected
+        
+        # Gating Network
+        self.gate = nn.Linear(dim, num_experts)
+        
+        # --- Optimization 1: Shared Expert ---
+        # Acts as a backbone. Always active for all tokens.
+        # This significantly reduces overfitting by ensuring a shared representation.
+        self.shared_expert = ExpertFeedForward(dim, mult=mult, dropout=dropout)
+        
+        # --- Optimization 2: Smaller Routed Experts ---
+        # Reduce 'mult' for routed experts to 2 (half size) to control parameter count
+        # while keeping Shared Expert at full size.
+        expert_mult = max(2, mult // 2) 
+        
+        self.experts = nn.ModuleList([
+            ExpertFeedForward(dim, mult=expert_mult, dropout=dropout) 
+            for _ in range(num_experts)
+        ])
+        
+        self.register_buffer('aux_loss', torch.tensor(0.0))
+        
+    def forward(self, x):
+        """
+        x: (Batch, Seq_Len, Dim)
+        """
+        batch_size, seq_len, dim = x.shape
+        x_flat = x.view(-1, dim) # (B*S, D)
+        
+        # --- 1. Shared Expert Execution (Always Active) ---
+        # This provides a stable gradient and baseline performance
+        shared_out = self.shared_expert(x_flat)
+        final_output = shared_out # Start with shared output
+        
+        # --- 2. Gating ---
+        gate_logits = self.gate(x_flat)
+        
+        if self.training:
+            # Noisy gating for regularization
+            noise = torch.randn_like(gate_logits) * (1.0 / self.num_experts)
+            gate_logits = gate_logits + noise
+            
+        probs = F.softmax(gate_logits, dim=-1)
+        
+        # selected_probs: (N, K), selected_indices: (N, K)
+        selected_probs, selected_indices = torch.topk(probs, self.num_selected, dim=-1)
+        
+        # Normalize weights
+        selected_probs = selected_probs / selected_probs.sum(dim=-1, keepdim=True)
+        
+        # --- 3. Aux Loss (Load Balancing) ---
+        # We use a simple mean-square auxiliary loss
+        mean_probs = probs.mean(dim=0)
+        aux_loss = (self.num_experts * (mean_probs ** 2).sum())
+        self.aux_loss = aux_loss
+        
+        # --- 4. Optimized Dispatch Loop (Speed Up) ---
+        # Instead of looping K times then Expert times, we just loop Experts.
+        # We gather all tokens destined for Expert i (whether 1st or 2nd choice).
+        
+        for i in range(self.num_experts):
+            # Create a mask for tokens that selected this expert
+            # (N, K) == scalar -> (N, K) -> any(dim=1) -> (N,)
+            selection_mask_k = (selected_indices == i)
+            token_mask = selection_mask_k.any(dim=1) 
+            
+            if token_mask.any():
+                # 1. Gather inputs
+                # Extract tokens assigned to expert i
+                expert_input = x_flat[token_mask]
+                
+                # 2. Run Expert
+                expert_out = self.experts[i](expert_input)
+                
+                # 3. Apply Routing Weights
+                # We need the weight corresponding to this expert for each selected token.
+                # selected_probs[token_mask] gives (M, K)
+                # selection_mask_k[token_mask] gives (M, K) boolean indicating position
+                
+                # Extract the specific weight for expert i from the top-k weights
+                # Sum is safe because expert i only appears once per row in top-k
+                weight_chunk = selected_probs[token_mask]
+                mask_chunk = selection_mask_k[token_mask].float()
+                
+                # (M, 1)
+                specific_weights = (weight_chunk * mask_chunk).sum(dim=1, keepdim=True)
+                
+                # 4. Scatter Add (Accumulate)
+                # final_output[token_mask] += expert_out * specific_weights
+                # Using index_add is often faster/cleaner for gradients, but masked set is fine here
+                final_output[token_mask] += expert_out * specific_weights
+
+        return final_output.view(batch_size, seq_len, dim)
+
+
 # --- SafeCrossAttnEncoder ---
 class SafeCrossAttnEncoder(nn.Module):
     """
     升级版交叉注意力模块。
-    结构: CrossAttention -> Add & Norm -> FeedForward -> Add & Norm
-    包含了防 NaN 的安全机制。
+    结构: CrossAttention -> Add & Norm -> FFN/MoE -> Add & Norm
     """
-    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
-        super().__init__()
+    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4, use_moe: bool = False):
+        super().__init__() 
         self.norm_q = nn.LayerNorm(embed_dim)
-        self.norm_ffn = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
         self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        # 2. FFN 部分  
-        self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
+        
+        # 2. FFN 部分 (Conditional MoE)
+        self.norm_ffn = nn.LayerNorm(embed_dim)
+        if use_moe:
+            # Intra-step usually benefits from higher capacity to digest information within group
+            self.ffn = MoEFeedForward(
+                embed_dim, 
+                num_experts=4,     
+                num_selected=2,    
+                mult=ffn_mult, 
+                dropout=dropout
+            )
+        else:
+            # Standard FFN for Inter-step and Global aggregation to keep stability
+            self.ffn = ExpertFeedForward(dim=embed_dim, mult=ffn_mult, dropout=dropout)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
                 key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> torch.Tensor:
@@ -63,7 +186,6 @@ class SafeCrossAttnEncoder(nn.Module):
         query = self.norm_q(query)
         
         # --- 核心修复逻辑 (Safe Logic) ---
-        all_masked_rows = None
         if key_padding_mask is not None:
             # 检测哪些样本的所有 Key 都是 Padding
             all_masked_rows = key_padding_mask.all(dim=1) # (B,) bool
@@ -73,27 +195,26 @@ class SafeCrossAttnEncoder(nn.Module):
                 key_padding_mask = key_padding_mask.clone()
                 # 将全 Mask 行的第一个位置设为 False (有效)，防止 Softmax NaN
                 key_padding_mask[all_masked_rows, 0] = False
-        
+        else:
+            all_masked_rows = None  
+
         # --- 1. Attention Block ---
-        # 正常计算 MHA
         attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
             
-        # 清理垃圾值：将那些原本全无效的行的输出置为 0
+        # 清理垃圾值
         if all_masked_rows is not None and all_masked_rows.any():
             attn_out[all_masked_rows] = 0.0
 
-        # Residual + Norm (Post-Norm 风格)
+        # Residual + Norm
         x = query + self.dropout(attn_out)
         
-        # --- 2. FFN Block (新增逻辑) ---
+        # --- 2. FFN Block (Standard or MoE) ---
         ffn_out = self.ffn(self.norm_ffn(x))
-
         x = x + self.dropout(ffn_out)
 
         if need_weights:
             return x, attn_weights
         return x
-
 
 
 class EdgeContextualizer(nn.Module):
@@ -134,7 +255,7 @@ class EdgeContextualizer(nn.Module):
     
 
 
-class MedKGATFusion(nn.Module):
+class MedKGATFusion_v10(nn.Module):
     def __init__(self, args, embed_dim: int, 
              max_modalities: int = 10, 
              max_groups: int = 10, 
@@ -147,7 +268,7 @@ class MedKGATFusion(nn.Module):
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
         self.group_drop_ratio = 0.25
-        self.log_temperature = nn.Parameter(torch.tensor(-2.6592))
+        self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -162,7 +283,7 @@ class MedKGATFusion(nn.Module):
         # 2. Intra-group Interaction
         self.num_intra_layers = num_intra_layers
         self.intra_group_transformer = nn.ModuleList([
-            SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
+            SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate, use_moe=True)
             for _ in range(num_intra_layers)
         ])
 
@@ -518,8 +639,8 @@ class MedKGATFusion(nn.Module):
             scores_masked[all_masks_tensor == 0] = -1e9
             target_probs = F.softmax(scores_masked, dim=1)
 
-            temperature = self.log_temperature.exp().clamp(min=0.01, max=10)
-            sims_masked = all_sims_tensor.clone() / temperature
+            temperature = self.log_temperature.exp().clamp(min=0.01, max=100)
+            sims_masked = all_sims_tensor.clone() * temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
             pred_log_probs = F.log_softmax(sims_masked, dim=1)

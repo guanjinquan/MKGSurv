@@ -134,20 +134,20 @@ class EdgeContextualizer(nn.Module):
     
 
 
-class MedKGATFusion(nn.Module):
+class MedKGATFusion_v2(nn.Module):
     def __init__(self, args, embed_dim: int, 
              max_modalities: int = 10, 
              max_groups: int = 10, 
              ff_dropout_rate: float = 0.25, 
              attn_dropout_rate: float = 0.1, 
-             num_intra_layers: int = 1, num_inter_layers: int = 1):
+             num_intra_layers: int = 1, num_inter_layers: int = 2):
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
         self.group_drop_ratio = 0.25
-        self.log_temperature = nn.Parameter(torch.tensor(-2.6592))
+        self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -518,8 +518,8 @@ class MedKGATFusion(nn.Module):
             scores_masked[all_masks_tensor == 0] = -1e9
             target_probs = F.softmax(scores_masked, dim=1)
 
-            temperature = self.log_temperature.exp().clamp(min=0.01, max=10)
-            sims_masked = all_sims_tensor.clone() / temperature
+            temperature = self.log_temperature.exp().clamp(min=0.01, max=100)
+            sims_masked = all_sims_tensor.clone() * temperature
             sims_masked[all_masks_tensor == 0] = -1e9
             
             pred_log_probs = F.log_softmax(sims_masked, dim=1)

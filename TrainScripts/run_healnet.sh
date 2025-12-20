@@ -1,4 +1,0 @@
-source activate surv_pred
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_brca/run003_medkgat_all_medkgat_healnet.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_luad/run003_medkgat_all_medkgat_healnet.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/tcga_lusc/run003_medkgat_all_medkgat_healnet.sh
