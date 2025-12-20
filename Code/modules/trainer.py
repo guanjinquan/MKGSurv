@@ -76,7 +76,7 @@ class Trainer:
         self.scheduler = GetScheduler(self.args, self.optimizer)
         
         self.epoch = 0
-        self.save_epoch_limit = max(15, self.args.num_epochs // 5)
+        self.save_epoch_limit = max(15, self.args.num_epochs // 4)
         self.iters = 0
         self.acc_step = self.args.acc_step
             

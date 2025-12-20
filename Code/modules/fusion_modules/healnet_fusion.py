@@ -8,6 +8,8 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat
 from einops.layers.torch import Reduce
+import random
+
 
 # --- Helper utility functions and classes from the original HealNet implementation ---
 
@@ -135,8 +137,8 @@ class HealNet(nn.Module):
         depth: int = 1,
         num_freq_bands: int = 2,
         max_freq: float=10.,
-        l_c: int = 128,
-        l_d: int = 128,
+        l_c: int = 16,
+        l_d: int = 16,
         x_heads: int = 8,
         l_heads: int = 8,
         cross_dim_head: int = 64,
@@ -242,6 +244,7 @@ class HealNet(nn.Module):
         x = repeat(self.latents, 'n d -> b n d', b=b)
 
         for layer_idx, layer in enumerate(self.layers):
+
             for i in range(self.modalities):
                 if i in missing_idx:
                     if verbose:
@@ -280,7 +283,7 @@ class HealNetFusionModule(nn.Module):
         args,
         embed_dim: int,
         max_modalities: int,
-        num_latents: int = 32, # Corresponds to l_c, the number of queries (k)
+        num_latents: int = 16, # Corresponds to l_c, the number of queries (k)
         depth: int = 1,
         num_heads: int = 8,
         ff_dropout: float = 0.1,

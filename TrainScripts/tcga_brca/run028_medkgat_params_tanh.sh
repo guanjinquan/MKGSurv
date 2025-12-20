@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_kirc_run003"
+RUN_ID="tcga_brca_run028"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -25,8 +25,8 @@ echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "tcga_kirc" \
-    --dataset "tcga_kirc" \
+    --model_task "tcga_brca" \
+    --dataset "tcga_brca" \
     --image_aggregater "panther" \
     --fusion_type "medkgat_fusion" \
     --batch_size ${BATCH_SIZE} \
@@ -36,7 +36,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "tabular-clinical-6,genomics-genomics,image-pathology"  \
+    --modalities "all"  \
     --use_medical_knowledge
 
 

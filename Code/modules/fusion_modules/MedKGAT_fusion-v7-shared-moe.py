@@ -1,5 +1,7 @@
+# still 0.66
 import sys
 import os
+import math
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import torch
@@ -9,7 +11,6 @@ from typing import List, Dict, Tuple, Optional
 from modules.base_modules.aggregation_utils import masked_mean_pool
 import json
 import random
-from collections import defaultdict
 
 
 # --- 基础组件 ---
@@ -19,12 +20,14 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
     
 
-class FeedForward(nn.Module):
+class ExpertFeedForward(nn.Module):
+    """
+    Standard FFN used as a single Expert.
+    """
     def __init__(self, dim, mult = 4, dropout = 0.1):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
-            nn.LayerNorm(dim * mult * 2), # Corrected: LayerNorm usually applied before activation or after linear
             GELU(),
             nn.Linear(dim * mult, dim),
             nn.Dropout(dropout)
@@ -34,11 +37,119 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+class MoEFeedForward(nn.Module):
+    """
+    Sparse Mixture-of-Experts (MoE) Layer with Shared Expert.
+    
+    Optimizations for Speed & Overfitting:
+    1. Shared Expert: Always active, captures common knowledge, stabilizes training.
+    2. Vectorized Dispatch: Loops only over experts (not top-k), batching inputs.
+    3. Reduced Expert Capacity: routing experts use smaller `mult` to prevent overfitting.
+    """
+    def __init__(self, dim, num_experts=4, num_selected=2, mult=4, dropout=0.1):
+        super().__init__()
+        self.dim = dim
+        self.num_experts = num_experts
+        self.num_selected = num_selected
+        
+        # Gating Network
+        self.gate = nn.Linear(dim, num_experts)
+        
+        # --- Optimization 1: Shared Expert ---
+        # Acts as a backbone. Always active for all tokens.
+        # This significantly reduces overfitting by ensuring a shared representation.
+        self.shared_expert = ExpertFeedForward(dim, mult=mult, dropout=dropout)
+        
+        # --- Optimization 2: Smaller Routed Experts ---
+        # Reduce 'mult' for routed experts to 2 (half size) to control parameter count
+        # while keeping Shared Expert at full size.
+        expert_mult = max(2, mult // 2) 
+        
+        self.experts = nn.ModuleList([
+            ExpertFeedForward(dim, mult=expert_mult, dropout=dropout) 
+            for _ in range(num_experts)
+        ])
+        
+        self.register_buffer('aux_loss', torch.tensor(0.0))
+        
+    def forward(self, x):
+        """
+        x: (Batch, Seq_Len, Dim)
+        """
+        batch_size, seq_len, dim = x.shape
+        x_flat = x.view(-1, dim) # (B*S, D)
+        
+        # --- 1. Shared Expert Execution (Always Active) ---
+        # This provides a stable gradient and baseline performance
+        shared_out = self.shared_expert(x_flat)
+        final_output = shared_out # Start with shared output
+        
+        # --- 2. Gating ---
+        gate_logits = self.gate(x_flat)
+        
+        if self.training:
+            # Noisy gating for regularization
+            noise = torch.randn_like(gate_logits) * (1.0 / self.num_experts)
+            gate_logits = gate_logits + noise
+            
+        probs = F.softmax(gate_logits, dim=-1)
+        
+        # selected_probs: (N, K), selected_indices: (N, K)
+        selected_probs, selected_indices = torch.topk(probs, self.num_selected, dim=-1)
+        
+        # Normalize weights
+        selected_probs = selected_probs / selected_probs.sum(dim=-1, keepdim=True)
+        
+        # --- 3. Aux Loss (Load Balancing) ---
+        # We use a simple mean-square auxiliary loss
+        mean_probs = probs.mean(dim=0)
+        aux_loss = (self.num_experts * (mean_probs ** 2).sum())
+        self.aux_loss = aux_loss
+        
+        # --- 4. Optimized Dispatch Loop (Speed Up) ---
+        # Instead of looping K times then Expert times, we just loop Experts.
+        # We gather all tokens destined for Expert i (whether 1st or 2nd choice).
+        
+        for i in range(self.num_experts):
+            # Create a mask for tokens that selected this expert
+            # (N, K) == scalar -> (N, K) -> any(dim=1) -> (N,)
+            selection_mask_k = (selected_indices == i)
+            token_mask = selection_mask_k.any(dim=1) 
+            
+            if token_mask.any():
+                # 1. Gather inputs
+                # Extract tokens assigned to expert i
+                expert_input = x_flat[token_mask]
+                
+                # 2. Run Expert
+                expert_out = self.experts[i](expert_input)
+                
+                # 3. Apply Routing Weights
+                # We need the weight corresponding to this expert for each selected token.
+                # selected_probs[token_mask] gives (M, K)
+                # selection_mask_k[token_mask] gives (M, K) boolean indicating position
+                
+                # Extract the specific weight for expert i from the top-k weights
+                # Sum is safe because expert i only appears once per row in top-k
+                weight_chunk = selected_probs[token_mask]
+                mask_chunk = selection_mask_k[token_mask].float()
+                
+                # (M, 1)
+                specific_weights = (weight_chunk * mask_chunk).sum(dim=1, keepdim=True)
+                
+                # 4. Scatter Add (Accumulate)
+                # final_output[token_mask] += expert_out * specific_weights
+                # Using index_add is often faster/cleaner for gradients, but masked set is fine here
+                final_output[token_mask] += expert_out * specific_weights
+
+        return final_output.view(batch_size, seq_len, dim)
+
+
 # --- SafeCrossAttnEncoder ---
 class SafeCrossAttnEncoder(nn.Module):
     """
     升级版交叉注意力模块。
-    结构: CrossAttention -> Add & Norm -> FeedForward -> Add & Norm
+    结构: CrossAttention -> Add & Norm -> MoE-FFN -> Add & Norm
     包含了防 NaN 的安全机制。
     """
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
@@ -48,8 +159,16 @@ class SafeCrossAttnEncoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         # 1. Attention 部分
         self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        # 2. FFN 部分  
-        self.ffn = FeedForward(embed_dim, mult=ffn_mult, dropout=dropout)
+        
+        # 2. FFN 部分 - Replaced with MoE
+        # Using 4 experts, selecting top 2.
+        self.ffn = MoEFeedForward(
+            embed_dim, 
+            num_experts=4,     # Can be increased to 8 if data allows
+            num_selected=2,    # Standard Top-2 Routing
+            mult=ffn_mult, 
+            dropout=dropout
+        )
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, 
                 key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> torch.Tensor:
@@ -63,7 +182,6 @@ class SafeCrossAttnEncoder(nn.Module):
         query = self.norm_q(query)
         
         # --- 核心修复逻辑 (Safe Logic) ---
-        all_masked_rows = None
         if key_padding_mask is not None:
             # 检测哪些样本的所有 Key 都是 Padding
             all_masked_rows = key_padding_mask.all(dim=1) # (B,) bool
@@ -73,7 +191,9 @@ class SafeCrossAttnEncoder(nn.Module):
                 key_padding_mask = key_padding_mask.clone()
                 # 将全 Mask 行的第一个位置设为 False (有效)，防止 Softmax NaN
                 key_padding_mask[all_masked_rows, 0] = False
-        
+        else:
+            all_masked_rows = None  
+
         # --- 1. Attention Block ---
         # 正常计算 MHA
         attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
@@ -85,7 +205,8 @@ class SafeCrossAttnEncoder(nn.Module):
         # Residual + Norm (Post-Norm 风格)
         x = query + self.dropout(attn_out)
         
-        # --- 2. FFN Block (新增逻辑) ---
+        # --- 2. FFN Block (MoE) ---
+        # The MoE layer internally handles the aux_loss calculation and storage
         ffn_out = self.ffn(self.norm_ffn(x))
 
         x = x + self.dropout(ffn_out)
@@ -93,7 +214,6 @@ class SafeCrossAttnEncoder(nn.Module):
         if need_weights:
             return x, attn_weights
         return x
-
 
 
 class EdgeContextualizer(nn.Module):
@@ -123,7 +243,7 @@ class EdgeContextualizer(nn.Module):
         # 3. Edge更新: Edge query Context
         # Edge mask自身不需要传入attn mask，因为它是query，长度不变，padding位置的输出后续会被mask掉或忽略
         updated_edge = self.cross_attn(query=edge_feat, key=context_feat, value=context_feat, 
-                                     key_padding_mask=key_padding_mask)
+                                      key_padding_mask=key_padding_mask)
         
         # 4. Apply Edge Mask: 确保无效的 Edge Token 输出保持为 0
         # updated_edge: (B, Le, D), edge_mask: (B, Le)
@@ -132,7 +252,6 @@ class EdgeContextualizer(nn.Module):
         
         return updated_edge
     
-
 
 class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
@@ -147,6 +266,9 @@ class MedKGATFusion(nn.Module):
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
         self.group_drop_ratio = 0.25
+        self.fusion_loss_weight = nn.Parameter(torch.tensor(1.0))
+        # Weight for the MoE Load Balancing Loss
+        self.moe_loss_weight = 0.01 
 
         # 1. Knowledge Projection (768 -> embed_dim)
         self.know_proj = nn.Sequential(
@@ -178,6 +300,17 @@ class MedKGATFusion(nn.Module):
 
         # 5. Post Fusion Norm
         self.post_fusion_norm = nn.LayerNorm(embed_dim)
+
+    def compute_moe_aux_loss(self) -> torch.Tensor:
+        """
+        Recursively find all MoEFeedForward layers and sum their aux_losses.
+        """
+        total_aux_loss = 0.0
+        # Iterate over all modules to find MoE layers
+        for module in self.modules():
+            if isinstance(module, MoEFeedForward):
+                total_aux_loss += module.aux_loss
+        return total_aux_loss
 
     def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
@@ -221,35 +354,39 @@ class MedKGATFusion(nn.Module):
                 
         return updated_embeddings
 
-    def _compute_edge_guided_context(self, 
-                                   source_node: torch.Tensor, source_mask: torch.Tensor,
-                                   edge_feat: torch.Tensor, edge_mask: torch.Tensor,
-                                   layer_modules: nn.ModuleDict) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _inter_group_step(self, target_node: torch.Tensor, target_mask: torch.Tensor,
+                          source_node: torch.Tensor, source_mask: torch.Tensor,
+                          edge_feat: torch.Tensor, edge_mask: torch.Tensor,
+                          layer_modules: nn.ModuleDict) -> torch.Tensor:
         """
-        Helper for Step 2 of GAT: 
-        Use Updated Edge as Query, Source Node as Key/Value.
-        Returns the "Source-Context-via-Edge" and the corresponding mask.
+        One-way interaction: Source -> Edge -> Target
+        Updated to take layer_modules dict
         """
         source_padding_mask = (source_mask == 0)
+        edge_padding_mask = (edge_mask == 0)
         
-        # Edge (Query) queries Source (Key/Value)
-        # Output shape will be same as Edge (B, Edge_Len, D)
-        context_feat = layer_modules['edge_to_node_attn'](
-            query=edge_feat,
-            key=source_node,
-            value=source_node,
+        # Step 1: Edge queries Source to get relevant info (Gating)
+        gated_source = layer_modules['edge_to_node_attn'](
+            query=edge_feat, 
+            key=source_node, 
+            value=source_node, 
             key_padding_mask=source_padding_mask
         )
         
-        # Context mask is essentially the Edge mask, because the output aligns with Edge tokens
-        context_mask = edge_mask
+        # Step 2: Target queries Gated Source to update itself
+        # Note: Key/Value mask depends on Edge because gated_source has shape of Edge
+        updated_target = layer_modules['node_to_node_attn'](
+            query=target_node,
+            key=gated_source,
+            value=gated_source,
+            key_padding_mask=edge_padding_mask
+        )
         
-        # Apply mask to zero out invalid positions
-        if context_mask is not None:
-            context_feat = context_feat * context_mask.unsqueeze(-1).type_as(context_feat)
-            
-        return context_feat, context_mask
+        if target_mask is not None:
+            updated_target = updated_target * target_mask.unsqueeze(-1).type_as(updated_target)
 
+        return updated_target
+    
     def forward(
         self, 
         embeddings: List[torch.Tensor], 
@@ -302,27 +439,18 @@ class MedKGATFusion(nn.Module):
             _, valid_mask = masked_mean_pool(g, m)
             group_validity_masks.append(valid_mask)
 
-        # 4. Inter-Group Interaction (Multi-Layer GAT)
-        # Re-implemented logic: Update ALL edges -> Enum Node -> Collect Contexts -> Update Node
+        # 4. Inter-Group Interaction (Multi-Layer GNN / GAT)
+        # We loop self.num_inter_layers times
         
         current_group_embeddings = group_embeddings # Points to current node features
 
         for layer_idx in range(self.num_inter_layers):
             layer_modules = self.shared_inter_layer
             num_groups = len(current_group_embeddings)
-            
-            # --- Sub-step 4.1: Global Edge Update ---
-            # Update all edges based on their current connected nodes
-            next_step_edge_feats = {} # Store updated edges for this layer
-            
-            # Pre-build Adjacency Map for Step 4.2
-            # Structure: target_node_idx -> list of (source_node_idx, edge_key)
-            adjacency_map = defaultdict(list)
 
             for (idx_a, idx_b) in edge_keys:
                 edge_feat = current_proj_knowledge.get((idx_a, idx_b))
 
-                # Edge Drop Logic
                 if self.training and getattr(self, 'drop_edge_ratio', 0.0) > 0.0:
                     if random.random() < self.drop_edge_ratio:
                         continue
@@ -333,103 +461,54 @@ class MedKGATFusion(nn.Module):
 
                 # Get Group Data
                 feat_a = current_group_embeddings[idx_a]
-                mask_a = group_masks[idx_a]
+                mask_a = group_masks[idx_a] # Masks don't change
                 feat_b = current_group_embeddings[idx_b]
                 mask_b = group_masks[idx_b]
 
-                # Update Edge Features (Edge queries context of Node A and Node B)
+                # --- GNN Update Logic for this Layer ---
+                # Update Edge Features
                 updated_edge_feat = layer_modules['edge_updater'](
                     edge_feat, edge_mask, 
                     feat_a, mask_a, 
                     feat_b, mask_b
                 )
                 
-                # Store for usage in Node Update and next layer
-                next_step_edge_feats[(idx_a, idx_b)] = updated_edge_feat
-                
-                # Record connections for Node Update Step
-                adjacency_map[idx_a].append((idx_b, (idx_a, idx_b))) # b is source for a
-                adjacency_map[idx_b].append((idx_a, (idx_a, idx_b))) # a is source for b
+                # Store updated edge for the next layer
+                current_proj_knowledge[(idx_a, idx_b)] = updated_edge_feat
 
-            # Update the knowledge dict for the *next* layer (and for usage in Node Update)
-            # Note: We use the updated edges immediately for the node update in the current layer logic
-            current_proj_knowledge.update(next_step_edge_feats)
+                # Update Node B using Node A and Edge
+                update_for_b = self._inter_group_step(
+                    target_node=feat_b, target_mask=mask_b,
+                    source_node=feat_a, source_mask=mask_a,
+                    edge_feat=updated_edge_feat, edge_mask=edge_mask,
+                    layer_modules=layer_modules
+                )
+                current_group_embeddings[idx_b] = update_for_b
 
-            # --- Sub-step 4.2: Node Update ---
-            # Enumerate every node, gather updated edges, update node
-            next_group_embeddings = []
-
-            for target_idx in range(num_groups):
-                target_node = current_group_embeddings[target_idx]
-                target_mask = group_masks[target_idx]
-                
-                neighbors = adjacency_map.get(target_idx, [])
-                
-                if not neighbors:
-                    # Isolated node, keep features as is (or maybe apply simple self-attention/FFN if needed)
-                    next_group_embeddings.append(target_node)
-                    continue
-                
-                # Gather Contexts: Enum Edges of this node
-                gathered_contexts = []
-                gathered_masks = []
-                
-                for source_idx, edge_key in neighbors:
-                    # 1. Get Source Node and Updated Edge
-                    source_node = current_group_embeddings[source_idx]
-                    source_mask = group_masks[source_idx]
-                    
-                    updated_edge = current_proj_knowledge[edge_key]
-                    edge_mask = fusion_knowledge_mask.get(edge_key)
-                    if edge_mask is None:
-                        edge_mask = torch.ones(updated_edge.shape[:2], device=updated_edge.device)
-
-                    # 2. Get "Source Updated Edge" (Edge as Query, Source as Key/Value)
-                    ctx_feat, ctx_mask = self._compute_edge_guided_context(
-                        source_node, source_mask,
-                        updated_edge, edge_mask,
-                        layer_modules
-                    )
-                    
-                    gathered_contexts.append(ctx_feat)
-                    gathered_masks.append(ctx_mask)
-                
-                # 3. Concatenate all source_updated_edges
-                if gathered_contexts:
-                    concat_context = torch.cat(gathered_contexts, dim=1)
-                    concat_context_mask = torch.cat(gathered_masks, dim=1)
-                    context_padding_mask = (concat_context_mask == 0)
-                    
-                    # 4. Update Target Node: Target queries Concatenated Context
-                    updated_target = layer_modules['node_to_node_attn'](
-                        query=target_node,
-                        key=concat_context,
-                        value=concat_context,
-                        key_padding_mask=context_padding_mask
-                    )
-                    
-                    if target_mask is not None:
-                        updated_target = updated_target * target_mask.unsqueeze(-1).type_as(updated_target)
-                    
-                    next_group_embeddings.append(updated_target)
-                else:
-                    next_group_embeddings.append(target_node)
-            
-            # Update current embeddings for the next layer
-            current_group_embeddings = next_group_embeddings
+                # Update Node A using Node B and Edge
+                update_for_a = self._inter_group_step(
+                    target_node=feat_a, target_mask=mask_a,
+                    source_node=feat_b, source_mask=mask_b,
+                    edge_feat=updated_edge_feat, edge_mask=edge_mask,
+                    layer_modules=layer_modules
+                )
+                current_group_embeddings[idx_a] = update_for_a
 
         # Final embeddings after all GAT layers
         final_group_embeddings = current_group_embeddings
 
         # ------------------------------------------------------------------
         # 4b. Data Collection for KL Loss (Post-GAT)
-        # We iterate the edges one last time to gather stats
+        # We iterate the edges one last time (using the FINAL edge/node states) 
+        # just to gather the lists needed for loss calculation.
         # ------------------------------------------------------------------
         all_edge_scores_list = []
         all_valid_masks_list = []
         all_edge_pairs_list = []
         edge_score_valid_flag = False
 
+        # Note: We can use current_proj_knowledge (the latest edge feats) or original. 
+        # Usually, edge structure doesn't change, just features. We iterate keys.    
         for (idx_a, idx_b) in edge_keys:
             # Retrieve Ground Truth Edge Score
             edge_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
@@ -464,27 +543,39 @@ class MedKGATFusion(nn.Module):
                 all_cos_sims_list.append(sim)
 
         # 7. Global Aggregation
-        current_group_masks = list(group_masks) # Shallow copy
+        # global_concat = self.group_dropout(global_concat)  # 没必要使用dropout，因为attn后面自带dropout的
+        current_group_masks = list(group_masks) # Shallow copy to preserve original masks for other calculations if needed
 
         if self.training and self.group_drop_ratio > 0.0:
             batch_size = embeddings[0].shape[0]
             num_groups = len(final_group_embeddings)
 
-            # Generate random dropout mask
+            # Generate random dropout mask: True means DROP, False means KEEP
+            # shape: (Batch, Num_Groups)
             drop_decision = torch.rand((batch_size, num_groups), device=embeddings[0].device) < self.group_drop_ratio
             
-            # SAFETY CHECK: Ensure at least one group is kept per sample
-            all_dropped = drop_decision.all(dim=1) 
+            # SAFETY CHECK: Ensure at least one group is kept per sample to avoid NaN
+            all_dropped = drop_decision.all(dim=1) # (Batch,)
             if all_dropped.any():
+                # For indices where everything was dropped, randomly select one group to keep
                 indices_to_keep = torch.randint(0, num_groups, (all_dropped.sum(),), device=embeddings[0].device)
+                
+                # Get the row indices that need fixing
                 dropped_rows = torch.where(all_dropped)[0]
+                
+                # Force decision to False (Keep) for the selected group
                 drop_decision[dropped_rows, indices_to_keep] = False
 
             # Apply the decision to the masks
             for g_idx in range(num_groups):
+                # If drop_decision[b, g] is True, we want mask to be 0
+                # If drop_decision[b, g] is False, we keep mask as is (multiply by 1)
+                # Expand to match sequence length dim: (Batch, 1)
                 should_drop = drop_decision[:, g_idx].unsqueeze(1) 
                 keep_factor = (~should_drop).float()
-                current_group_masks[g_idx] = current_group_masks[g_idx] * keep_factor 
+                
+                # Update the mask for this group
+                current_group_masks[g_idx] = current_group_masks[g_idx] * keep_factor  # Drop Tokens -> 0
 
         # Concatenate embeddings and modified masks
         global_concat = torch.cat(final_group_embeddings, dim=1)
@@ -509,9 +600,9 @@ class MedKGATFusion(nn.Module):
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
         
         if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
-            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1) 
-            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1) 
-            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1) 
+            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1)  # (Batch_Size, Num_Edges) stack all edge of one patient
+            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1)       # (Batch_Size, Num_Edges) stack all sim of one patient
+            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1)   # (Batch_Size, Num_Edges)
 
             scores_masked = all_scores_tensor.clone().float()
             scores_masked[all_masks_tensor == 0] = -1e9
@@ -526,15 +617,20 @@ class MedKGATFusion(nn.Module):
             kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
             kl_loss_per_patient = kl_loss.sum(dim=1)
             
-            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float() 
+            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float()   # (Batch_Size, )
             
             if valid_patients.sum() > 0:
                 fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
     
+        # 9. Compute MoE Auxiliary Loss (Load Balancing)
+        # Prevent expert collapse or overfitting to single experts
+        moe_loss = self.compute_moe_aux_loss()
+
         return {
             "fused_embedding": fused_embedding,
             "loss_dict": {
-                "total_loss": self.fusion_loss_weight * fusion_loss + F.tanh(-self.fusion_loss_weight),
+                "total_loss": (self.fusion_loss_weight * fusion_loss - F.tanh(self.fusion_loss_weight)) + (self.moe_loss_weight * moe_loss),
                 "KL_loss": fusion_loss,
+                "MoE_loss": moe_loss
             }
         }

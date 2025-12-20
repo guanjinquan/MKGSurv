@@ -9,12 +9,12 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_kirc_run003"
+RUN_ID="tcga_kirc_run020"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-5              # Learning rate for the model head.
+LR=3e-4              # Learning rate for the model head.
 NUM_EPOCHS=50        # Total number of training epochs.
 
 

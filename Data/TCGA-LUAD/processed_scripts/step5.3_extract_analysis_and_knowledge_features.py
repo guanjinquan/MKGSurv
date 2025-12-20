@@ -18,7 +18,7 @@ from tqdm import tqdm
 ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_deepseek.json"
 KNOWLEDGE_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/pairs_knowledge_qwen.json"
 OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge.pkl"
-MAX_AUGMENTATIONS = 10
+MAX_AUGMENTATIONS = 20
 BATCH_SIZE = 32 # Batch size for BERT inference
 
 # ================= Core Encoder Class =================
