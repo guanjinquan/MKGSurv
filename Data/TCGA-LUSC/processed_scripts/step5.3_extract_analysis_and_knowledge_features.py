@@ -2,7 +2,7 @@ import os
 
 # 1. Set HF Mirror before importing transformers (Must be at the very top)
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import json
 import torch
 import torch.nn as nn
@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 # ================= Configuration =================
 # You can modify these paths as needed
-ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_deepseek.json"
+ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/medical_analysis_qwen.json"
 KNOWLEDGE_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/pairs_knowledge_qwen.json"
 OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUSC/processed/features_medical_knowledge.pkl"
 MAX_AUGMENTATIONS = 10

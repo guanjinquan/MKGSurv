@@ -18,6 +18,7 @@ def parse_arguments():
     parser.add_argument("--debug_mode", type=bool, default=False)
     parser.add_argument("--fold", type=int, default=None)
     parser.add_argument("--do_mixup", action='store_true')
+    parser.add_argument("--knowledge_source", type=str, default="deepseek")
     parser.add_argument("--use_medical_knowledge", action='store_true')
     
     # models settings 

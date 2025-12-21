@@ -54,22 +54,23 @@ def GetModel(args, dataset):
 
     # with_multimodal_align
     if 'medkgat_fusion' in args.fusion_type:
+        assert args.use_medical_knowledge == True, f"If you want to run random, else you must use medical knowledge"
+
         return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
+    elif 'medkgat_random_fusion' in args.fusion_type:
+        args.use_medical_knowledge = False  # Asign False !!
 
-    # fusion_type in ['concat', 'msa', 'lmf', 'gated', 'moe', 'i2moe', 'hier_align', 'healnet']
-    else:
-        return ModelInterface(
+        return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
-
 
 
 

@@ -128,7 +128,7 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
                     self.loaded_features[mod] = data
         
         # Knowledge Features
-        knowledge_file = os.path.join(self.processed_dir, "features_medical_knowledge.pkl")
+        knowledge_file = os.path.join(self.processed_dir, f"features_medical_knowledge_{self.args.knowledge_source}.pkl")
         self.knowledge_dict = self._read_pickle(knowledge_file)
 
         # Load CSVs (Tabular Data & Labels)
