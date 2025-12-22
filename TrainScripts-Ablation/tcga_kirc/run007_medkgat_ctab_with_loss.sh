@@ -5,16 +5,16 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=1
-export CUDA_VISIBLE_DEVICES=${GPU_ID}
+GPU_ID=2
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_kirc_run034"
+RUN_ID="tcga_kirc_run007"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
 ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
-LR=5e-5              # Learning rate for the model head.
+LR=1e-4              # Learning rate for the model head.
 NUM_EPOCHS=60        # Total number of training epochs.
 
 
@@ -36,8 +36,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "all"  \
-    --use_medical_knowledge
+    --modalities "tabular-clinical-6,genomics-genomics,image-pathology"  \
+    --use_medical_knowledge \
+    --knowledge_source "qwen"
 
 
 echo "Training run ${RUN_ID} finished."

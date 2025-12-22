@@ -69,8 +69,15 @@ def GetModel(args, dataset):
             args, 
             dataset,
             model_task=args.model_task, 
-            fusion_type=args.fusion_type
+            fusion_type='medkgat_fusion'
         )
+
+    return ModelInterface(
+        args, 
+        dataset,
+        model_task=args.model_task, 
+        fusion_type=args.fusion_type
+    )
 
 
 
@@ -154,6 +161,7 @@ class ModelInterface(nn.Module):
         # Check the data type of tensor
         all_embeddings = [e.to(torch.float) if e is not None else None for e in all_embeddings]
         all_masks = [m.to(torch.bool) if m is not None else None for m in all_masks]
+        assert len(all_embeddings) == self.max_modalities, f"Expected {self.max_modalities} embeddings, got {len(all_embeddings)}"
         
         # Filter out None embeddings and corresponding masks for fusion
         present_embeddings = [e for e in all_embeddings if e is not None]

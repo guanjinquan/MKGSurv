@@ -161,9 +161,6 @@ class Trainer:
             if epoch_id > start_epoch:
                 self.train_epoch(self.train_loader)
                 self.scheduler.step()
-                # if self.local_rank == 0 and swanlab:
-                #     for idx, groups in enumerate(self.optimizer.param_groups):
-                #         swanlab.log({f"lr_{['backbones', 'others'][idx]}": groups['lr']}, step=self.epoch)
 
             # # DDP CHANGE: 评估需要在所有进程上运行
             if self.val_loader is not None:
@@ -223,8 +220,15 @@ class Trainer:
             # .cpu() 将数据移至CPU，避免占用过多显存
             local_outs.extend(out['logits'].detach().cpu().numpy().tolist())
             local_true.extend(batch_data['labels'])
-            for k, v_loss in out['losses'].items():
-                local_loss.setdefault(k, []).append(v_loss.item())
+            for k, v in out['losses'].items():
+                # OPTIMIZATION: 使用 setdefault 和 append
+                if isinstance(v, torch.Tensor):
+                    if v.dim() == 0:
+                        local_loss.setdefault(k, []).append(v.item())
+                    else:
+                        local_loss.setdefault(k, []).append(v.cpu().numpy().tolist())
+                elif isinstance(v, float):
+                    local_loss.setdefault(k, []).append(v)
 
         # --- 主要改动 3: 训练结束后，像验证集一样，收集并计算指标 ---
         # DDP 模式下，收集所有进程的结果到主进程
@@ -268,7 +272,10 @@ class Trainer:
                 for k, v in out['losses'].items():
                     # OPTIMIZATION: 使用 setdefault 和 append
                     if isinstance(v, torch.Tensor):
-                        local_loss.setdefault(k, []).append(v.item())
+                        if v.dim() == 0:
+                            local_loss.setdefault(k, []).append(v.item())
+                        else:
+                            local_loss.setdefault(k, []).append(v.cpu().numpy().tolist())
                     elif isinstance(v, float):
                         local_loss.setdefault(k, []).append(v)
 
@@ -322,7 +329,11 @@ class Trainer:
         loss_dict, metrics_dict = {}, {}
         
         for k, v in loss.items():
-            loss_dict[f"loss_{k}_{mode}"] = np.mean(v)
+            if isinstance(v[0], list) and len(v[0]) > 1:
+                v = [np.mean([vv[pos] for vv in v]) for pos in range(len(v[0]))]
+                loss_dict[f"loss_{k}_{mode}"] = v
+            else:   
+                loss_dict[f"loss_{k}_{mode}"] = np.mean(v)
 
         metrics = self.get_metrics(outs, true)
         for m, a in metrics.items():

@@ -304,7 +304,7 @@ class DIMAFFusionModule(nn.Module):
         
         # 计算总融合损失
         total_fusion_loss = fusion_losses_dict.get('disentanglement_loss', torch.tensor(0.0, device=device))
-        fusion_losses_dict['total'] = total_fusion_loss
+        fusion_losses_dict['total'] = 7 * total_fusion_loss
         
         return {
             "fused_embedding": fused_embedding,

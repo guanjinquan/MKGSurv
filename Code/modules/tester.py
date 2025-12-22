@@ -89,8 +89,16 @@ class Tester:
                 all_logits.extend(out['logits'].detach().cpu().numpy().tolist())
                 all_labels.extend(batch_data['labels']) 
                 
-                for key, value in out['losses'].items():
-                    all_losses.setdefault(key, []).append(value.item())
+                # for key, value in out['losses'].items():
+                #     all_losses.setdefault(key, []).append(value.item())
+                for k, v in out['losses'].items():
+                    if isinstance(v, torch.Tensor):
+                        if v.dim() == 0:
+                            all_losses.setdefault(k, []).append(v.item())
+                        else:
+                            all_losses.setdefault(k, []).append(v.cpu().numpy().tolist())
+                    elif isinstance(v, float):
+                        all_losses.setdefault(k, []).append(v)
 
                 pbar.update(1)
             pbar.close()
@@ -125,7 +133,11 @@ class Tester:
         
         # --- 1. Average Losses ---
         for key, value_list in losses.items():
-            loss_dict[f"loss_{key}_{title}"] = np.mean(value_list)
+            if isinstance(value_list[0], list):
+                v = [np.mean([vv[pos] for vv in value_list]) for pos in range(len(value_list[0]))]
+                loss_dict[f"loss_{key}_{title}"] = v
+            else:   
+                loss_dict[f"loss_{key}_{title}"] = np.mean(value_list)
 
         # --- 2. Survival Metrics ---
         metrics = self.model.task_head.METRICS_FN(logits, labels)

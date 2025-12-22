@@ -5,17 +5,18 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=0
-export CUDA_VISIBLE_DEVICES=${GPU_ID}
+GPU_ID=2
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_luad_run031"
+RUN_ID="tcga_luad_run011"
 
 # --- Training Hyperparameters ---
-BATCH_SIZE=64          # Number of samples per batch.
-ACC_STEP=1           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
+BATCH_SIZE=4          # Number of samples per batch.
+ACC_STEP=16           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
 LR=5e-5              # Learning rate for the model head.
-NUM_EPOCHS=50        # Total number of training epochs.
+NUM_EPOCHS=60        # Total number of training epochs.
+
 
 
 # --- Execution ---
@@ -28,7 +29,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_luad" \
     --dataset "tcga_luad" \
     --image_aggregater "panther" \
-    --fusion_type "medkgat_fusion" \
+    --fusion_type "i2moe" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \

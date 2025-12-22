@@ -138,15 +138,15 @@ class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
              max_modalities: int = 10, 
              max_groups: int = 10, 
-             ff_dropout_rate: float = 0.25, 
+             ff_dropout_rate: float = 0.1, 
              attn_dropout_rate: float = 0.1, 
-             num_intra_layers: int = 1, num_inter_layers: int = 3):
+             num_intra_layers: int = 1, num_inter_layers: int = 2):
         super().__init__()
 
         self.args = args
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
-        self.group_drop_ratio = 0.25
+        self.group_drop_ratio = 0.1
         self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.03)))
 
         # 1. Knowledge Projection (768 -> embed_dim)
@@ -509,6 +509,7 @@ class MedKGATFusion(nn.Module):
         # 8. Compute KL Divergence Loss
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
         
+        target_probs = None
         if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
             all_scores_tensor = torch.stack(all_edge_scores_list, dim=1) 
             all_sims_tensor = torch.stack(all_cos_sims_list, dim=1) 
@@ -532,10 +533,15 @@ class MedKGATFusion(nn.Module):
             if valid_patients.sum() > 0:
                 fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
     
+        loss_dict = {
+            "total_loss": 5 * fusion_loss,
+            "temperature": self.log_temperature.exp(),
+        }
+        
+        if target_probs is not None:
+            loss_dict['target_probs'] = target_probs.mean(dim=0)  # (1, C^2_N) 
+
         return {
             "fused_embedding": fused_embedding,
-            "loss_dict": {
-                "total_loss": 5 * fusion_loss,
-                "temperature": self.log_temperature.exp(),
-            }
+            "loss_dict": loss_dict,
         }

@@ -234,29 +234,27 @@ class TCGA_LUAD_SurvivalPred(nn.Module):
             
             # A. Pad and Mask
             padded_features, mask = self._pad_and_mask_modality(raw_data)
-            
-            if padded_features is None:
-                # If a modality is completely missing for the whole batch, we skip it
-                # to avoid dimension errors in fusion.
-                continue 
-            
+
             # B. Project
-            if mod_name == 'image-pathology':
-                encoded_feat = self.image_proj(padded_features)
+            if padded_features is not None:
+
+                if mod_name == 'image-pathology':
+                    encoded_feat = self.image_proj(padded_features)
+                    
+                elif mod_name == 'genomics-genomics':
+                    encoded_feat = self.genomics_encoder(padded_features)
                 
-            elif mod_name == 'genomics-genomics':
-                encoded_feat = self.genomics_encoder(padded_features)
-            
-            elif 'text' in mod_name:
-                encoded_feat = self.text_proj(padded_features)
-                
-            elif 'tabular' in mod_name:
-                if mod_name in self.tabular_encoders:
-                    padded_features = torch.log1p(torch.abs(padded_features)) * torch.sign(padded_features)
-                    encoded_feat = self.tabular_encoders[mod_name](padded_features)
+                elif 'text' in mod_name:
+                    encoded_feat = self.text_proj(padded_features)
+                    
+                elif 'tabular' in mod_name:
+                    if mod_name in self.tabular_encoders:
+                        padded_features = torch.log1p(torch.abs(padded_features)) * torch.sign(padded_features)
+                        encoded_feat = self.tabular_encoders[mod_name](padded_features)
 
             else:
-                continue
+                encoded_feat = torch.zeros(batch_size, 1, self.embed_dim, device=device).float()
+                mask = torch.zeros(batch_size, 1, device=device)
 
             # C. Collect
             all_embeddings.append(encoded_feat)
