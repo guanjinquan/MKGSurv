@@ -94,7 +94,8 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
         self._preprocess_tabular_data()
 
         # --- 6. Knowledge Features ---
-        knowledge_file = os.path.join(self.processed_dir, "features_medical_knowledge.pkl")
+        # Knowledge Features
+        knowledge_file = os.path.join(self.processed_dir, f"features_medical_knowledge_{self.args.knowledge_source}.pkl")
         self.knowledge_dict = self._read_pickle(knowledge_file)
 
         # --- 7. Calculate Global Statistics for H-Mixup Weights ---
@@ -224,10 +225,9 @@ class OSCCSurvInHouseDataset(MultiModalDataset):
             kdata = self.knowledge_dict.get(pid_str, None)
             output_dict["medical-knowledge"] = {}
             for k, v in kdata.items():
-                knowledge = random.choice(v['knowledge_list']) if self.mode == 'train' else v['knowledge_list'][0]
                 output_dict["medical-knowledge"][k] = {
                     "score": v['score'],
-                    "knowledge": knowledge
+                    "knowledge": v['knowledge']
                 }
         else:
             kdata = self.knowledge_dict.get(pid_str, None)

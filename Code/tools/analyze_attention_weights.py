@@ -90,5 +90,8 @@ def main():
     
     analyze_attention_scores(args.path)
 
+    
+# /home/Guanjq/NewWork/MedAlignFusion/Results/tcga_luad/tcga_luad_run013+medkgat_fusion_msa/attn.json
+# /home/Guanjq/NewWork/MedAlignFusion/Results/tcga_luad/tcga_luad_run012+medkgat_fusion/attn.json
 if __name__ == "__main__":
     main()

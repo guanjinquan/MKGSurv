@@ -93,7 +93,7 @@ class Tester:
                 #     all_losses.setdefault(key, []).append(value.item())
                 for k, v in out['losses'].items():
                     if isinstance(v, torch.Tensor):
-                        if v.dim() == 0:
+                        if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
                             all_losses.setdefault(k, []).append(v.item())
                         else:
                             all_losses.setdefault(k, []).append(v.cpu().numpy().tolist())

@@ -109,7 +109,7 @@ def main():
     )
     
     # 根据你的项目结构设置默认路径
-    default_source_path = "../TrainScripts"
+    default_source_path = "../TrainScripts-SOTA"
     default_target_path = "../TestScripts"
     
     parser.add_argument(

@@ -76,7 +76,7 @@ class Trainer:
         self.scheduler = GetScheduler(self.args, self.optimizer)
         
         self.epoch = 0
-        self.save_epoch_limit = max(15, self.args.num_epochs // 4)
+        self.save_epoch_limit = self.args.num_epochs // 4
         self.iters = 0
         self.acc_step = self.args.acc_step
             
@@ -223,7 +223,7 @@ class Trainer:
             for k, v in out['losses'].items():
                 # OPTIMIZATION: 使用 setdefault 和 append
                 if isinstance(v, torch.Tensor):
-                    if v.dim() == 0:
+                    if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
                         local_loss.setdefault(k, []).append(v.item())
                     else:
                         local_loss.setdefault(k, []).append(v.cpu().numpy().tolist())
@@ -272,7 +272,7 @@ class Trainer:
                 for k, v in out['losses'].items():
                     # OPTIMIZATION: 使用 setdefault 和 append
                     if isinstance(v, torch.Tensor):
-                        if v.dim() == 0:
+                        if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
                             local_loss.setdefault(k, []).append(v.item())
                         else:
                             local_loss.setdefault(k, []).append(v.cpu().numpy().tolist())

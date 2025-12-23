@@ -30,7 +30,7 @@ from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion
 from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
 from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
 from modules.fusion_modules.MedKGAT_fusion_wo_loss import MedKGATFusion_wo_loss
-from modules.fusion_modules.MedKGAT_fusion_diff_msa import MedKGATFusion_diff_msa
+from modules.fusion_modules.MedKGAT_fusion_only_msa import MedKGATFusion_group_msa
 
 
 
@@ -139,14 +139,14 @@ class ModelInterface(nn.Module):
             self.fusion_module = SurvPath(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
             self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        elif self.fusion_type == 'medkgat_fusion_msa':
+            self.fusion_module = MedKGATFusion_group_msa(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_wo_loss':
             self.fusion_module = MedKGATFusion_wo_loss(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_without_intra':
             self.fusion_module = MedKGATFusion_without_intra(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion_without_inter':
             self.fusion_module = MedKGATFusion_without_inter(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_diff_msa':
-            self.fusion_module = MedKGATFusion_diff_msa(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 

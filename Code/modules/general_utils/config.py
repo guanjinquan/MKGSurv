@@ -10,8 +10,8 @@ def parse_arguments():
     parser.add_argument('--load_pth_path', type=str)
     parser.add_argument('--points_save_path', type=str, default=None, help='the path to save points of medical knowledge guided fusion')
     parser.add_argument('--view_groups_attention_path', type=str, default=None, help='the path to save attention weights')
-    parser.add_argument('--save_umap_path', type=str, default=None, help='the path to save umap features')
-    
+
+
     # dataset settings 
     parser.add_argument('--dataset', type=str, default="multi_oscc")
     parser.add_argument('--modalities', type=str, default="all")
