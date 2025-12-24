@@ -9,7 +9,7 @@ patient_list_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/source/b
 labels_csv_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/brca_patient_labels.csv"
 output_path = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/brca_patients_5fold.json"
 
-RANDOM_SEED = 2026
+RANDOM_SEED = 197
 
 # --- 2. 加载数据 ---
 print("正在加载数据...")
