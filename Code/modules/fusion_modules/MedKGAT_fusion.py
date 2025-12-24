@@ -140,7 +140,7 @@ class MedKGATFusion(nn.Module):
              max_groups: int = 10, 
              ff_dropout_rate: float = 0.25, 
              attn_dropout_rate: float = 0.1, 
-             num_intra_layers: int = 1, num_inter_layers: int = 3):
+             num_intra_layers: int = 1, num_inter_layers: int = 1):
         super().__init__()
 
         self.args = args
