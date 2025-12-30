@@ -5,11 +5,11 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=1
+GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_brca_run012_split197"
+RUN_ID="tcga_kirc_run001"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -25,10 +25,10 @@ echo "Starting training run: ${RUN_ID} on GPU: ${GPU_ID}"
 python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --gpu_id ${GPU_ID} \
     --runs_id ${RUN_ID} \
-    --model_task "tcga_brca" \
-    --dataset "tcga_brca" \
+    --model_task "tcga_kirc" \
+    --dataset "tcga_kirc" \
     --image_aggregater "panther" \
-    --fusion_type "dimaf_fusion" \
+    --fusion_type "medkgat_fusion" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
@@ -36,8 +36,11 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "genomics-genomics,image-pathology"  \
-    --use_medical_knowledge
+    --modalities "all"  \
+    --use_medical_knowledge \
+    --knowledge_source "deepseek" \
+    --num_layers 1 \
+    --kl_loss_weight 1
 
 
 echo "Training run ${RUN_ID} finished."

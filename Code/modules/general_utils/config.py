@@ -28,6 +28,8 @@ def parse_arguments():
     parser.add_argument('--fusion_type', type=str, default='hier_align', help="fusion_block: [hier_align, concat, LMF, gated, msa, i2moe, healnet]")
     parser.add_argument('--with_multimodal_align', action='store_true')
     parser.add_argument('--with_multimodal_vib', action='store_true')
+    parser.add_argument('--num_layers', type=int, default=None)
+    parser.add_argument('--kl_loss_weight', type=int, default=None)
     
     # trainer settings
     parser.add_argument("--runs_id", type=str)

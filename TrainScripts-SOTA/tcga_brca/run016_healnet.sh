@@ -9,7 +9,7 @@ GPU_ID=1
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_brca_run012_split197"
+RUN_ID="tcga_brca_run016"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_brca" \
     --dataset "tcga_brca" \
     --image_aggregater "panther" \
-    --fusion_type "dimaf_fusion" \
+    --fusion_type "healnet" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \
@@ -36,8 +36,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --optimizer "AdamW" \
     --weight_decay 1e-4 \
     --scheduler "CosineAnnealingLR"  \
-    --modalities "genomics-genomics,image-pathology"  \
-    --use_medical_knowledge
+    --modalities "all"  
 
 
 echo "Training run ${RUN_ID} finished."
