@@ -431,16 +431,16 @@ class PretrainVisionTransformer(nn.Module):
         self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
         self.pos_embed = get_sinusoid_encoding_table(train_type_num, decoder_embed_dim)
         trunc_normal_(self.mask_token, std=.02)
-        self.apply(self._init_weights)
+    #     self.apply(self._init_weights)
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         nn.init.xavier_uniform_(m.weight)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
             
     def forward(self, x, mask):
         x_vis = self.encoder(x, mask) # (B, N_vis, C_e)
@@ -542,8 +542,8 @@ class HGCNFusionModule(nn.Module):
     def __init__(self,
                  args, 
                  embed_dim: int, 
-                 max_modalities: int = 3, 
-                 dropout: float = 0.3,
+                 max_modalities: int = 6, 
+                 dropout: float = 0.1,
                  mae_encoder_depth: int = 2,
                  mae_decoder_depth: int = 1,
                  mae_attn_heads: int = 8,
@@ -572,9 +572,9 @@ class HGCNFusionModule(nn.Module):
         self.pools = nn.ModuleList()
         for _ in range(max_modalities):
             att_net = nn.Sequential(
-                nn.Linear(embed_dim, embed_dim//4), 
+                nn.Linear(embed_dim, embed_dim//2), 
                 nn.ReLU(), 
-                nn.Linear(embed_dim//4, 1)
+                nn.Linear(embed_dim//2, 1)
             )
             self.pools.append(DenseGlobalAttention(att_net))
             
@@ -589,7 +589,7 @@ class HGCNFusionModule(nn.Module):
             decoder_num_classes=embed_dim, # Reconstruct the embedding
             mlp_ratio=4.,
             qkv_bias=True,
-            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            norm_layer=partial(nn.LayerNorm, eps=1e-4),
             train_type_num=max_modalities
         )
         

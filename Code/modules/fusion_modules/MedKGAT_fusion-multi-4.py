@@ -20,11 +20,11 @@ class GELU(nn.Module):
     
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 2, dropout = 0.1):
+    def __init__(self, dim, mult = 4, dropout = 0.1):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
-            nn.LayerNorm(dim * mult * 2),
+            nn.LayerNorm(dim * mult * 2), # Corrected: LayerNorm usually applied before activation or after linear
             GELU(),
             nn.Linear(dim * mult, dim),
             nn.Dropout(dropout)
@@ -41,7 +41,7 @@ class SafeCrossAttnEncoder(nn.Module):
     结构: CrossAttention -> Add & Norm -> FeedForward -> Add & Norm
     包含了防 NaN 的安全机制。
     """
-    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 2):
+    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1, ffn_mult: int = 4):
         super().__init__()
         self.norm_q = nn.LayerNorm(embed_dim)
         self.norm_ffn = nn.LayerNorm(embed_dim)
@@ -140,7 +140,7 @@ class MedKGATFusion(nn.Module):
              max_groups: int = 10, 
              ff_dropout_rate: float = 0.25, 
              attn_dropout_rate: float = 0.1, 
-             num_intra_layers: int = 1, num_inter_layers: int = 1):
+             num_intra_layers: int = 1, num_inter_layers: int = 3):
         super().__init__()
 
         self.args = args
