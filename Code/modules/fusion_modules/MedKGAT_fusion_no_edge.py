@@ -327,7 +327,7 @@ class MedKGATFusion_no_edge(nn.Module):
                 update_for_b = self._inter_group_step(
                     target_node=feat_b, target_mask=mask_b,
                     source_node=feat_a, source_mask=mask_a,
-                    edge_feat=mask_a, edge_mask=mask_a,
+                    edge_feat=feat_a, edge_mask=mask_a,
                     layer_modules=layer_modules
                 )
                 current_group_embeddings[idx_b] = update_for_b
