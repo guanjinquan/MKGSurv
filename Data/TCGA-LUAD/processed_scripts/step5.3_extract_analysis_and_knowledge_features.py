@@ -2,7 +2,7 @@ import os
 
 # 1. Set HF Mirror before importing transformers (Must be at the very top)
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import json
 import torch
@@ -16,9 +16,10 @@ from tqdm import tqdm
 
 # ================= Configuration =================
 # You can modify these paths as needed
-ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
+# ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
+ANALYSIS_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_kimi.json"
 KNOWLEDGE_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/pairs_knowledge_qwen.json"
-OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge.pkl"
+OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_kimi.pkl"
 MAX_AUGMENTATIONS = 20
 BATCH_SIZE = 32 # Batch size for BERT inference
 
