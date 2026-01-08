@@ -60,7 +60,7 @@ class SafeCrossAttnEncoder(nn.Module):
         key_padding_mask: (B, Lk), True 为 padding
         """
 
-        query_norm = self.norm_q(query)
+        query = self.norm_q(query)
         
         # --- 核心修复逻辑 (Safe Logic) ---
         all_masked_rows = None
@@ -76,7 +76,7 @@ class SafeCrossAttnEncoder(nn.Module):
         
         # --- 1. Attention Block ---
         # 正常计算 MHA
-        attn_out, attn_weights = self.mha(query_norm, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
+        attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
             
         # 清理垃圾值：将那些原本全无效的行的输出置为 0
         if all_masked_rows is not None and all_masked_rows.any():
@@ -145,8 +145,9 @@ class MedKGATFusion(nn.Module):
         self.args = args
         self.embed_dim = embed_dim
 
-        self.drop_edge_ratio = 0.2
-        self.group_drop_ratio = 0.2
+        adaptive_dropout_ratio =  1.0 / max_groups
+        self.drop_edge_ratio = adaptive_dropout_ratio
+        self.group_drop_ratio = adaptive_dropout_ratio
         self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.03)))
 
         num_inter_layers = getattr(args, "num_layers", None) or 1
