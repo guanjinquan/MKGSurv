@@ -136,11 +136,10 @@ class EdgeContextualizer(nn.Module):
 
 class MedKGATFusion(nn.Module):
     def __init__(self, args, embed_dim: int, 
-             max_modalities: int = 10, 
-             max_groups: int = 10, 
-             ff_dropout_rate: float = 0.25, 
-             attn_dropout_rate: float = 0.1, 
-             num_intra_layers: int = 1, num_inter_layers: int = 1):
+            max_modalities: int = 10, 
+            max_groups: int = 10, 
+            num_intra_layers: int = 1, 
+            num_inter_layers: int = 1):
         super().__init__()
 
         self.args = args
@@ -159,26 +158,26 @@ class MedKGATFusion(nn.Module):
             GELU(),
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
-            nn.Dropout(ff_dropout_rate)
+            nn.Dropout(0.25)
         )
 
         # 2. Intra-group Interaction
         self.num_intra_layers = num_intra_layers
         self.intra_group_transformer = nn.ModuleList([
-            SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
+            SafeCrossAttnEncoder(embed_dim, num_heads=8)
             for _ in range(num_intra_layers)
         ])
 
         # 3. GAT Interaction Components (Inter-Group)
         self.num_inter_layers = num_inter_layers
         self.shared_inter_layer = nn.ModuleDict({
-            'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
-            'node_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate),
+            'edge_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8),
+            'node_to_node_attn': SafeCrossAttnEncoder(embed_dim, num_heads=8),
             'edge_updater': EdgeContextualizer(embed_dim, num_heads=8)
         })
 
         # 4. Global Aggregation
-        self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8, dropout=attn_dropout_rate)
+        self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8)
 
         # 5. Post Fusion Norm
         self.post_fusion_norm = nn.LayerNorm(embed_dim)
@@ -688,6 +687,7 @@ class MedKGATFusion(nn.Module):
             kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
             kl_loss_per_patient = kl_loss.sum(dim=1)
             
+            # a valid patients at least 2 edges
             valid_patients = (all_masks_tensor.sum(dim=1) > 1).float() 
             
             if valid_patients.sum() > 0:

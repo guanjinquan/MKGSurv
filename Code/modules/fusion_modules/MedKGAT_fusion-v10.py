@@ -145,13 +145,11 @@ class MedKGATFusion(nn.Module):
 
         self.args = args
         self.embed_dim = embed_dim
-
-        adaptive_dropout_ratio =  1.0 / (max_groups + 2)
-        self.drop_edge_ratio = adaptive_dropout_ratio
-        self.group_drop_ratio = adaptive_dropout_ratio
+        self.drop_edge_ratio = 0.1
+        self.group_drop_ratio = 0.3
         
         # Learnable temperature for contrastive/KL scaling
-        self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.03)))
+        self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.07)))
 
         num_inter_layers = getattr(args, "num_layers", None) or 1
         self.loss_weight = getattr(args, "kl_loss_weight", None) or 1.0
@@ -226,9 +224,9 @@ class MedKGATFusion(nn.Module):
         return updated_embeddings
 
     def _compute_edge_guided_context(self, 
-            source_node: torch.Tensor, source_mask: torch.Tensor,
-            edge_feat: torch.Tensor, edge_mask: torch.Tensor,
-            layer_modules: nn.ModuleDict) -> Tuple[torch.Tensor, torch.Tensor]:
+                                   source_node: torch.Tensor, source_mask: torch.Tensor,
+                                   edge_feat: torch.Tensor, edge_mask: torch.Tensor,
+                                   layer_modules: nn.ModuleDict) -> Tuple[torch.Tensor, torch.Tensor]:
         
         source_padding_mask = (source_mask == 0)
         
@@ -246,29 +244,70 @@ class MedKGATFusion(nn.Module):
             
         return context_feat, context_mask
     
-    def _compute_kl_loss(self, 
+    def _compute_dual_view_kl_loss(self, 
             pred_sims: torch.Tensor, 
             target_scores: torch.Tensor, 
             valid_mask: torch.Tensor) -> torch.Tensor:
-
+        """
+        Computes KL loss in two directions:
+        1. Row-wise (Intra-Patient): Structure Learning.
+        2. Column-wise (Inter-Patient): Batch Contrastive Learning.
+        
+        Args:
+            pred_sims: (B, Num_Edges)
+            target_scores: (B, Num_Edges)
+            valid_mask: (B, Num_Edges) - 1 if edge is valid for patient, 0 else
+        """
         # Clamp temperature
         temperature = self.log_temperature.exp().clamp(min=0.01, max=100)
+        
+        # Apply temperature
         pred_logits = pred_sims * temperature
-
-        # Normalize across edges for each patient & Mask invalid edges for this patient
+        
+        # Masking for Softmax: Set invalid positions to -inf
+        # We need a large negative number, but safe for float16 mixed precision (-1e4 is usually safe enough for softmax)
         INF_MASK_VAL = -1e4
-        mask_adder = (1.0 - valid_mask) * INF_MASK_VAL
-        pred_log_probs = F.log_softmax(pred_logits + mask_adder, dim=1)
-        target_probs = F.softmax(target_scores, dim=1)
         
-        kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none') # (B, E)
-        kl_loss = torch.sum(kl_loss * valid_mask, dim=1) # Sum over edges -> (B,)
+        # --- View 1: Intra-Patient Structure (Row-wise) ---
+        # Normalize across edges for each patient
+        # Mask invalid edges for this patient
+        row_mask_adder = (1.0 - valid_mask) * INF_MASK_VAL
         
-        # # a valid patients at least 2 edges
-        valid_patients = (valid_mask.sum(dim=1) > 1).float() 
-        kl_loss = (kl_loss * valid_patients).sum() / valid_patients.sum().clamp(min=1.0)
+        row_pred_log_probs = F.log_softmax(pred_logits + row_mask_adder, dim=1)
+        row_target_probs = F.softmax(target_scores + row_mask_adder, dim=1)
+        
+        row_kl = F.kl_div(row_pred_log_probs, row_target_probs, reduction='none') # (B, E)
+        row_kl = torch.sum(row_kl * valid_mask, dim=1) # Sum over edges -> (B,)
+        
+        # Only count patients that have at least 1 valid edge (though strictly KL needs >1 to be non-trivial for structure, 
+        # but we compute it anyway. If 1 edge, softmax is 1.0, KL is 0).
+        patient_valid_counts = valid_mask.sum(dim=1)
+        row_loss = row_kl.sum() / (patient_valid_counts > 0).sum().clamp(min=1)
 
-        return kl_loss
+        # --- View 2: Inter-Patient Batch Contrast (Column-wise) ---
+        # Normalize across patients for each edge type
+        # Transpose to (E, B) to softmax over B
+        col_pred_logits = pred_logits.t()      # (E, B)
+        col_target_scores = target_scores.t()  # (E, B)
+        col_valid_mask = valid_mask.t()        # (E, B)
+        
+        col_mask_adder = (1.0 - col_valid_mask) * INF_MASK_VAL
+        
+        col_pred_log_probs = F.log_softmax(col_pred_logits + col_mask_adder, dim=1) # Softmax over B
+        col_target_probs = F.softmax(col_target_scores + col_mask_adder, dim=1)     # Softmax over B
+        
+        col_kl = F.kl_div(col_pred_log_probs, col_target_probs, reduction='none') # (E, B)
+        col_kl = torch.sum(col_kl * col_valid_mask, dim=1) # Sum over batch -> (E,)
+        
+        # Only count edges that exist in at least one patient in the batch
+        edge_valid_counts = col_valid_mask.sum(dim=1)
+        col_loss = col_kl.sum() / (edge_valid_counts > 0).sum().clamp(min=1)
+
+        # Combine losses
+        # You can weigh these differently, but 0.5/0.5 is a good starting point
+        total_loss = 0.5 * row_loss + 0.5 * col_loss
+        
+        return total_loss
 
     def forward(
         self, 
@@ -329,7 +368,7 @@ class MedKGATFusion(nn.Module):
             layer_modules = self.shared_inter_layer
             num_groups = len(current_group_embeddings)
             
-            # --- Sub-step 4.1: Edge Update ---
+            # --- Sub-step 4.1: Global Edge Update ---
             next_step_edge_feats = {}
             adjacency_map = defaultdict(list)
 
@@ -511,7 +550,7 @@ class MedKGATFusion(nn.Module):
             all_masks_tensor = torch.stack(all_valid_masks_list, dim=1).float() 
             
             # Use the new dual-view function
-            fusion_loss = self._compute_kl_loss(
+            fusion_loss = self._compute_dual_view_kl_loss(
                 pred_sims=all_sims_tensor,
                 target_scores=all_scores_tensor,
                 valid_mask=all_masks_tensor

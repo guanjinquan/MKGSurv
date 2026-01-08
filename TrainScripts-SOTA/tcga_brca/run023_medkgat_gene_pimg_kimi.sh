@@ -9,7 +9,7 @@ GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_brca_run023_gene_pimg_L3_W4-v2-qwen"
+RUN_ID="tcga_brca_run023_gene_pimg_L3_W4-v15-kimi"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -38,8 +38,9 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --scheduler "CosineAnnealingLR"  \
     --modalities "genomics-genomics,image-pathology"  \
     --use_medical_knowledge \
-    --knowledge_source "qwen"  
-
+    --knowledge_source "kimi"  \
+    --num_layers 3 \
+    --kl_loss_weight 4
 
 
 echo "Training run ${RUN_ID} finished."

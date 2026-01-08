@@ -146,7 +146,7 @@ class MedKGATFusion(nn.Module):
         self.args = args
         self.embed_dim = embed_dim
 
-        adaptive_dropout_ratio =  1.0 / (max_groups + 2)
+        adaptive_dropout_ratio =  1.0 / (max_modalities + 2)
         self.drop_edge_ratio = adaptive_dropout_ratio
         self.group_drop_ratio = adaptive_dropout_ratio
         

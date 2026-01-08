@@ -5,11 +5,11 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=1
+GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_lusc_run025_gene_pimg-v8"
+RUN_ID="tcga_lusc_run025_gene_pimg-v15"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
