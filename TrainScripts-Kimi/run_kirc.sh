@@ -1,5 +1,5 @@
 source activate surv_pred
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_kirc/run001_medkgat_NL=3_LW=1.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_kirc/run002_medkgat_NL=3_LW=2.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_kirc/run003_medkgat_NL=3_LW=3.sh

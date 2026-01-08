@@ -466,7 +466,7 @@ class MedKGATFusion(nn.Module):
         # Handle tuple return of masked_mean_pool
         res_pool = masked_mean_pool(global_transformed, global_mask)
         fused_embedding = res_pool[0] if isinstance(res_pool, tuple) else res_pool
-        fused_embedding = self.post_fusion_norm(fused_embedding)
+        fused_embedding = self.post_fusion_layer(fused_embedding)
 
         # 8. Compute KL Divergence Loss
         fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
