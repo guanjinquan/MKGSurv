@@ -134,7 +134,7 @@ class HealNet(nn.Module):
         channel_dims: List,
         num_spatial_axes: List,
         out_dims: int,
-        depth: int = 3,
+        depth: int = 2,
         num_freq_bands: int = 2,
         max_freq: float=10.,
         l_c: int = 128,
@@ -283,8 +283,8 @@ class HealNetFusionModule(nn.Module):
         args,
         embed_dim: int,
         max_modalities: int,
-        num_latents: int = 128, # Corresponds to l_c, the number of queries (k)
-        depth: int = 3,
+        num_latents: int = 16, # Corresponds to l_c, the number of queries (k)
+        depth: int = 2,
         num_heads: int = 8,
         ff_dropout: float = 0.0,
         attn_dropout: float = 0.0
@@ -306,7 +306,7 @@ class HealNetFusionModule(nn.Module):
             l_heads=num_heads,
             ff_dropout=ff_dropout,
             attn_dropout=attn_dropout,
-            fourier_encode_data=True 
+            fourier_encode_data=False 
         )
 
     def forward(self, embeddings: List[Optional[torch.Tensor]], masks: List[Optional[torch.Tensor]], **kargs) -> Dict:
