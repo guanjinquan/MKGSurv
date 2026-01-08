@@ -8,4 +8,13 @@ bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run005_medk
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run006_medkgat_NL=3_LW=6.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run007_medkgat_NL=3_LW=7.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run008_medkgat_NL=3_LW=8.sh
-
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run009_medkgat_gene_pimg_NL=3.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run011_medkgat_NL=3_LW=1.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run012_medkgat_NL=3_LW=2.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run013_medkgat_NL=3_LW=3.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run014_medkgat_NL=3_LW=4.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run015_medkgat_NL=3_LW=5.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run016_medkgat_NL=3_LW=6.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run017_medkgat_NL=3_LW=7.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run018_medkgat_NL=3_LW=8.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/tcga_luad/run019_medkgat_gene_pimg_NL=3.sh

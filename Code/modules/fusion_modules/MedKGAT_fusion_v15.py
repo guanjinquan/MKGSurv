@@ -60,7 +60,7 @@ class SafeCrossAttnEncoder(nn.Module):
         key_padding_mask: (B, Lk), True 为 padding
         """
 
-        query_norm = self.norm_q(query)
+        query = self.norm_q(query)
         
         # --- 核心修复逻辑 (Safe Logic) ---
         all_masked_rows = None
@@ -76,7 +76,7 @@ class SafeCrossAttnEncoder(nn.Module):
         
         # --- 1. Attention Block ---
         # 正常计算 MHA
-        attn_out, attn_weights = self.mha(query_norm, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
+        attn_out, attn_weights = self.mha(query, key, value, key_padding_mask=key_padding_mask, need_weights=need_weights)
             
         # 清理垃圾值：将那些原本全无效的行的输出置为 0
         if all_masked_rows is not None and all_masked_rows.any():
@@ -144,9 +144,7 @@ class MedKGATFusion(nn.Module):
 
         self.args = args
         self.embed_dim = embed_dim
-
-        self.drop_edge_ratio = 0.2
-        self.group_drop_ratio = 0.2
+        self.drop_edge_ratio = min(1 / max_modalities, 0.25)  # at most 25%
         self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.03)))
 
         num_inter_layers = getattr(args, "num_layers", None) or 1
@@ -181,7 +179,10 @@ class MedKGATFusion(nn.Module):
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8)
 
         # 5. Post Fusion Norm
-        self.post_fusion_norm = nn.LayerNorm(embed_dim)
+        self.post_fusion_layer = nn.Sequential(
+            nn.Dropout(0.25),
+            nn.LayerNorm(embed_dim),
+        )
 
     def _intra_group_step(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], groups: List[List[int]]) -> List[torch.Tensor]: 
         updated_embeddings = list(embeddings)
@@ -446,23 +447,6 @@ class MedKGATFusion(nn.Module):
 
         # 7. Global Aggregation
         current_group_masks = list(group_masks) # Shallow copy
-
-        if self.training and self.group_drop_ratio > 0.0:
-            batch_size = embeddings[0].shape[0]
-            num_groups = len(final_group_embeddings)
-
-            drop_decision = torch.rand((batch_size, num_groups), device=embeddings[0].device) < self.group_drop_ratio
-            all_dropped = drop_decision.all(dim=1) 
-            if all_dropped.any():
-                indices_to_keep = torch.randint(0, num_groups, (all_dropped.sum(),), device=embeddings[0].device)
-                dropped_rows = torch.where(all_dropped)[0]
-                drop_decision[dropped_rows, indices_to_keep] = False
-
-            for g_idx in range(num_groups):
-                should_drop = drop_decision[:, g_idx].unsqueeze(1) 
-                keep_factor = (~should_drop).float()
-                current_group_masks[g_idx] = current_group_masks[g_idx] * keep_factor 
-
         global_concat = torch.cat(final_group_embeddings, dim=1)
         global_mask = torch.cat(current_group_masks, dim=1)
         global_padding_mask = (global_mask == 0)
