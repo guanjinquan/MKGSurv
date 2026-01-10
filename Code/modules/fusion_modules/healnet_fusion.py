@@ -68,7 +68,7 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 4, dropout = 0., snn: bool = False):
+    def __init__(self, dim, mult = 2, dropout = 0.):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
