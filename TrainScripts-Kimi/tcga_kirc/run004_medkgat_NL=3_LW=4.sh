@@ -5,7 +5,7 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=1
+GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_kirc" \
     --dataset "tcga_kirc" \
     --image_aggregater "panther" \
-    --fusion_type "medkgat_fusion" \
+    --fusion_type "medkgat_fusion_v1" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \

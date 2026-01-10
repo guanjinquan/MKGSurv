@@ -5,17 +5,17 @@ export HF_ENDPOINT="https://hf-mirror.com"
 # TODO: Adjust the variables below to match your experiment settings.
 
 # Select the GPU to use (e.g., 0, 1, 2, ...)
-GPU_ID=2
+GPU_ID=0
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_kirc_run033-ld=16-no_dropout-depth2"
+RUN_ID="tcga_kirc_run033-V6-ld=128-no_dropout-depth3-weight-tied-4mutli-newToOut-noFourier"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=16          # Number of samples per batch.
 ACC_STEP=4           # Gradient accumulation steps. Effective batch size = BATCH_SIZE * ACC_STEP.
 LR=5e-5              # Learning rate for the model head.
-NUM_EPOCHS=60        # Total number of training epochs.
+NUM_EPOCHS=50        # Total number of training epochs.
 
 
 # --- Execution ---

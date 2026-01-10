@@ -68,7 +68,7 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 2, dropout = 0.):
+    def __init__(self, dim, mult = 4, dropout = 0., snn = False):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
@@ -93,10 +93,7 @@ class Attention(nn.Module):
         self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias = False)
 
         self.dropout = nn.Dropout(dropout)
-        self.to_out = nn.Sequential(
-            nn.Linear(inner_dim, query_dim),
-            nn.LeakyReLU(negative_slope=1e-2)
-        )
+        self.to_out = nn.Linear(inner_dim, query_dim)
         self.attn_weights = None
 
     def forward(self, x, context = None, mask = None):
@@ -134,7 +131,7 @@ class HealNet(nn.Module):
         channel_dims: List,
         num_spatial_axes: List,
         out_dims: int,
-        depth: int = 2,
+        depth: int = 3,
         num_freq_bands: int = 2,
         max_freq: float=10.,
         l_c: int = 128,
@@ -145,7 +142,7 @@ class HealNet(nn.Module):
         latent_dim_head: int = 64,
         attn_dropout: float = 0.,
         ff_dropout: float = 0.,
-        weight_tie_layers: bool = False,
+        weight_tie_layers: bool = True,
         fourier_encode_data: bool = True,
         self_per_cross_attn: int = 1,
         final_classifier_head: bool = True,
@@ -199,7 +196,7 @@ class HealNet(nn.Module):
 
         self.to_logits = nn.Sequential(
             Reduce('b n d -> b d', 'mean'),
-            # nn.LayerNorm(l_d),  # remove layer norm
+            nn.LayerNorm(l_d), 
             nn.Linear(l_d, out_dims)
         ) if final_classifier_head else nn.Identity()
 
@@ -283,8 +280,8 @@ class HealNetFusionModule(nn.Module):
         args,
         embed_dim: int,
         max_modalities: int,
-        num_latents: int = 16, # Corresponds to l_c, the number of queries (k)
-        depth: int = 2,
+        num_latents: int = 128, # Corresponds to l_c, the number of queries (k)
+        depth: int = 3,
         num_heads: int = 8,
         ff_dropout: float = 0.0,
         attn_dropout: float = 0.0

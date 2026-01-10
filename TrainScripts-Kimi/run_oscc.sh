@@ -15,4 +15,4 @@ bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run014_m
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run015_medkgat_NL=3_LW=5.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run016_medkgat_NL=3_LW=6.sh
 bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run017_medkgat_NL=3_LW=7.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run018_medkgat_NL=3_LW=8.sh`
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts-Kimi/oscc_inhouse/run018_medkgat_NL=3_LW=8.sh

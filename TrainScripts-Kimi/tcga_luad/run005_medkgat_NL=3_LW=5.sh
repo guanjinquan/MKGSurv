@@ -28,7 +28,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --model_task "tcga_luad" \
     --dataset "tcga_luad" \
     --image_aggregater "panther" \
-    --fusion_type "medkgat_fusion" \
+    --fusion_type "medkgat_fusion_v1" \
     --batch_size ${BATCH_SIZE} \
     --acc_step ${ACC_STEP} \
     --learning_rate ${LR} \

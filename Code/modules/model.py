@@ -27,7 +27,9 @@ from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
 from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion 
-from modules.fusion_modules.MedKGAT_fusion_v15 import MedKGATFusion as MedKGATFusion_v15
+from modules.fusion_modules.MedKGAT_fusion_v1 import MedKGATFusion as MedKGATFusion_v1
+from modules.fusion_modules.MedKGAT_fusion_v2 import MedKGATFusion as MedKGATFusion_v2
+from modules.fusion_modules.MedKGAT_fusion_v3 import MedKGATFusion as MedKGATFusion_v3
 from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
 from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
 from modules.fusion_modules.MedKGAT_fusion_wo_loss import MedKGATFusion_wo_loss
@@ -144,8 +146,12 @@ class ModelInterface(nn.Module):
             self.fusion_module = MOME_fusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
             self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v15':
-            self.fusion_module = MedKGATFusion_v15(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        elif self.fusion_type == 'medkgat_fusion_v1':
+            self.fusion_module = MedKGATFusion_v1(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        elif self.fusion_type == 'medkgat_fusion_v2':
+            self.fusion_module = MedKGATFusion_v2(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
+        elif self.fusion_type == 'medkgat_fusion_v3':
+            self.fusion_module = MedKGATFusion_v3(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_msa':
             self.fusion_module = MedKGATFusion_group_msa(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_wo_loss':

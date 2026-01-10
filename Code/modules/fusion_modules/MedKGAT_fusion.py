@@ -145,7 +145,7 @@ class MedKGATFusion(nn.Module):
         self.args = args
         self.embed_dim = embed_dim
         self.drop_edge_ratio = 0.1
-        self.group_drop_ratio = 0.3
+        self.group_drop_ratio = 0.25
         self.log_temperature = nn.Parameter(torch.ones([]) * torch.log(torch.tensor(1 / 0.03)))
 
         num_inter_layers = getattr(args, "num_layers", None) or 1
