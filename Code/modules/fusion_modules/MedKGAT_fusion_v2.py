@@ -362,7 +362,7 @@ class GlobalAggregator(nn.Module):
             # DropPath
             mask_dropped = self.drop_path(mask.float())
             mask = mask_dropped.bool()
-            emb = emb * mask_dropped.unsqueeze(-1).astype(emb.dtype)
+            emb = emb * mask_dropped.unsqueeze(-1).type_as(emb)
             # Concat 
             processed_embeddings.append(emb)
             processed_masks.append(mask)

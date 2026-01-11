@@ -262,6 +262,10 @@ class InterGroupStep(nn.Module):
                 if edge_feat is None:
                     continue
                     
+                if self.training and getattr(self, 'drop_path_ratio', 0.0) > 0.0:
+                    if random.random() < self.drop_path_ratio:
+                        continue
+
                 edge_mask = edge_masks.get((idx_a, idx_b))
                 if edge_mask is None:
                     edge_mask = torch.ones(edge_feat.shape[:2], device=edge_feat.device)
@@ -276,10 +280,6 @@ class InterGroupStep(nn.Module):
                     feat_a, mask_a, 
                     feat_b, mask_b
                 )
-
-                if self.training and getattr(self, 'drop_path_ratio', 0.0) > 0.0:
-                    if random.random() < self.drop_path_ratio:
-                        continue
 
                 next_step_edge_feats[(idx_a, idx_b)] = updated_edge_feat
                 adjacency_map[idx_a].append((idx_b, (idx_a, idx_b))) 
@@ -347,11 +347,11 @@ class InterGroupStep(nn.Module):
 
 # --- GlobalAggregator 模块 ---
 class GlobalAggregator(nn.Module):
-    def __init__(self, embed_dim: int):
-        super().__init__()
-        self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8)
-        self.post_fusion_norm = nn.LayerNorm(embed_dim)
-        self.drop_path_ratio = 0.2
+    def __init__(self, embed_dim: int): 
+        super().__init__() 
+        self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8) 
+        self.post_fusion_norm = nn.LayerNorm(embed_dim) 
+        self.drop_path_ratio = 0.25
         
     def forward(self, group_embeddings: List[torch.Tensor], 
                 group_masks: List[torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
