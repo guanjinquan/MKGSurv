@@ -10,7 +10,6 @@ from modules.base_modules.aggregation_utils import masked_mean_pool
 import json
 import random
 from collections import defaultdict
-from torch import Tensor
 
 
 # --- 基础组件 ---
@@ -33,6 +32,22 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+
+# --- DropPath 模块 ---
+class DropPath(nn.Module):
+    def __init__(self, drop_prob: float = 0.0):
+        super().__init__()
+        self.drop_prob = drop_prob
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.drop_prob == 0.0:
+            return x
+            
+        keep_prob = 1 - self.drop_prob
+        batch_size = x.shape[0]
+        mask = (torch.rand(batch_size, 1, 1, device=x.device) < keep_prob).float()
+        return x * mask / keep_prob  # 除以keep_prob以保持期望值
 
 
 # --- SafeCrossAttnEncoder ---
@@ -199,7 +214,7 @@ class InterGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.drop_path = nn.Dropout(0.2)
+        self.drop_path = DropPath(0.1)
         
         # Knowledge Guided Graph Attention Network
         self.KG_GAT = nn.ModuleDict({
@@ -315,9 +330,7 @@ class InterGroupStep(nn.Module):
                     )
 
                     # Context Drop Path
-                    ctx_mask_droped = self.drop_path(ctx_mask.float())
-                    ctx_mask = ctx_mask_droped.bool()
-                    ctx_feat = ctx_feat * ctx_mask_droped.unsqueeze(-1).to(ctx_feat.dtype)
+                    ctx_feat = self.drop_path(ctx_feat)
                     gathered_contexts.append(ctx_feat)
                     gathered_masks.append(ctx_mask)
                 
@@ -351,42 +364,35 @@ class GlobalAggregator(nn.Module):
         super().__init__()
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8)
         self.post_fusion_norm = nn.LayerNorm(embed_dim)
-        self.drop_path = nn.Dropout(0.2) 
-
+        self.drop_path = DropPath(0.1)
+        
     def forward(self, group_embeddings: List[torch.Tensor], 
                 group_masks: List[torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        
         processed_embeddings = []
         processed_masks = []
         
         for emb, mask in zip(group_embeddings, group_masks):
-            # DropPath
-            mask_dropped = self.drop_path(mask.float())
-            mask = mask_dropped.bool()
-            emb = emb * mask_dropped.unsqueeze(-1).to(emb.dtype)
-            # Concat 
-            processed_embeddings.append(emb)
+            dropped_emb = self.drop_path(emb)
+            processed_embeddings.append(dropped_emb)
             processed_masks.append(mask)
-        
+
         global_concat = torch.cat(processed_embeddings, dim=1)
         global_mask = torch.cat(processed_masks, dim=1)
         global_padding_mask = (global_mask == 0)
 
-        # Safe mask处理
         all_masked_rows = global_padding_mask.all(dim=1)
         if all_masked_rows.any():
             global_padding_mask = global_padding_mask.clone()
             global_padding_mask[all_masked_rows, 0] = False
 
-        # Transformer聚合
         global_transformed = self.global_transformer(
             query=global_concat, key=global_concat, value=global_concat, 
             key_padding_mask=global_padding_mask, need_weights=False)
         
-        # 清理全mask的行
         if all_masked_rows.any():
             global_transformed[all_masked_rows] = 0.0
         
-        # 池化得到最终特征
         res_pool = masked_mean_pool(global_transformed, global_mask)
         fused_embedding = res_pool[0] if isinstance(res_pool, tuple) else res_pool
         fused_embedding = self.post_fusion_norm(fused_embedding)
