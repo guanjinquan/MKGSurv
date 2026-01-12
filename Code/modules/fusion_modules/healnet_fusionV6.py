@@ -91,6 +91,7 @@ class Attention(nn.Module):
 
         self.to_q = nn.Linear(query_dim, inner_dim, bias = False)
         self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias = False)
+
         self.dropout = nn.Dropout(dropout)
         self.to_out = nn.Linear(inner_dim, query_dim)
         self.attn_weights = None
@@ -193,7 +194,11 @@ class HealNet(nn.Module):
             
             self.layers.append(nn.ModuleList([*cross_attn_layers, self_attns]))
 
-        self.to_logits = Reduce('b n d -> b d', 'mean')
+        self.to_logits = nn.Sequential(
+            Reduce('b n d -> b d', 'mean'),
+            nn.LayerNorm(l_d), 
+            nn.Linear(l_d, out_dims)
+        ) if final_classifier_head else nn.Identity()
 
     def forward(
         self,
@@ -298,7 +303,7 @@ class HealNetFusionModule(nn.Module):
             l_heads=num_heads,
             ff_dropout=ff_dropout,
             attn_dropout=attn_dropout,
-            fourier_encode_data=True 
+            fourier_encode_data=False 
         )
 
     def forward(self, embeddings: List[Optional[torch.Tensor]], masks: List[Optional[torch.Tensor]], **kargs) -> Dict:
