@@ -194,11 +194,7 @@ class HealNet(nn.Module):
             
             self.layers.append(nn.ModuleList([*cross_attn_layers, self_attns]))
 
-        self.to_logits = nn.Sequential(
-            Reduce('b n d -> b d', 'mean'),
-            nn.LayerNorm(l_d), 
-            nn.Linear(l_d, out_dims)
-        ) if final_classifier_head else nn.Identity()
+        self.to_logits = Reduce('b n d -> b d', 'mean')
 
     def forward(
         self,
@@ -303,7 +299,7 @@ class HealNetFusionModule(nn.Module):
             l_heads=num_heads,
             ff_dropout=ff_dropout,
             attn_dropout=attn_dropout,
-            fourier_encode_data=False 
+            fourier_encode_data=True 
         )
 
     def forward(self, embeddings: List[Optional[torch.Tensor]], masks: List[Optional[torch.Tensor]], **kargs) -> Dict:

@@ -397,7 +397,7 @@ class GlobalAggregator(nn.Module):
 
 
 # --- 主模型 ---
-class MedKGATFusion_without_intra(nn.Module):
+class MedKGATFusion_no_loss(nn.Module):
     def __init__(self, args, embed_dim: int, 
             max_modalities: int = 10, 
             max_groups: int = 10, 
@@ -421,7 +421,8 @@ class MedKGATFusion_without_intra(nn.Module):
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(0.25)
         )
- 
+
+        self.intra_group_step = IntraGroupStep(embed_dim, num_intra_layers)
         self.inter_group_step = InterGroupStep(embed_dim, num_inter_layers)
         self.global_aggregator = GlobalAggregator(embed_dim)
 
@@ -451,7 +452,8 @@ class MedKGATFusion_without_intra(nn.Module):
             current_proj_knowledge[k] = self.know_proj(v)
 
         # 2. Intra-Group Interaction
-        info_level_embeddings = embeddings  
+        info_level_embeddings = self.intra_group_step(embeddings, masks, embeddings_groups)
+
         # 3. Create Group-Level Embeddings
         group_embeddings = []
         group_masks = []
@@ -483,87 +485,9 @@ class MedKGATFusion_without_intra(nn.Module):
             edge_keys, current_proj_knowledge, fusion_knowledge_mask
         )
 
-        # ------------------------------------------------------------------
-        # 4b. Data Collection for KL Loss (Post-GAT)
-        # ------------------------------------------------------------------
-        all_edge_scores_list = []
-        all_valid_masks_list = []
-        all_edge_pairs_list = []
-        edge_score_valid_flag = False
-
-        for (idx_a, idx_b) in edge_keys:
-            edge_score = groups_relationships.get((idx_a, idx_b), groups_relationships.get((idx_b, idx_a), None))
-            if edge_score is None:
-                edge_score = torch.zeros(embeddings[0].shape[0], device=embeddings[0].device)
-            
-            if edge_score.dim() > 1:
-                edge_score = edge_score.view(-1)
-            if edge_score.dim() == 0:
-                edge_score = edge_score.expand(embeddings[0].shape[0])
-
-            has_a = group_validity_masks[idx_a].float()
-            has_b = group_validity_masks[idx_b].float()
-            pair_validity = has_a * has_b
-
-            edge_score_valid_flag |= edge_score.sum().item() > 0
-            all_edge_scores_list.append(edge_score)
-            all_valid_masks_list.append(pair_validity)
-            all_edge_pairs_list.append((idx_a, idx_b))
-
-        # 6. Compute Similarities on FINAL Embeddings 
-        all_cos_sims_list = []
-        
-        if len(all_edge_pairs_list) > 0 and edge_score_valid_flag:
-            final_pooled_results = [masked_mean_pool(g, m) for g, m in zip(final_group_embeddings, group_masks)]
-            # handle tuple return of masked_mean_pool
-            final_pooled_group_embeddings = [res[0] if isinstance(res, tuple) else res for res in final_pooled_results]
-            final_pooled_group_embeddings = [F.normalize(g, p=2, dim=1) for g in final_pooled_group_embeddings]
-            
-            for idx_a, idx_b in all_edge_pairs_list:
-                sim = torch.sum(final_pooled_group_embeddings[idx_a] * final_pooled_group_embeddings[idx_b], dim=1)
-                sim = torch.clamp(sim, -1.0, 1.0)
-                all_cos_sims_list.append(sim)
-
         # 7. Global Aggregation
         fused_embedding = self.global_aggregator(final_group_embeddings, group_masks)
 
-        # 8. Compute KL Divergence Loss
-        fusion_loss = torch.tensor(0.0, device=fused_embedding.device)
-        
-        target_probs = None
-        if len(all_edge_scores_list) > 0 and edge_score_valid_flag:
-            all_scores_tensor = torch.stack(all_edge_scores_list, dim=1) 
-            all_sims_tensor = torch.stack(all_cos_sims_list, dim=1) 
-            all_masks_tensor = torch.stack(all_valid_masks_list, dim=1) 
-
-            scores_masked = all_scores_tensor.clone().float()
-            scores_masked[all_masks_tensor == 0] = -1e9
-            target_probs = F.softmax(scores_masked, dim=1)
-
-            temperature = self.log_temperature.exp().clamp(min=0.01, max=100)
-            sims_masked = all_sims_tensor.clone() * temperature
-            sims_masked[all_masks_tensor == 0] = -1e9
-            
-            pred_log_probs = F.log_softmax(sims_masked, dim=1)
-            
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction='none')
-            kl_loss_per_patient = kl_loss.sum(dim=1)
-            
-            # a valid patients at least 2 edges
-            valid_patients = (all_masks_tensor.sum(dim=1) > 1).float() 
-            
-            if valid_patients.sum() > 0:
-                fusion_loss = (kl_loss_per_patient * valid_patients).sum() / valid_patients.sum()
-    
-        loss_dict = {
-            "total_loss": self.loss_weight * fusion_loss,
-            "temperature": self.log_temperature.exp(),
-        }
-        
-        if target_probs is not None:
-            loss_dict['target_probs'] = target_probs.mean(dim=0)
-
         return {
             "fused_embedding": fused_embedding,
-            "loss_dict": loss_dict,
         }
