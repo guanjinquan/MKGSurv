@@ -11,6 +11,9 @@ import numpy as np
 from typing import List, Dict, Tuple
 from transformers import AutoTokenizer, AutoModel
 from tqdm import tqdm  # Recommended for progress tracking
+import random
+
+
 
 # ================= Core Encoder Class =================
 class ClinicalBertEncoder(nn.Module):
@@ -114,12 +117,32 @@ class ClinicalBertEncoder(nn.Module):
 
         return output_list
 
-# ================= Main Processing Function =================
 
-def process_analysis_file(json_path: str, output_path: str):
+
+def shuffle_text_sentences(text: str) -> str:
+    """
+    Splits text by '.', shuffles the sentences, and rejoins them.
+    """
+    if not text:
+        return ""
+    # Split by period and remove empty strings
+    sentences = [s.strip() for s in text.split('.') if s.strip()]
+    
+    if not sentences:
+        return text
+        
+    random.shuffle(sentences)
+    # Rejoin with period and space, ensure it ends with period
+    return ". ".join(sentences) + "."
+
+
+
+
+# ================= Main Processing Function =================
+def process_analysis_file(json_path: str, output_path: str, max_augmentations: int = 20):
     """
     Reads the Qwen analysis JSON, encodes features using ClinicalBERT,
-    and saves to a pickle file.
+    performs sentence-shuffling augmentation, and saves to a pickle file.
     """
     
     # 1. Load Data
@@ -136,49 +159,46 @@ def process_analysis_file(json_path: str, output_path: str):
     # 3. Process each patient
     final_dataset = {}
     
-    print(f"Processing {len(data)} patients...")
+    print(f"Processing {len(data)} patients with max {max_augmentations} augmentations...")
     
     # Iterate with progress bar
     for patient_id, analysis_list in tqdm(data.items(), desc="Encoding Features"):
         patient_features = {}
         
         for entry in analysis_list:
-            # key: tuple of modalities, e.g., ('clinical', 'pathology')
+            # key: tuple of modalities
             modal_key = tuple(entry.get("modalPairs", []))
             
             if not modal_key:
                 continue
             
-            # --- Text Construction Logic ---
-            # Part 1: Score + Relationship
-            # "score=xxx,拼接上relationship"
             score = entry.get("score", 0)
-            relationship_text = entry.get("relationship", "")
-            text_part_1 = f"Score: {score}. Relationship Analysis: {relationship_text}"
+            raw_relationship = entry.get("relationship", "")
+            raw_survival = entry.get("survival", "")
             
-            # Part 2: Survival
-            # "survival is another separate string to encode"
-            survival_text = entry.get("survival", "")
-            text_part_2 = f"Survival Risk Analysis: {survival_text}"
+            # --- Prepare Text Batch (Original + Augmentations) ---
+            # We will encode all variations in one go for efficiency
             
+            texts_part_1_batch = []
+
+            # 1. Add Original (Unshuffled)
+            texts_part_1_batch.append(f"{raw_relationship}")
+ 
+            # 2. Add Augmentations
+            for _ in range(max_augmentations):
+                # Augment content text separately
+                aug_rel = shuffle_text_sentences(raw_relationship)
+                texts_part_1_batch.append(f"{aug_rel}")
+
             # --- Encoding ---
-            # Encode both parts. _encode_text accepts a list, so we pass both at once for efficiency if desired,
-            # or separately. Here we pass separately to keep logic clear.
+            # _encode_text handles list inputs efficiently
+            feats_1_list = encoder._encode_text(texts_part_1_batch)
             
-            # feat_1 shape: (N_chunks_1, 768)
-            feat_1 = encoder._encode_text([text_part_1])[0]
-            
-            # feat_2 shape: (N_chunks_2, 768)
-            feat_2 = encoder._encode_text([text_part_2])[0]
-            
-            # --- Concatenation ---
-            # "Concatenate into (n, 768)"
-            # If feat_1 is (2, 768) and feat_2 is (1, 768), result is (3, 768)
-            combined_tensor = torch.cat([feat_1, feat_2], dim=0)
-            
+            # Store in the structure requested: List[combined_tensor, ...]
+            # Index 0 is original, Index 1-10 are augmented
             patient_features[modal_key] = {
                 "score": score,
-                "knowledge": combined_tensor,
+                "knowledge_list": feats_1_list,
             }
             
         final_dataset[patient_id] = patient_features
@@ -186,7 +206,6 @@ def process_analysis_file(json_path: str, output_path: str):
     # 4. Save to Pickle
     print(f"Saving features to {output_path}...")
     
-    # Ensure directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     with open(output_path, 'wb') as f:
@@ -197,7 +216,11 @@ def process_analysis_file(json_path: str, output_path: str):
 
 if __name__ == "__main__":
     # File Paths
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_kimi.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_kimi.pkl"
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_qwen.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_qwen.pkl"
     INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_deepseek.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge.pkl"
+    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_deepseek.pkl"
     
     process_analysis_file(INPUT_FILE, OUTPUT_FILE)

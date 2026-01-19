@@ -68,7 +68,7 @@ class GELU(nn.Module):
         return x * F.gelu(gates)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 4, dropout = 0., snn = False):
+    def __init__(self, dim, mult = 4, dropout = 0., snn: bool = False):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
@@ -91,6 +91,7 @@ class Attention(nn.Module):
 
         self.to_q = nn.Linear(query_dim, inner_dim, bias = False)
         self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias = False)
+
         self.dropout = nn.Dropout(dropout)
         self.to_out = nn.Linear(inner_dim, query_dim)
         self.attn_weights = None
@@ -193,7 +194,11 @@ class HealNet(nn.Module):
             
             self.layers.append(nn.ModuleList([*cross_attn_layers, self_attns]))
 
-        self.to_logits = Reduce('b n d -> b d', 'mean')
+        self.to_logits = nn.Sequential(
+            Reduce('b n d -> b d', 'mean'),
+            nn.LayerNorm(l_d), 
+            nn.Linear(l_d, out_dims)
+        ) if final_classifier_head else nn.Identity()
 
     def forward(
         self,

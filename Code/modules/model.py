@@ -27,9 +27,6 @@ from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
 from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
 from modules.fusion_modules.surv_path import SurvPath
 from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion 
-from modules.fusion_modules.MedKGAT_fusion_v1 import MedKGATFusion as MedKGATFusion_v1
-from modules.fusion_modules.MedKGAT_fusion_v2 import MedKGATFusion as MedKGATFusion_v2
-from modules.fusion_modules.MedKGAT_fusion_v3 import MedKGATFusion as MedKGATFusion_v3
 from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
 from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
 from modules.fusion_modules.MedKGAT_fusion_no_loss import MedKGATFusion_no_loss
