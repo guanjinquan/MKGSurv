@@ -56,7 +56,7 @@ class OSCCSurvivalPred(nn.Module):
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.image_proj)
+            self.image_proj.apply(init_kaiming_norm)
 
         # ----- Text Branch (text-clinical / text-pathology / text-treatment) -----
         # Assuming inputs are pre-extracted BERT features (768 dim)
@@ -69,7 +69,7 @@ class OSCCSurvivalPred(nn.Module):
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.text_proj)
+            self.text_proj.apply(init_kaiming_norm)
 
         # ----- Tabular Branch (from CSVs) -----
         # Handles: tabular-metadata-4, tabular-history-9, tabular-blood-5, etc.
@@ -89,7 +89,7 @@ class OSCCSurvivalPred(nn.Module):
                         nn.LayerNorm(self.embed_dim),
                         nn.Dropout(self.dropout_rate)
                     )
-                    init_kaiming_norm(self.tabular_encoders[mod_name])
+                    self.tabular_encoders[mod_name].apply(init_kaiming_norm)
                 except (ValueError, IndexError):
                     print(f"ERROR: Could not parse dimension from tabular modality name: '{mod_name}'")
 
@@ -108,7 +108,7 @@ class OSCCSurvivalPred(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)
         )
-        init_kaiming_norm(self.prediction_head)
+        self.prediction_head.apply(init_kaiming_norm)
 
     def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """

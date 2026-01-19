@@ -55,9 +55,7 @@ class ClinicalBertEncoder(nn.Module):
             
             if isinstance(text, str) and text.strip():
                 clean_text = text.strip()
-                # Encode text to IDs without special tokens first
                 token_ids = self.tokenizer.encode(clean_text, add_special_tokens=False)
-                # Split into chunks
                 chunks = self._chunk_token_ids(token_ids, chunk_payload) 
                 if chunks:
                     item_specific_chunks.extend(chunks)
@@ -71,10 +69,10 @@ class ClinicalBertEncoder(nn.Module):
 
         # Handle case with no valid chunks
         if not all_chunks:
-            return [torch.zeros(0, self.embed_dim) for _ in range(batch_size)]
+            # 保持 float32
+            return [torch.zeros(0, self.embed_dim, dtype=torch.float32) for _ in range(batch_size)]
 
         # 2. Batch Encoding
-        # Convert IDs back to string for batch encoding (robustness)
         chunk_texts = [self.tokenizer.decode(c, clean_up_tokenization_spaces=True) for c in all_chunks]
         
         bert_batch_size = 32
@@ -108,14 +106,17 @@ class ClinicalBertEncoder(nn.Module):
             n_chunks = info['n'] if info else 0
             
             if n_chunks > 0:
-                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks]
+                # ================= 核心修改 =================
+                # 只加 .clone() 解决内存共享导致的文件膨胀问题
+                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks].clone()
                 output_list.append(valid_features)
                 chunk_cursor += n_chunks
             else:
-                output_list.append(torch.zeros((0, self.embed_dim)))
+                # 保持 float32
+                output_list.append(torch.zeros((0, self.embed_dim), dtype=torch.float32))
 
         return output_list
-
+    
 # ================= Augmentation Helper =================
 def shuffle_text_sentences(text: str) -> str:
     """
@@ -176,8 +177,7 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
             # We will encode all variations in one go for efficiency
             
             texts_part_1_batch = []
-            texts_part_2_batch = []
-            
+
             # 1. Add Original (Unshuffled)
             texts_part_1_batch.append(f"{raw_relationship}")
             
@@ -190,14 +190,16 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
             
             # --- Encoding ---
             # _encode_text handles list inputs efficiently
-            feats_1_list = encoder._encode_text(texts_part_1_batch)
+            with torch.no_grad():
+                feats_1_list = encoder._encode_text(texts_part_1_batch)
 
+            clone_feats = [feat.clone().detach().contiguous() for feat in feats_1_list]
 
             # Store in the structure requested: List[combined_tensor, ...]
             # Index 0 is original, Index 1-10 are augmented
             patient_features[modal_key] = {
                 "score": score,
-                "knowledge_list": feats_1_list,
+                "knowledge_list": clone_feats,
             }
             
         final_dataset[patient_id] = patient_features
@@ -219,14 +221,14 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     
     # # File Paths
-    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_kimi.json"
-    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_kimi.pkl"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_kimi.json"
+    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_kimi.pkl"
     
     # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_deepseek.json"
     # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_deepseek.pkl"
 
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_qwen.pkl"
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/medical_analysis_qwen.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed/features_medical_knowledge_qwen.pkl"
 
     # Run
     process_analysis_file(INPUT_FILE, OUTPUT_FILE)

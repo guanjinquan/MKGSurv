@@ -61,7 +61,7 @@ class TCGA_KIRC_SurvivalPred(nn.Module):
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.image_proj)
+            self.image_proj.apply(init_kaiming_norm)
 
         # ----- Genomics Branch (genomics-genomics) -----
         if 'genomics-genomics' in self.active_modalities:
@@ -75,7 +75,7 @@ class TCGA_KIRC_SurvivalPred(nn.Module):
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate)
             )
-            init_kaiming_norm(self.genomics_encoder)
+            self.genomics_encoder.apply(init_kaiming_norm)
 
         # ----- Text Branch (text-pathology / text-treatment) -----
         # Assuming inputs are pre-extracted BERT features (768 dim)
@@ -90,7 +90,7 @@ class TCGA_KIRC_SurvivalPred(nn.Module):
                 nn.LayerNorm(self.embed_dim),
                 nn.Dropout(self.dropout_rate),
             )
-            init_kaiming_norm(self.text_proj)
+            self.text_proj.apply(init_kaiming_norm)
 
         # ----- Tabular Branch (from CSVs) -----
         self.tabular_encoders = nn.ModuleDict()
@@ -110,7 +110,7 @@ class TCGA_KIRC_SurvivalPred(nn.Module):
                         nn.LayerNorm(self.embed_dim),
                         nn.Dropout(self.dropout_rate)
                     )
-                    init_kaiming_norm(self.tabular_encoders[mod_name])
+                    self.tabular_encoders[mod_name].apply(init_kaiming_norm)
                 except (ValueError, IndexError):
                     print(f"ERROR: Could not parse dimension from tabular modality name: '{mod_name}'")
 
@@ -128,7 +128,7 @@ class TCGA_KIRC_SurvivalPred(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(self.embed_dim // 2, self.out_dim)
         )
-        init_kaiming_norm(self.prediction_head)
+        self.prediction_head.apply(init_kaiming_norm)
 
 
     def _pad_and_mask_modality(self, data_list: List[Optional[torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:

@@ -13,7 +13,6 @@ from torch.utils.data import Dataset
 
 # --- Task Modules ---
 from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
-from modules.task_modules.hancock_survival_pred import HANCOCKSurvivalPred
 from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
 from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
 from modules.task_modules.tcga_brca_survival_pred import TCGA_BRCA_SurvivalPred
@@ -104,9 +103,7 @@ class ModelInterface(nn.Module):
         # self.task_head should define: 
         #   1. self.task_head.embed_dim, 
         #   2. self.task_head.max_modalities_num
-        if model_task == "hancock":
-            self.task_head = HANCOCKSurvivalPred(args, dataset=dataset)
-        elif model_task == "oscc_inhouse":
+        if model_task == "oscc_inhouse":
             self.task_head = OSCCSurvivalPred(args, dataset=dataset)
         elif model_task == "tcga_luad":
             self.task_head = TCGA_LUAD_SurvivalPred(args, dataset=dataset)
@@ -141,12 +138,6 @@ class ModelInterface(nn.Module):
             self.fusion_module = MOME_fusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'medkgat_fusion':
             self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v1':
-            self.fusion_module = MedKGATFusion_v1(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v2':
-            self.fusion_module = MedKGATFusion_v2(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_v3':
-            self.fusion_module = MedKGATFusion_v3(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_msa':
             self.fusion_module = MedKGATFusion_group_msa(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         elif self.fusion_type == 'medkgat_fusion_no_loss':
