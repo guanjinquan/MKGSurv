@@ -220,8 +220,10 @@ if __name__ == "__main__":
     # File Paths
     INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_kimi.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_kimi.pkl"
+
     # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_qwen.json"
     # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_qwen.pkl"
+    
     # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/medical_analysis_deepseek.json"
     # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/Multi-OSCCPI-Dataset/processed/features_medical_knowledge_deepseek.pkl"
     
