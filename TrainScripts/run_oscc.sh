@@ -1,5 +1,9 @@
 source activate surv_pred
 export CUDA_VISIBLE_DEVICES=2
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run001_medkgat_qwen.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run002_medkgat_kimi.sh
-bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run003_medkgat_deepseek.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run030_medkgat_kimi_nl=3_lw=1.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run031_medkgat_kimi_nl=3_lw=2.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run032_medkgat_kimi_nl=3_lw=3.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run033_medkgat_kimi_nl=3_lw=4.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run034_medkgat_kimi_nl=3_lw=5.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run035_medkgat_kimi_nl=3_lw=7.sh
+bash /home/Guanjq/NewWork/MedAlignFusion/TrainScripts/oscc_inhouse/run036_medkgat_kimi_nl=3_lw=8.sh
