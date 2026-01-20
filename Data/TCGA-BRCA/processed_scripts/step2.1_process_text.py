@@ -22,39 +22,40 @@ OUTPUT_TREATMENT_PKL = os.path.join(BASE_DIR, "features_text_treatment.pkl")
 
 # =================核心编码器类=================
 class ClinicalBertEncoder(nn.Module):
-    def __init__(self, device='cuda'):
+    def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         super().__init__()
         self.device = device
         self.embed_dim = 768 
         
-        print("Initializing Text Encoder (ClinicalBERT)...")
+        print(f"Initializing Text Encoder (ClinicalBERT) on {self.device}...")
         self.text_model_name = "medicalai/ClinicalBERT"
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.text_model_name, use_fast=True)
             self.bert = AutoModel.from_pretrained(self.text_model_name)
         except Exception as e:
             print(f"Error loading model from HF Mirror: {e}")
-            print("Trying local load or check internet connection.")
+            print("Please check your internet connection or HF_ENDPOINT settings.")
             raise e
             
         self.to(self.device)
         self.eval() 
 
     def _chunk_token_ids(self, ids: List[int], chunk_size: int) -> List[List[int]]:
+        """Splits token IDs into chunks of specific size."""
         return [ids[i:i + chunk_size] for i in range(0, len(ids), chunk_size)]
 
     def _encode_text(self, texts_list: List[str]) -> List[torch.Tensor]:
         """
-        输入: 一个包含多个文本字符串的列表
-        输出: 一个列表, 包含对应的特征 Tensor。
+        Input: List of text strings.
+        Output: List of Tensors. Each Tensor is (N_chunks, 768), on CPU.
         """
         batch_size = len(texts_list)
-        chunk_payload = 510 
+        chunk_payload = 510 # BERT max 512 - 2 (CLS/SEP)
         
         all_chunks = []
         mapping_info = [] 
         
-        # 1. 预处理与分块
+        # 1. Preprocessing & Chunking
         for i, text in enumerate(texts_list):
             item_specific_chunks = [] 
             
@@ -65,17 +66,19 @@ class ClinicalBertEncoder(nn.Module):
                 if chunks:
                     item_specific_chunks.extend(chunks)
             
+            # Record mapping info
             if not item_specific_chunks:
                 mapping_info.append({'index': i, 'n': 0})
             else:
                 mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
                 all_chunks.extend(item_specific_chunks)
 
+        # Handle case with no valid chunks
         if not all_chunks:
-            # 如果全是空文本，返回一批空张量
-            return [torch.zeros(0, self.embed_dim) for _ in range(batch_size)]
+            # 保持 float32
+            return [torch.zeros(0, self.embed_dim, dtype=torch.float32) for _ in range(batch_size)]
 
-        # 2. 批量编码
+        # 2. Batch Encoding
         chunk_texts = [self.tokenizer.decode(c, clean_up_tokenization_spaces=True) for c in all_chunks]
         
         bert_batch_size = 32
@@ -91,7 +94,8 @@ class ClinicalBertEncoder(nn.Module):
             with torch.no_grad():
                 bert_outputs = self.bert(**inputs)
             
-            batch_pooled = bert_outputs.last_hidden_state[:, 0, :].clone()
+            # Extract CLS token (index 0)
+            batch_pooled = bert_outputs.last_hidden_state[:, 0, :]
             pooled_outputs.append(batch_pooled.cpu())
             
         if pooled_outputs:
@@ -99,7 +103,7 @@ class ClinicalBertEncoder(nn.Module):
         else:
             pooled = torch.zeros(0, self.embed_dim)
 
-        # 3. 重组结果
+        # 3. Reconstruct / Gather results
         output_list = []
         chunk_cursor = 0
         
@@ -108,15 +112,19 @@ class ClinicalBertEncoder(nn.Module):
             n_chunks = info['n'] if info else 0
             
             if n_chunks > 0:
-                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks]
+                # ================= 核心修改 =================
+                # 只加 .clone() 解决内存共享导致的文件膨胀问题
+                # 不加 .half()，保持 float32
+                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks].clone()
                 output_list.append(valid_features)
                 chunk_cursor += n_chunks
             else:
-                # 这是一个潜在的风险点：这里返回了 (0, 768) 的空张量
-                output_list.append(torch.zeros((0, self.embed_dim)))
+                # 保持 float32
+                output_list.append(torch.zeros((0, self.embed_dim), dtype=torch.float32))
 
         return output_list
-
+    
+    
 # =================数据增强工具函数=================
 
 def clean_term(term):

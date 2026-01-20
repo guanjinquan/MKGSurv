@@ -149,9 +149,7 @@ class IntraGroupStep(nn.Module):
         
     def forward(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
                 groups: List[List[int]]) -> List[torch.Tensor]:
-        """
-        执行组内交互。
-        """
+
         updated_embeddings = list(embeddings)
         
         for group_idx, group_indices in enumerate(groups):

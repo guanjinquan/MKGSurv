@@ -61,7 +61,11 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
 
         for pid in keys_to_remove:
             del data[pid]
-        
+
+        print(f"After filtering, data length = {len(data)} patients size = {len(self.patient_ids)}")
+        if len(data) + 10 < len(self.patient_ids):
+            print(f"Warning: After filtering, data is too small.")
+
         return data
 
     def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
