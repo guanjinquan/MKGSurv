@@ -9,7 +9,7 @@ GPU_ID=2
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPU_ID}
 
 # 非常低，一旦提高LR，cindex会下降。
-RUN_ID="tcga_brca_run002"
+RUN_ID="tcga_brca_run002-lw=4"
 
 # --- Training Hyperparameters ---
 BATCH_SIZE=64          # Number of samples per batch.
@@ -40,7 +40,7 @@ python /home/Guanjq/NewWork/MedAlignFusion/Code/main_traintest_5fold.py \
     --use_medical_knowledge \
     --knowledge_source "kimi" \
     --num_layers 3 \
-    --kl_loss_weight 6
+    --kl_loss_weight 4
 
 
 echo "Training run ${RUN_ID} finished."

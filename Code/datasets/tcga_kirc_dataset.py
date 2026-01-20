@@ -31,23 +31,39 @@ class TCGA_KIRC_Dataset(MultiModalDataset):
         "tabular-pathology-20", 
     ]
 
+
     def _read_pickle(self, path: str) -> Any:
-        """
-        Helper to load pickle/joblib files with better resource management.
-        """
         if not os.path.exists(path):
             print(f"Warning: Pickle file not found at: {path}")
             return None
     
         try:
-            # 使用更安全的加载方式
+            # Use safe loading
             with open(path, 'rb') as f:
                 data = joblib.load(f)
+            
+            # Auto-filter if it's a dictionary and we have active patients set
+            # This ensures we don't carry unnecessary data in memory
+            if isinstance(data, dict) and hasattr(self, 'patient_ids'):
+                data = self._filter_data(data)
+                
             return data
         except Exception as e:
             print(f"Error loading data file {path}: {e}")
-            # 不要重新抛出异常，返回None让调用者处理
             return None
+        
+    def _filter_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        if data is None or not isinstance(data, dict) or not hasattr(self, 'patient_ids'):
+            return data
+
+        active_pids = set(self.patient_ids)
+        keys_to_remove = [pid for pid in data.keys() if pid not in active_pids]
+        assert len(keys_to_remove) < len(data), "Delete all keys is invalid!!"
+
+        for pid in keys_to_remove:
+            del data[pid]
+        
+        return data
 
     def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
         """

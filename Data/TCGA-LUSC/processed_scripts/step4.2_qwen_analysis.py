@@ -62,8 +62,16 @@ def validate_and_normalize_response(parsed_json):
     for entry in parsed_json:
         if "modalPairs" not in entry or not isinstance(entry["modalPairs"], list):
             raise ValueError("Missing or invalid 'modalPairs' field")
+        
         raw_pair = entry["modalPairs"]
-        if len(raw_pair) != 2: raise ValueError(f"Pair does not contain exactly 2 elements: {raw_pair}")
+        if len(raw_pair) != 2: 
+            raise ValueError(f"Pair does not contain exactly 2 elements: {raw_pair}")
+
+        if "relationship" not in entry or not isinstance(entry["relationship"], str):
+            raise ValueError("Missing or invalid 'relationship' field")
+        
+        if "survival" not in entry or not isinstance(entry["survival"], str):
+            raise ValueError("Missing or invalid 'survival' field")
 
         m1 = map_data_type(raw_pair[0])
         m2 = map_data_type(raw_pair[1])
@@ -73,7 +81,8 @@ def validate_and_normalize_response(parsed_json):
         if m1 == m2: raise ValueError(f"Self-pair detected: {m1}-{m2}")
 
         sorted_pair = tuple(sorted([m1, m2]))
-        if sorted_pair in seen_pairs: raise ValueError(f"Duplicate pair detected: {sorted_pair}")
+        if sorted_pair in seen_pairs: 
+            raise ValueError(f"Duplicate pair detected: {sorted_pair}")
         
         seen_pairs.add(sorted_pair)
         entry["modalPairs"] = [m1, m2]

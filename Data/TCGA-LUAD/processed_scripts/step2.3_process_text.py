@@ -13,7 +13,6 @@ from transformers import AutoTokenizer, AutoModel
 BASE_DIR = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-LUAD/processed"
 
 # 输入文件路径
-# 注意：这里更新为包含详细治疗信息的CSV路径
 PATH_TREATMENT_CSV = os.path.join(BASE_DIR, "text_treatment.csv")
 PATH_REPORTS_CSV = os.path.join(BASE_DIR, "tcga_luad_reports.csv")
 
@@ -46,47 +45,39 @@ class ClinicalBertEncoder(nn.Module):
 
     def _encode_text(self, texts_list: List[str]) -> List[torch.Tensor]:
         """
-        输入: 一个包含多个文本字符串的列表 (例如 [原文本, 增强文本1, 增强文本2...])
+        输入: 一个包含多个文本字符串的列表
         输出: 一个列表, 包含对应的特征 Tensor。
-              每个 Tensor 的形状为 (N_chunks, 768), 已移动到 CPU。
         """
         batch_size = len(texts_list)
-        chunk_payload = 510 # BERT max 512 - 2 (CLS/SEP)
+        chunk_payload = 510 
         
         all_chunks = []
         mapping_info = [] 
         
-        # 1. 预处理与分块 (Tokenization & Chunking)
+        # 1. 预处理与分块
         for i, text in enumerate(texts_list):
             item_specific_chunks = [] 
             
             if isinstance(text, str) and text.strip():
-                # 简单的清理，防止空字符
                 clean_text = text.strip()
                 token_ids = self.tokenizer.encode(clean_text, add_special_tokens=False)
                 chunks = self._chunk_token_ids(token_ids, chunk_payload) 
                 if chunks:
                     item_specific_chunks.extend(chunks)
             
-            # 记录该样本对应的 chunk 数量
             if not item_specific_chunks:
                 mapping_info.append({'index': i, 'n': 0})
             else:
                 mapping_info.append({'index': i, 'n': len(item_specific_chunks)})
                 all_chunks.extend(item_specific_chunks)
 
-        # 如果没有任何有效 chunk，返回空 tensor 列表
         if not all_chunks:
+            # 如果全是空文本，返回一批空张量
             return [torch.zeros(0, self.embed_dim) for _ in range(batch_size)]
 
-        # 2. 批量编码 (Batch Encoding)
-        # 将所有样本的所有 chunk 展平成一个大 batch 处理
-        # 使用 convert_ids_to_tokens 再 join 可能不如直接 decode 准确，但为了对齐 chunk 逻辑，
-        # 这里直接 pad token_ids 可能更高效，或者 decode 回 string。
-        # 为保持稳健性，这里 decode 回 string 再 encode，虽然稍慢但兼容性好。
+        # 2. 批量编码
         chunk_texts = [self.tokenizer.decode(c, clean_up_tokenization_spaces=True) for c in all_chunks]
         
-        # 防止 OOM，如果 chunk 数量巨大，可以分批处理 BERT inference
         bert_batch_size = 32
         pooled_outputs = []
         
@@ -100,17 +91,15 @@ class ClinicalBertEncoder(nn.Module):
             with torch.no_grad():
                 bert_outputs = self.bert(**inputs)
             
-            # 取 CLS token
             batch_pooled = bert_outputs.last_hidden_state[:, 0, :]
             pooled_outputs.append(batch_pooled.cpu())
             
-        # 合并所有 batch 的结果
         if pooled_outputs:
             pooled = torch.cat(pooled_outputs, dim=0)
         else:
             pooled = torch.zeros(0, self.embed_dim)
 
-        # 3. 重组结果 (Reconstruct)
+        # 3. 重组结果
         output_list = []
         chunk_cursor = 0
         
@@ -119,10 +108,11 @@ class ClinicalBertEncoder(nn.Module):
             n_chunks = info['n'] if info else 0
             
             if n_chunks > 0:
-                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks]
+                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks].clone()
                 output_list.append(valid_features)
                 chunk_cursor += n_chunks
             else:
+                # 这是一个潜在的风险点：这里返回了 (0, 768) 的空张量
                 output_list.append(torch.zeros((0, self.embed_dim)))
 
         return output_list
@@ -130,7 +120,6 @@ class ClinicalBertEncoder(nn.Module):
 # =================数据增强工具函数=================
 
 def clean_term(term):
-    """清理单个术语，去除 nan, Unspecified 等无效信息"""
     if not isinstance(term, str):
         return None
     term = term.strip()
@@ -142,17 +131,6 @@ def clean_term(term):
     return term
 
 def augment_treatment_info(row: pd.Series, max_augment=10) -> List[str]:
-    """
-    针对治疗信息进行多列融合与随机 Shuffle 增强。
-    
-    Args:
-        row: DataFrame 的一行
-        max_augment: 最大增强数量
-        
-    Returns:
-        List[str]: [原始组合文本, 增强文本1, 增强文本2, ...]
-    """
-    # 需要合并的列名
     target_cols = [
         'treatments.therapeutic_agents',
         'treatments.treatment_intent_type',
@@ -160,36 +138,25 @@ def augment_treatment_info(row: pd.Series, max_augment=10) -> List[str]:
         'treatments.treatment_type'
     ]
     
-    # 1. 提取所有有效概念 (Terms)
     all_terms = []
-    
     for col in target_cols:
         if col in row:
             val = str(row[col])
-            # TCGA 数据常用 + 号连接
             parts = val.split('+')
             for p in parts:
                 clean = clean_term(p)
                 if clean:
                     all_terms.append(clean)
     
-    # 去除完全重复的项 (可选，如果想保留频次信息则不去重，这里选择去重以精简)
-    # all_terms = sorted(list(set(all_terms))) 
-    # 不排序不去重可能更能反映原始记录的权重，但为了 Shuffle 效果，列表即可
-    
     if not all_terms:
-        return [""] # 无有效信息
+        return [""] 
     
-    # 2. 构建原始文本 (保持列的读取顺序或列表顺序)
     original_text = ", ".join(all_terms)
     results = [original_text]
     
-    # 3. 构建增强文本 (随机 Shuffle 列表顺序)
-    # 只有当术语数量大于1时，Shuffle才有意义
     if len(all_terms) > 1:
         seen_texts = {original_text}
-        
-        for _ in range(max_augment * 2): # 尝试更多次以防重复
+        for _ in range(max_augment * 2): 
             shuffled_terms = all_terms.copy()
             random.shuffle(shuffled_terms)
             new_text = ", ".join(shuffled_terms)
@@ -204,26 +171,20 @@ def augment_treatment_info(row: pd.Series, max_augment=10) -> List[str]:
     return results
 
 def augment_pathology_text(text: str) -> List[str]:
-    """
-    针对病理文本的简单增强（基于标点切分Shuffle）
-    """
     if not isinstance(text, str) or not text.strip():
         return []
     
     versions = [text]
-    
-    # 尝试基于句号或加号切分
-    for delimiter in ['. ', '+']:
+    for delimiter in ['. ', '+', '\n']:
         if delimiter in text:
             parts = [p.strip() for p in text.split(delimiter) if p.strip()]
             if len(parts) > 1:
                 for _ in range(10):
                     random.shuffle(parts)
-                    # 重新组合
                     new_txt = f"{delimiter}".join(parts)
                     if new_txt not in versions:
                         versions.append(new_txt)
-                break # 只用一种分隔符处理一次即可
+                break 
                 
     return versions
 
@@ -300,14 +261,18 @@ def main():
         # 预处理数据列表
         for idx, row in df_reports.iterrows():
             pid = str(row['patient_id']).strip()
-            report_txt = str(row['report_text']) if pd.notna(row['report_text']) else ""
-            annot_txt = str(row['annotation_text']) if pd.notna(row['annotation_text']) else ""
+            combined_text = "N/A"
+
+            if "llm_polished_report" in row:
+                combined_text = row['llm_polished_report']
+            else:
+                print("Warning!! Column llm_polished_report not found")
             
-            # 简单拼接
-            combined_text = (report_txt + " " + annot_txt).strip()
-            
-            if combined_text:
-                valid_data.append((pid, combined_text))
+            # 这里简单过滤一下非字符串
+            if not isinstance(combined_text, str):
+                combined_text = ""
+                
+            valid_data.append((pid, combined_text))
         
         print(f"Found {len(valid_data)} valid pathology reports. Encoding...")
 
@@ -315,8 +280,50 @@ def main():
             # === 数据增强 ===
             text_versions = augment_pathology_text(txt)
             
+            # 如果增强后列表为空（原始文本也是空的），手动加一个空字符串占位
+            if not text_versions:
+                text_versions = [""]
+
             # === 编码 ===
             feat_list = encoder._encode_text(text_versions)
+
+            # ========================================================
+            # TODO: Debug Logic Added Here
+            # ========================================================
+            clean_feat_list = []
+            
+            for i, feat in enumerate(feat_list):
+                # 检查 1: 是否为 None
+                if feat is None:
+                    print(f"❌ [DEBUG] PID {pid}: Feature index {i} is None. Skipping.")
+                    continue
+                
+                # 检查 2: 是否为空张量 (numel=0)
+                # 这通常发生在输入文本为空字符串时，ClinicalBertEncoder 返回 (0, 768)
+                if feat.numel() == 0:
+                    # 这是一个非常严格的过滤：如果特征为空，说明并没有提取到有效信息
+                    # 为了防止训练时维度报错，这里我们不加入这个空特征
+                    # print(f"⚠️ [DEBUG] PID {pid}: Feature index {i} is empty tensor {feat.shape}. Skipping.")
+                    continue
+                
+                # 检查 3: 维度一致性
+                if feat.shape[-1] != encoder.embed_dim:
+                    print(f"❌ [DEBUG] PID {pid}: Feature index {i} has wrong dim {feat.shape}. Expected {encoder.embed_dim}. Skipping.")
+                    continue
+                
+                clean_feat_list.append(feat)
+            
+            # 补救措施：如果清洗后列表为空（说明该病人没有任何有效文本特征）
+            # 我们必须人为制造一个全是 0 的特征向量 (1, 768)
+            # 否则后续 DataLoader 处理时会报错，或者训练时 input_dim 变为 0
+            if len(clean_feat_list) == 0:
+                print(f"🚨 [CRITICAL WARNING] PID {pid}: No valid features found after cleaning! Creating fallback zero-vector.")
+                fallback_feat = torch.zeros((1, encoder.embed_dim)) # (1, 768)
+                clean_feat_list.append(fallback_feat)
+            
+            # 更新为清洗后的列表
+            feat_list = clean_feat_list
+            # ========================================================
             
             pathology_dict[pid] = feat_list
             

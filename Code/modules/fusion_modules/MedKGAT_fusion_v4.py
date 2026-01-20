@@ -142,10 +142,13 @@ class IntraGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.intra_group_transformer = nn.ModuleList([
-            SafeCrossAttnEncoder(embed_dim, num_heads=8)
-            for _ in range(num_layers)
-        ])
+        self.intra_group_layer = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 2),
+            nn.LayerNorm(embed_dim * 2),
+            GELU(),
+            nn.Linear(embed_dim, embed_dim),
+            nn.Dropout(0.3),
+        )
         
     def forward(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
                 groups: List[List[int]]) -> List[torch.Tensor]:
@@ -175,17 +178,7 @@ class IntraGroupStep(nn.Module):
                 padding_mask[all_masked_rows, 0] = False
 
             # The TransformerEncoder handles num_layers internally
-            for i in range(self.num_layers):
-                concat_feat = self.intra_group_transformer[i](
-                    query=concat_feat, 
-                    key=concat_feat, 
-                    value=concat_feat, 
-                    key_padding_mask=padding_mask
-                )
-
-                if all_masked_rows.any():
-                    concat_feat[all_masked_rows] = 0.0
-
+            concat_feat = self.intra_group_layer(concat_feat)
             split_feats = torch.split(concat_feat, lengths, dim=1)
             
             for i, idx in enumerate(group_indices):
@@ -212,7 +205,11 @@ class InterGroupStep(nn.Module):
                                    source_node: torch.Tensor, source_mask: torch.Tensor,
                                    edge_feat: torch.Tensor, edge_mask: torch.Tensor,
                                    layer_modules: nn.ModuleDict) -> Tuple[torch.Tensor, torch.Tensor]:
-        
+        """
+        Helper for Step 2 of GAT: 
+        Use Updated Edge as Query, Source Node as Key/Value.
+        Returns the "Source-Context-via-Edge" and the corresponding mask.
+        """
         source_padding_mask = (source_mask == 0)
         
         # Edge (Query) queries Source (Key/Value)

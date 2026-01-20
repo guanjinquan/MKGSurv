@@ -5,7 +5,6 @@ import torch.nn as nn
 
 def init_kaiming_norm(m):
     pass
-
     # if isinstance(m, (nn.Linear, nn.Conv2d)):
     #     nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
     #     if m.bias is not None:

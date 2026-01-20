@@ -91,7 +91,7 @@ class ClinicalBertEncoder(nn.Module):
             with torch.no_grad():
                 bert_outputs = self.bert(**inputs)
             
-            batch_pooled = bert_outputs.last_hidden_state[:, 0, :]
+            batch_pooled = bert_outputs.last_hidden_state[:, 0, :].clone()
             pooled_outputs.append(batch_pooled.cpu())
             
         if pooled_outputs:

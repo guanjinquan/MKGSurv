@@ -108,7 +108,7 @@ class ClinicalBertEncoder(nn.Module):
             n_chunks = info['n'] if info else 0
             
             if n_chunks > 0:
-                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks]
+                valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks].clone()
                 output_list.append(valid_features)
                 chunk_cursor += n_chunks
             else:

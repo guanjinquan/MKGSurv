@@ -32,22 +32,37 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
     ]
 
     def _read_pickle(self, path: str) -> Any:
-        """
-        Helper to load pickle/joblib files with better resource management.
-        """
         if not os.path.exists(path):
             print(f"Warning: Pickle file not found at: {path}")
             return None
     
         try:
-            # 使用更安全的加载方式
+            # Use safe loading
             with open(path, 'rb') as f:
                 data = joblib.load(f)
+            
+            # Auto-filter if it's a dictionary and we have active patients set
+            # This ensures we don't carry unnecessary data in memory
+            if isinstance(data, dict) and hasattr(self, 'patient_ids'):
+                data = self._filter_data(data)
+                
             return data
         except Exception as e:
             print(f"Error loading data file {path}: {e}")
-            # 不要重新抛出异常，返回None让调用者处理
             return None
+        
+    def _filter_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        if data is None or not isinstance(data, dict) or not hasattr(self, 'patient_ids'):
+            return data
+
+        active_pids = set(self.patient_ids)
+        keys_to_remove = [pid for pid in data.keys() if pid not in active_pids]
+        assert len(keys_to_remove) < len(data), "Delete all keys is invalid!!"
+
+        for pid in keys_to_remove:
+            del data[pid]
+        
+        return data
 
     def __init__(self, args, mode: str = "train", modalities: str = "all", fold: int = None):
         """
@@ -133,69 +148,6 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
 
         # Load CSVs (Tabular Data & Labels)
         self._load_tabular_and_labels()
-
-        # ---Calculate Global Statistics for H-Mixup Weights ---
-        # pi_star: 原始数据集的事件发生率
-        # pi_hat:  H-Mixup 增强后预期的事件发生率 (通过模拟计算)
-        self.pi_star = 0.5
-        self.pi_hat = 0.5
-        
-        if self.mode == 'train':
-            self._calculate_statistics()
-
-    def _calculate_statistics(self):
-        """
-        计算原始事件率(pi_star)并模拟一次Mixup过程以估算增强后的事件率(pi_hat)。
-        这样可以在 getitem 中直接返回全局校正后的权重。
-        """
-        # 1. 提取所有样本的 Time 和 Event
-        times = []
-        events = []
-        
-        for pid, info in self.patient_labels.items():
-            event = info.get('DFS_event', 0)
-            time = info.get('DFS_time', -1)
-            
-            if time >= 0:
-                times.append(time)
-                events.append(event)
-        
-        times = np.array(times)
-        events = np.array(events)
-        
-        # 2. 计算原始事件率 pi_star
-        self.pi_star = np.mean(events)
-        self.pi_star = np.clip(self.pi_star, 1e-6, 1 - 1e-6)
-
-        # 3. 模拟 H-Mixup 过程估算 pi_hat
-        # 我们进行 N 次随机配对模拟，N = len(dataset) * 5 以保证统计稳定性
-        n_sim = len(events) * 5
-        sim_events = []
-        
-        for _ in range(n_sim):
-            # 随机采样两个索引
-            idx1 = np.random.randint(0, len(events))
-            idx2 = np.random.randint(0, len(events))
-            
-            t1, e1 = times[idx1], events[idx1]
-            t2, e2 = times[idx2], events[idx2]
-            
-            # 生成 lambda
-            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-            lam = np.clip(lam, 1e-4, 1 - 1e-4)
-            
-            # H-Mixup 逻辑: Time Scaling + Min
-            t_scale_1 = t1 / lam
-            t_scale_2 = t2 / (1 - lam)
-            
-            if t_scale_1 < t_scale_2:
-                sim_events.append(e1)
-            else:
-                sim_events.append(e2)
-        
-        # 计算估算的增强后事件率 pi_hat
-        self.pi_hat = np.mean(sim_events)
-        self.pi_hat = np.clip(self.pi_hat, 1e-6, 1 - 1e-6)
 
     def _load_tabular_and_labels(self):
         try:
@@ -388,77 +340,6 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
             output_dict = self.mixup_data(output_dict, self.get_sample(other_item_idx))
 
         return output_dict
-
-    def mixup_data(self, ori_data, other_data):
-        """
-        Implementation of H-Mixup with Variable Length Padding and Weight Calculation.
-        """
-        # 1. 生成 Mixup 系数
-        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-        lam = np.clip(lam, 1e-4, 1 - 1e-4)
-
-        # 2. 特征混合 (Variable Length Padding)
-        for mod in self.modalities:
-            if mod not in ori_data or ori_data[mod] is None: continue
-            
-            feat_a = ori_data[mod]
-            feat_b = other_data.get(mod)
-
-            if feat_b is None: continue
-
-            if isinstance(feat_a, torch.Tensor) and isinstance(feat_b, torch.Tensor):
-                if feat_a.shape != feat_b.shape:
-                    len_a = feat_a.shape[0]
-                    len_b = feat_b.shape[0]
-                    max_len = max(len_a, len_b)
-                    
-                    pad_a = torch.zeros((max_len, feat_a.shape[1]), dtype=feat_a.dtype)
-                    pad_a[:len_a] = feat_a
-                    
-                    pad_b = torch.zeros((max_len, feat_b.shape[1]), dtype=feat_b.dtype)
-                    pad_b[:len_b] = feat_b
-                    
-                    mixed_feat = lam * pad_a + (1 - lam) * pad_b
-                    ori_data[mod] = mixed_feat
-                else:
-                    ori_data[mod] = lam * feat_a + (1 - lam) * feat_b
-
-        # 3. Medical-Knowledge 混合
-        # if self.args.
-
-        # 4. 标签混合 (H-Mixup Logic)
-        t1 = float(ori_data['labels']['label_time'])
-        e1 = int(ori_data['labels']['label_event'])
-        t2 = float(other_data['labels']['label_time'])
-        e2 = int(other_data['labels']['label_event'])
-
-        t_scale_1 = t1 / lam
-        t_scale_2 = t2 / (1 - lam)
-
-        if t_scale_1 < t_scale_2:
-            label_time = t_scale_1
-            label_event = e1
-        else:
-            label_time = t_scale_2
-            label_event = e2
-
-        # 4. 计算样本权重 (Based on Global Statistics)
-        # Weight = P*(y) / P_hat(y)
-        # 如果是 Event (1): Weight = pi_star / pi_hat
-        # 如果是 Censor(0): Weight = (1 - pi_star) / (1 - pi_hat)
-        if label_event == 1:
-            weight = self.pi_star / self.pi_hat
-        else:
-            weight = (1.0 - self.pi_star) / (1.0 - self.pi_hat)
-
-        # 5. 更新 Labels
-        ori_data['labels'] = {
-            "label_event": label_event,
-            "label_time": label_time,
-            "sample_weight": float(weight)  # 直接返回计算好的权重
-        }
-
-        return ori_data
 
     def get_survival_bins(self):
         """

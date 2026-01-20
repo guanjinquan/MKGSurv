@@ -5,6 +5,8 @@ import pdfplumber
 from tqdm import tqdm
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+import pypdf   
 
 # --- 用户配置 ---
 # 路径配置
@@ -30,24 +32,58 @@ if API_KEY and "sk-" in API_KEY:
 else:
     print("[警告] 未检测到有效的 API Key。")
 
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
+
 def extract_pdf_text(filepath):
-    """从单个 PDF 文件中提取所有文本，并清理符号。"""
+    """
+    健壮的 PDF 文本提取函数。
+    策略：优先使用 pdfplumber，如果因格式错误(如 invalid float value)失败，
+    则降级使用 pypdf 进行提取。
+    """
     if filepath is None or not os.path.exists(filepath):
         return None
-    full_text = ""
+    
+    text_content = ""
+    
+    # --- 方法 A: 尝试 pdfplumber ---
     try:
         with pdfplumber.open(filepath) as pdf:
             for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
-        if full_text:
-            cleaned_text = re.sub(r'([^\w\s]){2,}', ' ', full_text)
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-            return cleaned_text.strip()
-        return None
+                # 某些页面可能解析失败，单独捕获页面的错误
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+                except Exception:
+                    continue  # 单页失败不影响整体
     except Exception as e:
-        return None
+        # pdfplumber 彻底失败（比如文件头损坏），记录一下但不打印巨量日志
+        pass
+
+    # --- 方法 B: 如果 pdfplumber 没提取到内容，使用 pypdf 救急 ---
+    # pypdf 对 '/P0' 这种颜色错误容忍度极高
+    if not text_content.strip():
+        try:
+            reader = pypdf.PdfReader(filepath)
+            temp_text = []
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    temp_text.append(extracted)
+            text_content = "\n".join(temp_text)
+        except Exception as e:
+            # 如果两个库都挂了，那这个 PDF 可能是损坏的二进制文件
+            print(f"[提取失败] {os.path.basename(filepath)} 无法被解析。")
+            return None
+
+    # --- 统一的后处理 ---
+    if text_content:
+        # 清洗特殊符号和多余空格
+        cleaned_text = re.sub(r'([^\w\s]){2,}', ' ', text_content)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        return cleaned_text.strip()
+    
+    return None
 
 def read_annotation_notes_from_txt(filepath):
     """读取 .txt 文件 (TSV 格式), 并提取 'notes' 列的内容。"""

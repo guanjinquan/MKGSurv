@@ -14,6 +14,7 @@ from transformers import AutoTokenizer, AutoModel
 from tqdm import tqdm
 
 # ================= Core Encoder Class =================
+
 class ClinicalBertEncoder(nn.Module):
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         super().__init__()
@@ -107,6 +108,7 @@ class ClinicalBertEncoder(nn.Module):
             if n_chunks > 0:
                 # ================= 核心修改 =================
                 # 只加 .clone() 解决内存共享导致的文件膨胀问题
+                # 不加 .half()，保持 float32
                 valid_features = pooled[chunk_cursor : chunk_cursor + n_chunks].clone()
                 output_list.append(valid_features)
                 chunk_cursor += n_chunks
@@ -136,7 +138,7 @@ def shuffle_text_sentences(text: str) -> str:
 
 # ================= Main Processing Function =================
 
-def process_analysis_file(json_path: str, output_path: str, max_augmentations: int = 20):
+def process_analysis_file(json_path: str, output_path: str, max_augmentations: int = 10):
     """
     Reads the Qwen analysis JSON, encodes features using ClinicalBERT,
     performs sentence-shuffling augmentation, and saves to a pickle file.
@@ -173,31 +175,47 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
             raw_relationship = entry.get("relationship", "")
             raw_survival = entry.get("survival", "")
             
+            assert "relationship" in entry, "Missing 'relationship' field in analysis entry."
+            assert "survival" in entry, "Missing 'survival' field in analysis entry."
+            assert "score" in entry, "Missing 'score' field in analysis entry."
             # --- Prepare Text Batch (Original + Augmentations) ---
             # We will encode all variations in one go for efficiency
             
             texts_part_1_batch = []
-
+            texts_part_2_batch = []
             
             # 1. Add Original (Unshuffled)
-            texts_part_1_batch.append(f"{raw_relationship}")
-
+            texts_part_1_batch.append(f"Relationship Analysis: {raw_relationship}")
+            texts_part_2_batch.append(f"Survival Risk Analysis: {raw_survival}")
+            
             # 2. Add Augmentations
             for _ in range(max_augmentations):
                 # Augment content text separately
                 aug_rel = shuffle_text_sentences(raw_relationship)
-
-                texts_part_1_batch.append(f"{aug_rel}")
-
+                aug_surv = shuffle_text_sentences(raw_survival)
+                
+                texts_part_1_batch.append(f"Relationship Analysis: {aug_rel}")
+                texts_part_2_batch.append(f"Survival Risk Analysis: {aug_surv}")
+            
             # --- Encoding ---
             # _encode_text handles list inputs efficiently
             feats_1_list = encoder._encode_text(texts_part_1_batch)
-
+            feats_2_list = encoder._encode_text(texts_part_2_batch)
+            
+            # --- Combine Results ---
+            knowledge_list = []
+            
+            # Zip original + augmented results together
+            for f1, f2 in zip(feats_1_list, feats_2_list):
+                # Concatenate features: (N1+N2, 768)
+                combined_tensor = torch.cat([f1, f2], dim=0)
+                knowledge_list.append(combined_tensor)
+            
             # Store in the structure requested: List[combined_tensor, ...]
             # Index 0 is original, Index 1-10 are augmented
             patient_features[modal_key] = {
                 "score": score,
-                "knowledge_list": feats_1_list,
+                "knowledge_list": knowledge_list,
             }
             
         final_dataset[patient_id] = patient_features
@@ -214,15 +232,19 @@ def process_analysis_file(json_path: str, output_path: str, max_augmentations: i
 
 
 if __name__ == "__main__":
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+    
     # File Paths
     INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_deepseek.json"
     OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge_deepseek.pkl"
-    
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_kimi.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge_kimi.pkl"
 
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_qwen.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge_qwen.pkl"
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_qwen.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge_qwen.pkl"
+
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/medical_analysis_kimi.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-KIRC/processed/features_medical_knowledge_kimi.pkl"
     
     # Run
-    process_analysis_file(INPUT_FILE, OUTPUT_FILE)
+    process_analysis_file(INPUT_FILE, OUTPUT_FILE, max_augmentations=20)
