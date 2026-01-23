@@ -29,7 +29,11 @@ MANIFEST
 *Trash*
 *Checkpoints*/*
 Data-SOTA-Backup
+Data-Current-Backup
+Data-OLD-SOTA-Backup
 Data-CLS-Correlations
+Data-Correlation
+Data-Survival
 Data/draw
 Data/TCGA-LUAD/*
 Data/TCGA-LUSC/*

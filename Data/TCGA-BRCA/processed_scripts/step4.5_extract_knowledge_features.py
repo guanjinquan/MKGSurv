@@ -237,14 +237,14 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     
     # File Paths
-    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_deepseek.json"
-    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge_deepseek.pkl"
+    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_deepseek.json"
+    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge_deepseek.pkl"
 
     # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_qwen.json"
     # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge_qwen.pkl"
 
-    # INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_kimi.json"
-    # OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge_kimi.pkl"
+    INPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/medical_analysis_kimi.json"
+    OUTPUT_FILE = "/home/Guanjq/NewWork/MedAlignFusion/Data/TCGA-BRCA/processed/features_medical_knowledge_kimi.pkl"
     
     # Run
     process_analysis_file(INPUT_FILE, OUTPUT_FILE, max_augmentations=20)

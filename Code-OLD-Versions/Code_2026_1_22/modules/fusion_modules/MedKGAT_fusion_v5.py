@@ -142,19 +142,14 @@ class IntraGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.intra_group_layer = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 2),
-            nn.LayerNorm(embed_dim * 2),
-            GELU(),
-            nn.Linear(embed_dim, embed_dim),
-            nn.Dropout(0.3),
-        )
+        self.intra_group_transformer = nn.ModuleList([
+            SafeCrossAttnEncoder(embed_dim, num_heads=8)
+            for _ in range(num_layers)
+        ])
         
     def forward(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
                 groups: List[List[int]]) -> List[torch.Tensor]:
-        """
-        执行组内交互。
-        """
+
         updated_embeddings = list(embeddings)
         
         for group_idx, group_indices in enumerate(groups):
@@ -178,7 +173,17 @@ class IntraGroupStep(nn.Module):
                 padding_mask[all_masked_rows, 0] = False
 
             # The TransformerEncoder handles num_layers internally
-            concat_feat = self.intra_group_layer(concat_feat)
+            for i in range(self.num_layers):
+                concat_feat = self.intra_group_transformer[i](
+                    query=concat_feat, 
+                    key=concat_feat, 
+                    value=concat_feat, 
+                    key_padding_mask=padding_mask
+                )
+
+                if all_masked_rows.any():
+                    concat_feat[all_masked_rows] = 0.0
+
             split_feats = torch.split(concat_feat, lengths, dim=1)
             
             for i, idx in enumerate(group_indices):
@@ -192,7 +197,7 @@ class InterGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.drop_path_ratio = 0.1
+        self.drop_path_ratio = 0.3
         
         # Knowledge Guided Graph Attention Network
         self.KG_GAT = nn.ModuleDict({
@@ -340,11 +345,11 @@ class InterGroupStep(nn.Module):
 
 # --- GlobalAggregator 模块 ---
 class GlobalAggregator(nn.Module):
-    def __init__(self, embed_dim: int): 
+    def __init__(self, embed_dim: int, max_groups: int): 
         super().__init__() 
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8) 
         self.post_fusion_norm = nn.LayerNorm(embed_dim) 
-        self.drop_path_ratio = 0.3
+        self.drop_path_ratio = min(1 / max_groups, 0.5)
         
     def forward(self, group_embeddings: List[torch.Tensor], 
                 group_masks: List[torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -417,7 +422,7 @@ class MedKGATFusion(nn.Module):
 
         self.intra_group_step = IntraGroupStep(embed_dim, num_intra_layers)
         self.inter_group_step = InterGroupStep(embed_dim, num_inter_layers)
-        self.global_aggregator = GlobalAggregator(embed_dim)
+        self.global_aggregator = GlobalAggregator(embed_dim, max_groups)
 
     def forward(
         self, 

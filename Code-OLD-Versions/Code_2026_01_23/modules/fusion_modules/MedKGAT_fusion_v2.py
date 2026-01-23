@@ -149,9 +149,7 @@ class IntraGroupStep(nn.Module):
         
     def forward(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
                 groups: List[List[int]]) -> List[torch.Tensor]:
-        """
-        执行组内交互。
-        """
+
         updated_embeddings = list(embeddings)
         
         for group_idx, group_indices in enumerate(groups):
@@ -199,7 +197,7 @@ class InterGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.drop_path_ratio = 0.1
+        self.drop_path_ratio = 0.2
         
         # Knowledge Guided Graph Attention Network
         self.KG_GAT = nn.ModuleDict({
@@ -350,16 +348,31 @@ class GlobalAggregator(nn.Module):
     def __init__(self, embed_dim: int): 
         super().__init__() 
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8) 
-        self.post_fusion_norm = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Dropout(0.25)
-        ) 
+        self.post_fusion_norm = nn.LayerNorm(embed_dim) 
+        self.drop_path_ratio = 0.2
         
     def forward(self, group_embeddings: List[torch.Tensor], 
                 group_masks: List[torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
 
+        current_group_masks = list(group_masks)  # Shallow copy
+        if self.training and self.drop_path_ratio > 0.0:
+            batch_size = group_embeddings[0].shape[0]
+            num_groups = len(group_embeddings)
+
+            drop_decision = torch.rand((batch_size, num_groups), device=group_embeddings[0].device) < self.drop_path_ratio
+            all_dropped = drop_decision.all(dim=1) 
+            if all_dropped.any():
+                indices_to_keep = torch.randint(0, num_groups, (all_dropped.sum(),), device=group_embeddings[0].device)
+                dropped_rows = torch.where(all_dropped)[0]
+                drop_decision[dropped_rows, indices_to_keep] = False
+
+            for g_idx in range(num_groups):
+                should_drop = drop_decision[:, g_idx].unsqueeze(1) 
+                keep_factor = (~should_drop).float()
+                current_group_masks[g_idx] = current_group_masks[g_idx] * keep_factor 
+
         global_concat = torch.cat(group_embeddings, dim=1)
-        global_mask = torch.cat(group_masks, dim=1)
+        global_mask = torch.cat(current_group_masks, dim=1)
         global_padding_mask = (global_mask == 0)
 
         all_masked_rows = global_padding_mask.all(dim=1)

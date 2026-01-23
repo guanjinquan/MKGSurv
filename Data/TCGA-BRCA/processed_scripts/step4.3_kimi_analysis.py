@@ -129,8 +129,8 @@ Strictly use the following names for modalities in the "modalPairs" list: "clini
     {{
         "modalPairs": ["Modal1", "Modal2"],
         "score": [An integer representing the association score between the two modalities of data, encouraged to be different among pairs],
-        "relationship":  [A text paragraph analyzing the association between the two modalities of data, including your perspective on their relationship as detailed as possible],
-        "survival": [A survival risk analysis integrating both modalities of data as detailed as possible],
+        "relationship":  [A detailed text paragraph analyzing the association between the two modalities of data, including your perspective on their relationship as detailed as possible],
+        "survival": [A detailed paragraph contains survival risk analysis integrating both modalities of data as detailed as possible],
     }},
     ... Output all modalpairs without overlap.
 ]

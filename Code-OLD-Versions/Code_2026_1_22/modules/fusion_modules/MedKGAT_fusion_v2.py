@@ -149,9 +149,7 @@ class IntraGroupStep(nn.Module):
         
     def forward(self, embeddings: List[torch.Tensor], masks: List[torch.Tensor], 
                 groups: List[List[int]]) -> List[torch.Tensor]:
-        """
-        执行组内交互。
-        """
+
         updated_embeddings = list(embeddings)
         
         for group_idx, group_indices in enumerate(groups):
@@ -199,7 +197,7 @@ class InterGroupStep(nn.Module):
     def __init__(self, embed_dim: int, num_layers: int = 1):
         super().__init__()
         self.num_layers = num_layers
-        self.drop_path_ratio = 0.1
+        self.drop_path_ratio = 0.2
         
         # Knowledge Guided Graph Attention Network
         self.KG_GAT = nn.ModuleDict({
@@ -351,7 +349,7 @@ class GlobalAggregator(nn.Module):
         super().__init__() 
         self.global_transformer = SafeCrossAttnEncoder(embed_dim, num_heads=8) 
         self.post_fusion_norm = nn.LayerNorm(embed_dim) 
-        self.drop_path_ratio = 0.3
+        self.drop_path_ratio = 0.2
         
     def forward(self, group_embeddings: List[torch.Tensor], 
                 group_masks: List[torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
