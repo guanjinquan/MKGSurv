@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from sksurv.metrics import concordance_index_censored, concordance_index_ipcw
 from sklearn.metrics import (
     accuracy_score, 
     precision_score, 
@@ -9,6 +8,17 @@ from sklearn.metrics import (
     roc_auc_score, 
     hamming_loss
 )
+
+try:
+    from sksurv.metrics import concordance_index_censored, concordance_index_ipcw
+except ImportError:
+    concordance_index_censored = None
+    concordance_index_ipcw = None
+
+try:
+    from lifelines.utils import concordance_index as lifelines_concordance_index
+except ImportError:
+    lifelines_concordance_index = None
 
 
 def recall_top_k(batch_treat_risks, labels, k):
@@ -161,12 +171,90 @@ def to_structured_array(labels):
     return y_structured
 
 
+def _concordance_from_arrays(event_observed, event_time, risk_scores):
+    numerator = 0.0
+    denominator = 0.0
+    n_samples = len(event_time)
+
+    for i in range(n_samples):
+        for j in range(i + 1, n_samples):
+            if event_time[i] < event_time[j] and event_observed[i]:
+                case_idx, control_idx = i, j
+            elif event_time[j] < event_time[i] and event_observed[j]:
+                case_idx, control_idx = j, i
+            elif event_time[i] == event_time[j] and event_observed[i] != event_observed[j]:
+                case_idx = i if event_observed[i] else j
+                control_idx = j if event_observed[i] else i
+            else:
+                continue
+
+            denominator += 1.0
+            if risk_scores[case_idx] > risk_scores[control_idx]:
+                numerator += 1.0
+            elif risk_scores[case_idx] == risk_scores[control_idx]:
+                numerator += 0.5
+
+    if denominator == 0:
+        return 0.5
+    return numerator / denominator
+
+
+def _estimate_censoring_survival(train_event_observed, train_event_time, query_times):
+    censor_events = ~train_event_observed.astype(bool)
+    survival = 1.0
+    survival_before_time = {}
+
+    for time in np.sort(np.unique(train_event_time)):
+        survival_before_time[time] = survival
+        at_risk = np.sum(train_event_time >= time)
+        censored_at_time = np.sum((train_event_time == time) & censor_events)
+        if at_risk > 0:
+            survival *= 1.0 - censored_at_time / at_risk
+
+    return np.array([survival_before_time.get(time, survival) for time in query_times], dtype=float)
+
+
+def _ipcw_concordance_from_arrays(train_event_observed, train_event_time, test_event_observed, test_event_time, risk_scores):
+    censoring_survival = _estimate_censoring_survival(train_event_observed, train_event_time, test_event_time)
+    numerator = 0.0
+    denominator = 0.0
+    n_samples = len(test_event_time)
+
+    for i in range(n_samples):
+        if not test_event_observed[i] or censoring_survival[i] <= 0:
+            continue
+
+        weight = 1.0 / (censoring_survival[i] ** 2)
+        for j in range(n_samples):
+            if i == j or not (test_event_time[i] < test_event_time[j]):
+                continue
+
+            denominator += weight
+            if risk_scores[i] > risk_scores[j]:
+                numerator += weight
+            elif risk_scores[i] == risk_scores[j]:
+                numerator += 0.5 * weight
+
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
+
+
 def calculate_c_index(event_observed, event_time, risk_scores):
     """
     计算 Harrell's C-index (标准 C-index)
     """
     if not isinstance(event_observed, np.ndarray) or event_observed.dtype != bool:
         event_observed = event_observed.astype(int).astype(bool)
+
+    if concordance_index_censored is None:
+        if lifelines_concordance_index is None:
+            return _concordance_from_arrays(event_observed, event_time, risk_scores)
+        try:
+            return lifelines_concordance_index(event_time, -risk_scores, event_observed)
+        except Exception as e:
+            print(f"[Harrell C-index Error] {e}")
+            return _concordance_from_arrays(event_observed, event_time, risk_scores)
 
     try:
         ci_tuple = concordance_index_censored(event_observed, event_time, risk_scores)
@@ -180,6 +268,19 @@ def calculate_ipcw_c_index(y_train, y_test, risk_scores):
     """
     计算 Uno's IPCW C-index
     """
+    if concordance_index_ipcw is None:
+        try:
+            return _ipcw_concordance_from_arrays(
+                y_train["event"],
+                y_train["time"],
+                y_test["event"],
+                y_test["time"],
+                risk_scores,
+            )
+        except Exception as e:
+            print(f"[IPCW C-index Error] {e}")
+            return 0.0
+
     try:
         # Uno's C-index
         uno_c, _, _, _, _ = concordance_index_ipcw(y_train, y_test, risk_scores)

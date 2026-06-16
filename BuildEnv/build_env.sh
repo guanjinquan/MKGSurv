@@ -1,7 +1,5 @@
-# conda env create -f  BuildEnv/env.yaml
-
-conda create -n surv_pred python=3.11 -y 
-source activate surv_pred
+conda env create --file  ./env.yaml
+source activate mkgsurv
 pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 conda install -c pytorch faiss-gpu
 pip install -r BuildEnv/requirements.txt

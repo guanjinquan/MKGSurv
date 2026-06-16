@@ -7,7 +7,11 @@ import numpy as np
 import random
 from modules.trainer import Trainer
 from modules.tester import Tester
-import swanlab
+
+try:
+    import swanlab
+except ImportError:
+    swanlab = None
 
 
 if __name__ == '__main__':

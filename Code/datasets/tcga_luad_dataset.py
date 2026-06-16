@@ -328,6 +328,7 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
                 pid_seed = int(pid_hash, 16) % (2**32)
 
             # 2. Create local generators
+            epsilon = 1e-2  # 1e-4 toolow
             rng = random.Random(pid_seed) # For python floats
             g = torch.Generator()         # For torch tensors
             g.manual_seed(pid_seed)
@@ -335,15 +336,12 @@ class TCGA_LUAD_Dataset(MultiModalDataset):
             for k, v in kdata.items():
                 # Determine score: if train, generate a random score seeded by PID
                 # otherwise use the existing score.
-                if self.mode != 'train':
-                    score_val = v['score']
-                else:
-                    score_val = rng.random() # Deterministic random value for this PID
+                score_val = v['score']
 
                 output_dict["medical-knowledge"][k] = {
                     "score": score_val,
                     # Use the generator 'g' for torch operations
-                    "knowledge": torch.randn((1, 768), generator=g) 
+                    "knowledge": epsilon * torch.randn((1, 768), generator=g) 
                 }
 
         # --- 2. Load Modalities ---

@@ -12,39 +12,58 @@ from torch.utils.data import Dataset
 
 
 # --- Task Modules ---
-from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
-from modules.task_modules.oscc_inhouse_survival_pred_gelu import OSCCSurvivalPred_GELU
+try:
+    from modules.task_modules.oscc_inhouse_survival_pred import OSCCSurvivalPred
+except ModuleNotFoundError:
+    OSCCSurvivalPred = None
+
+try:
+    from modules.task_modules.oscc_inhouse_survival_pred_gelu import OSCCSurvivalPred_GELU
+except ModuleNotFoundError:
+    OSCCSurvivalPred_GELU = None
+
 from modules.task_modules.tcga_luad_survival_pred import TCGA_LUAD_SurvivalPred
 from modules.task_modules.tcga_lusc_survival_pred import TCGA_LUSC_SurvivalPred
 from modules.task_modules.tcga_brca_survival_pred import TCGA_BRCA_SurvivalPred
 from modules.task_modules.tcga_kirc_survival_pred import TCGA_KIRC_SurvivalPred
 
 # --- Fusion Modules
-from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
-from modules.fusion_modules.simple_fusion import SimpleFusion
-from modules.fusion_modules.healnet_fusion import HealNetFusionModule
-from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
-from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
-from modules.fusion_modules.surv_path import SurvPath
-from modules.fusion_modules.MedKGAT_fusion import MedKGATFusion 
-# from modules.fusion_modules.MedKGAT_fusion_v1 import MedKGATFusion  as MedKGATFusion_v1
-# from modules.fusion_modules.MedKGAT_fusion_v2 import MedKGATFusion  as MedKGATFusion_v2
-# from modules.fusion_modules.MedKGAT_fusion_v3 import MedKGATFusion  as MedKGATFusion_v3
-# from modules.fusion_modules.MedKGAT_fusion_v4 import MedKGATFusion  as MedKGATFusion_v4
-# from modules.fusion_modules.MedKGAT_fusion_v5 import MedKGATFusion  as MedKGATFusion_v5
-# from modules.fusion_modules.MedKGAT_fusion_v6 import MedKGATFusion  as MedKGATFusion_v6
-from modules.fusion_modules.MedKGAT_fusion_without_intra import MedKGATFusion_without_intra
-from modules.fusion_modules.MedKGAT_fusion_without_inter import MedKGATFusion_without_inter
-from modules.fusion_modules.MedKGAT_fusion_no_loss import MedKGATFusion_no_loss
-from modules.fusion_modules.MedKGAT_fusion_no_edge import MedKGATFusion_no_edge
-from modules.fusion_modules.MedKGAT_fusion_only_msa import MedKGATFusion_group_msa
-from modules.fusion_modules.mome_fusion import MOME_fusion
+try:
+    from modules.fusion_modules.i2moe_fusion import I2MoEFusionModule
+except ModuleNotFoundError:
+    I2MoEFusionModule = None
 
+try:
+    from modules.fusion_modules.simple_fusion import SimpleFusion
+except ModuleNotFoundError:
+    SimpleFusion = None
 
-# --- Common Modules ---
-from modules.base_modules.align_utils import AlignmentModule
-from modules.base_modules.aggregation_utils import masked_mean_pool
-from modules.base_modules.multimodal_vib import TokenWiseMultiModalVIB
+try:
+    from modules.fusion_modules.healnet_fusion import HealNetFusionModule
+except ModuleNotFoundError:
+    HealNetFusionModule = None
+
+try:
+    from modules.fusion_modules.hgcn_fusion import HGCNFusionModule
+except ModuleNotFoundError:
+    HGCNFusionModule = None
+
+try:
+    from modules.fusion_modules.dimaf_fusion import DIMAFFusionModule
+except ModuleNotFoundError:
+    DIMAFFusionModule = None
+
+try:
+    from modules.fusion_modules.surv_path import SurvPath
+except ModuleNotFoundError:
+    SurvPath = None
+
+try:
+    from modules.fusion_modules.mome_fusion import MOME_fusion
+except ModuleNotFoundError:
+    MOME_fusion = None
+
+from modules.fusion_modules.mkgsurv_fusion import MKGSurvFusion 
 
 
 def GetModel(args, dataset):
@@ -59,7 +78,7 @@ def GetModel(args, dataset):
 
 
     # with_multimodal_align
-    if 'medkgat_fusion' in args.fusion_type:
+    if 'mkgsurv_fusion' in args.fusion_type:
         assert args.use_medical_knowledge == True, f"If you want to run random, else you must use medical knowledge"
 
         return ModelInterfaceWithMedicalKnowledge(
@@ -68,14 +87,27 @@ def GetModel(args, dataset):
             model_task=args.model_task, 
             fusion_type=args.fusion_type
         )
-    elif 'medkgat_random_fusion' in args.fusion_type:
-        args.use_medical_knowledge = False  # Asign False !!
+
+    # randomly initialize medical knowledge
+    elif 'mkgsurv_random_fusion' in args.fusion_type:
+        args.use_medical_knowledge == False  # Asign False !!
+
+        temp_fusion_type = args.fusion_type.replace("mkgsurv_random_fusion", "mkgsurv_fusion")
+        print("Using Random Knowledge, Model is:", temp_fusion_type)
 
         return ModelInterfaceWithMedicalKnowledge(
             args, 
             dataset,
             model_task=args.model_task, 
-            fusion_type='medkgat_fusion'
+            fusion_type=temp_fusion_type
+        )
+
+    elif "llm_baseline" in args.fusion_type:
+        return ModelInterfaceWithMedicalKnowledge(
+            args, 
+            dataset,
+            model_task=args.model_task, 
+            fusion_type=args.fusion_type
         )
 
     return ModelInterface(
@@ -112,8 +144,12 @@ class ModelInterface(nn.Module):
         #   1. self.task_head.embed_dim, 
         #   2. self.task_head.max_modalities_num
         if model_task == "oscc_inhouse":
+            if OSCCSurvivalPred is None:
+                raise ImportError("OSCCSurvivalPred is unavailable: modules.task_modules.oscc_inhouse_survival_pred is missing.")
             self.task_head = OSCCSurvivalPred(args, dataset=dataset)
         elif model_task == "oscc_inhouse_gelu":
+            if OSCCSurvivalPred_GELU is None:
+                raise ImportError("OSCCSurvivalPred_GELU is unavailable: modules.task_modules.oscc_inhouse_survival_pred_gelu is missing.")
             self.task_head = OSCCSurvivalPred_GELU(args, dataset=dataset)
         elif model_task == "tcga_luad":
             self.task_head = TCGA_LUAD_SurvivalPred(args, dataset=dataset)
@@ -135,43 +171,35 @@ class ModelInterface(nn.Module):
         
         # --- 2. Instantiate fusion sub-modules ---
         if self.fusion_type == 'i2moe':
+            if I2MoEFusionModule is None:
+                raise ImportError("I2MoEFusionModule is unavailable because an optional dependency is missing.")
             self.fusion_module = I2MoEFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'healnet':
+            if HealNetFusionModule is None:
+                raise ImportError("HealNetFusionModule is unavailable because an optional dependency is missing.")
             self.fusion_module = HealNetFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type in ['concat', 'msa', 'lmf', 'gated']:
+            if SimpleFusion is None:
+                raise ImportError("SimpleFusion is unavailable because an optional dependency is missing.")
             self.fusion_module = SimpleFusion(args, embed_dim=self.task_head.embed_dim, fusion_type=self.fusion_type, max_modalities=self.max_modalities)
         elif self.fusion_type == 'hgcn_fusion':
+            if HGCNFusionModule is None:
+                raise ImportError("HGCNFusionModule is unavailable because an optional dependency is missing.")
             self.fusion_module = HGCNFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "dimaf_fusion":
+            if DIMAFFusionModule is None:
+                raise ImportError("DIMAFFusionModule is unavailable because an optional dependency is missing.")
             self.fusion_module = DIMAFFusionModule(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == "surv_path":
+            if SurvPath is None:
+                raise ImportError("SurvPath is unavailable because an optional dependency is missing.")
             self.fusion_module = SurvPath(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
         elif self.fusion_type == 'mome_fusion':
+            if MOME_fusion is None:
+                raise ImportError("MOME_fusion is unavailable because an optional dependency is missing.")
             self.fusion_module = MOME_fusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion':
-            self.fusion_module = MedKGATFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v1':
-        #     self.fusion_module = MedKGATFusion_v1(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v2':
-        #     self.fusion_module = MedKGATFusion_v2(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v3':
-        #     self.fusion_module = MedKGATFusion_v3(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v4':
-        #     self.fusion_module = MedKGATFusion_v4(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v5':
-        #     self.fusion_module = MedKGATFusion_v5(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        # elif self.fusion_type == 'medkgat_fusion_v6':
-        #     self.fusion_module = MedKGATFusion_v6(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_msa':
-            self.fusion_module = MedKGATFusion_group_msa(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_no_loss':
-            self.fusion_module = MedKGATFusion_no_loss(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
-        elif self.fusion_type == 'medkgat_fusion_without_intra':
-            self.fusion_module = MedKGATFusion_without_intra(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_without_inter':
-            self.fusion_module = MedKGATFusion_without_inter(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
-        elif self.fusion_type == 'medkgat_fusion_no_edge':
-            self.fusion_module = MedKGATFusion_no_edge(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities)
+        elif self.fusion_type == 'mkgsurv_fusion':
+            self.fusion_module = MKGSurvFusion(args, embed_dim=self.task_head.embed_dim, max_modalities=self.max_modalities, max_groups=self.max_groups)
         else:
             raise ValueError(f"Unknown fusion type: {self.fusion_type}")
 
@@ -377,6 +405,9 @@ class ModelInterfaceWithMedicalKnowledge(ModelInterface):
         fusion_losses_dict = fusion_output.get("loss_dict") or {}
         total_fusion_loss = fusion_losses_dict.get('total_loss', torch.tensor(0.0, device=device))
 
+        # keep other infomation in fusion_output dict
+        other_info = {k: v for k, v in fusion_output.items() if k not in ['fused_embedding', 'loss_dict']}
+
         assert not torch.any(torch.isnan(fused_embedding)).item(), "Fused embedding contains NaN values"
         
         # --- Step 3: Multimodal Task Prediction ---
@@ -400,4 +431,4 @@ class ModelInterfaceWithMedicalKnowledge(ModelInterface):
         all_losses = {'total_loss': total_loss, 'fusion_loss': total_fusion_loss, 'task_loss': multimodal_task_loss}  # For detailed logging
         all_losses.update({f'fusion_{k}': v for k, v in fusion_losses_dict.items() if 'total' not in k})
         
-        return {"logits": final_logits, "losses": all_losses}
+        return {"logits": final_logits, "losses": all_losses, "other_info": other_info}

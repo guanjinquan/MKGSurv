@@ -1,0 +1,743 @@
+settings : Namespace(ckpt_path='../Checkpoints/', log_path='../Results', load_pth_path=None, points_save_path=None, view_groups_attention_path=None, dataset='tcga_brca', modalities='genomics-genomics,image-pathology', debug_mode=False, fold=2, do_mixup=False, knowledge_source='kimi', use_medical_knowledge=True, model_task='tcga_brca', decode_task='surv_pred', image_aggregater='panther', fusion_type='medkgat_fusion', with_multimodal_align=False, with_multimodal_vib=False, num_layers=3, kl_loss_weight=7, runs_id='tcga_brca_run004-new-knowledge-kimi', acc_step=1, gpu_id='0', seed=109, learning_rate=5e-05, weight_decay=0.0001, num_epochs=60, batch_size=64, optimizer='AdamW', scheduler='CosineAnnealingLR', use_amp=False, use_ddp=False, freezed_backbone=False, finetune=False, continue_training=False, draw_kaplan_meier=False)
+valid epoch_0 : {'loss_total_loss_valid': 0.5428028093142943, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5428028093142943, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5068493150684932, 'C-Index-IPCW_valid': 0.4937689156083728}
+test epoch_0 : {'loss_total_loss_test': 0.6768702921796251, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.6768702921796251, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.4584837545126354, 'C-Index-IPCW_test': 0.4189952395476529}
+Best Score : 0
+Best Metrics : {}
+train epoch_1 : {'loss_total_loss_train': 3.094851948998191, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 3.094851948998191, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.6791113925509248, 'C-Index-IPCW_train': 0.6688726433747664}
+valid epoch_1 : {'loss_total_loss_valid': 0.5423792194236409, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5423792194236409, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5120678408349641, 'C-Index-IPCW_valid': 0.4908052174405748}
+test epoch_1 : {'loss_total_loss_test': 0.7118596542965282, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.7118596542965282, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6504211793020457, 'C-Index-IPCW_test': 0.5576495746192625}
+Best Score : 0
+Best Metrics : {}
+train epoch_2 : {'loss_total_loss_train': 2.1515078761360864, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 2.1515078761360864, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9073879184442393, 'C-Index-IPCW_train': 0.898568613468697}
+valid epoch_2 : {'loss_total_loss_valid': 0.6472566601904955, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.6472566601904955, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5518491991640287}
+test epoch_2 : {'loss_total_loss_test': 0.8155995404178445, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8155995404178445, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6492178098676293, 'C-Index-IPCW_test': 0.5122233896013463}
+Best Score : 0
+Best Metrics : {}
+train epoch_3 : {'loss_total_loss_train': 1.7824296815828844, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.7824296815828844, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9527528214311954, 'C-Index-IPCW_train': 0.9455589222096006}
+valid epoch_3 : {'loss_total_loss_valid': 0.5508097884329882, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5508097884329882, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6353555120678408, 'C-Index-IPCW_valid': 0.5886919647500817}
+test epoch_3 : {'loss_total_loss_test': 0.8965273628180678, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8965273628180678, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6985559566787004, 'C-Index-IPCW_test': 0.5439128759346306}
+Best Score : 0
+Best Metrics : {}
+train epoch_4 : {'loss_total_loss_train': 1.6197174977172504, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.6197174977172504, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9722870467619416, 'C-Index-IPCW_train': 0.9706145943346196}
+valid epoch_4 : {'loss_total_loss_valid': 0.68663024563681, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.68663024563681, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6621004566210046, 'C-Index-IPCW_valid': 0.5842554811000933}
+test epoch_4 : {'loss_total_loss_test': 0.825199999592521, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.825199999592521, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.703971119133574, 'C-Index-IPCW_test': 0.6821595983756581}
+Best Score : 0
+Best Metrics : {}
+train epoch_5 : {'loss_total_loss_train': 1.5298413254997947, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.5298413254997947, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9766430796375417, 'C-Index-IPCW_train': 0.9734540951811059}
+valid epoch_5 : {'loss_total_loss_valid': 0.767305542122234, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.767305542122234, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6777560339204175, 'C-Index-IPCW_valid': 0.5892324400776494}
+test epoch_5 : {'loss_total_loss_test': 0.8097813481634314, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8097813481634314, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7274368231046932, 'C-Index-IPCW_test': 0.6657836994038413}
+Best Score : 0
+Best Metrics : {}
+train epoch_6 : {'loss_total_loss_train': 1.5258028994907031, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.5258028994907031, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9700500935851984, 'C-Index-IPCW_train': 0.9522623356446237}
+valid epoch_6 : {'loss_total_loss_valid': 0.7843649956313047, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.7843649956313047, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6679712981082844, 'C-Index-IPCW_valid': 0.5930648685508106}
+test epoch_6 : {'loss_total_loss_test': 1.0819044275717302, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.0819044275717302, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6835138387484958, 'C-Index-IPCW_test': 0.5890938040274399}
+Best Score : 0
+Best Metrics : {}
+train epoch_7 : {'loss_total_loss_train': 1.4379483542659066, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4379483542659066, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.974948450175198, 'C-Index-IPCW_train': 0.9735791199224542}
+valid epoch_7 : {'loss_total_loss_valid': 0.703180040825497, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.703180040825497, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.7018917155903457, 'C-Index-IPCW_valid': 0.6107360445617033}
+test epoch_7 : {'loss_total_loss_test': 0.9423989057540894, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9423989057540894, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7454873646209387, 'C-Index-IPCW_test': 0.7116343152575774}
+Best Score : 0
+Best Metrics : {}
+train epoch_8 : {'loss_total_loss_train': 1.4058319926261902, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4058319926261902, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9817835261507332, 'C-Index-IPCW_train': 0.9825939284268722}
+valid epoch_8 : {'loss_total_loss_valid': 1.0940119786696, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0940119786696, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6692759295499021, 'C-Index-IPCW_valid': 0.61188838598347}
+test epoch_8 : {'loss_total_loss_test': 1.3498933748765425, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.3498933748765425, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6690734055354994, 'C-Index-IPCW_test': 0.6135662517450007}
+Best Score : 0
+Best Metrics : {}
+train epoch_9 : {'loss_total_loss_train': 1.3989087803797289, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3989087803797289, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.984839779285877, 'C-Index-IPCW_train': 0.9853786660111453}
+valid epoch_9 : {'loss_total_loss_valid': 0.811280994252725, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.811280994252725, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+test epoch_9 : {'loss_total_loss_test': 1.2241144884716382, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2241144884716382, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7214199759326113, 'C-Index-IPCW_test': 0.6886605778755349}
+Best Score : 0
+Best Metrics : {}
+train epoch_10 : {'loss_total_loss_train': 1.387483756650578, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.387483756650578, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9893374717671877, 'C-Index-IPCW_train': 0.990249260201806}
+valid epoch_10 : {'loss_total_loss_valid': 0.9131317612799731, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.9131317612799731, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6790606653620352, 'C-Index-IPCW_valid': 0.6246164878954171}
+test epoch_10 : {'loss_total_loss_test': 1.2278779257427563, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2278779257427563, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7057761732851986, 'C-Index-IPCW_test': 0.697342757922548}
+Best Score : 0
+Best Metrics : {}
+train epoch_11 : {'loss_total_loss_train': 1.3883442661978982, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3883442661978982, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9879531191277997, 'C-Index-IPCW_train': 0.9878677315316685}
+valid epoch_11 : {'loss_total_loss_valid': 0.843641384081407, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.843641384081407, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6797129810828441, 'C-Index-IPCW_valid': 0.5891846341875308}
+test epoch_11 : {'loss_total_loss_test': 1.173531245101582, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.173531245101582, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7256317689530686, 'C-Index-IPCW_test': 0.6520137511732126}
+Best Score : 0
+Best Metrics : {}
+train epoch_12 : {'loss_total_loss_train': 1.3879350179975682, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3879350179975682, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9911912039956466, 'C-Index-IPCW_train': 0.9921504412147608}
+valid epoch_12 : {'loss_total_loss_valid': 1.0451951338486238, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0451951338486238, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6666666666666666, 'C-Index-IPCW_valid': 0.6175754067785312}
+test epoch_12 : {'loss_total_loss_test': 1.5163211985067888, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.5163211985067888, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6780986762936222, 'C-Index-IPCW_test': 0.6496704539934625}
+Best Score : 0
+Best Metrics : {}
+train epoch_13 : {'loss_total_loss_train': 1.3731668103824963, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3731668103824963, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9851738422366572, 'C-Index-IPCW_train': 0.9833463565588575}
+valid epoch_13 : {'loss_total_loss_valid': 1.4198004264723172, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4198004264723172, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6288323548597521, 'C-Index-IPCW_valid': 0.6129400089780246}
+test epoch_13 : {'loss_total_loss_test': 1.7169401916590603, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7169401916590603, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.697352587244284, 'C-Index-IPCW_test': 0.6458249687659136}
+Best Score : 0
+Best Metrics : {}
+train epoch_14 : {'loss_total_loss_train': 1.3544195050543004, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3544195050543004, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9854894048657961, 'C-Index-IPCW_train': 0.982232829926798}
+valid epoch_14 : {'loss_total_loss_valid': 1.0600137520496817, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0600137520496817, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5709575357520972}
+test epoch_14 : {'loss_total_loss_test': 1.3202111233364453, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.3202111233364453, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7099879663056559, 'C-Index-IPCW_test': 0.6603697417908668}
+Best Score : 0
+Best Metrics : {}
+train epoch_15 : {'loss_total_loss_train': 1.3241042657331987, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3241042657331987, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.991532138494465, 'C-Index-IPCW_train': 0.9917653906822251}
+valid epoch_15 : {'loss_total_loss_valid': 1.3264387547969818, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3264387547969818, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6288323548597521, 'C-Index-IPCW_valid': 0.5749015691591782}
+test epoch_15 : {'loss_total_loss_test': 1.5004951628771694, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.5004951628771694, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6925391095066186, 'C-Index-IPCW_test': 0.6572110144442643}
+Best Score : 0.6288323548597521
+Best Metrics : {'C-Index_valid': 0.6288323548597521, 'C-Index-IPCW_valid': 0.5749015691591782}
+train epoch_16 : {'loss_total_loss_train': 1.3033612072467804, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3033612072467804, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9919793176975663, 'C-Index-IPCW_train': 0.9925032702725889}
+valid epoch_16 : {'loss_total_loss_valid': 1.3551534563302994, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3551534563302994, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6327462491846053, 'C-Index-IPCW_valid': 0.6084914478600462}
+test epoch_16 : {'loss_total_loss_test': 1.5613488229838284, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.5613488229838284, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6793020457280385, 'C-Index-IPCW_test': 0.6405920324187119}
+Best Score : 0.6327462491846053
+Best Metrics : {'C-Index_valid': 0.6327462491846053, 'C-Index-IPCW_valid': 0.6084914478600462}
+train epoch_17 : {'loss_total_loss_train': 1.3008617758750916, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3008617758750916, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9902128012711306, 'C-Index-IPCW_train': 0.9907419823246512}
+valid epoch_17 : {'loss_total_loss_valid': 1.321897346865047, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.321897346865047, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+test epoch_17 : {'loss_total_loss_test': 1.9701767042279243, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9701767042279243, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6576413959085439, 'C-Index-IPCW_test': 0.6426884636968097}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_18 : {'loss_total_loss_train': 1.2989828478206287, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2989828478206287, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9933044693077021, 'C-Index-IPCW_train': 0.9934803620317726}
+valid epoch_18 : {'loss_total_loss_valid': 1.112971269948916, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.112971269948916, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6340508806262231, 'C-Index-IPCW_valid': 0.596533130120386}
+test epoch_18 : {'loss_total_loss_test': 1.7392584593458609, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7392584593458609, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6714801444043321, 'C-Index-IPCW_test': 0.6422685164272759}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_19 : {'loss_total_loss_train': 1.2973898378285496, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2973898378285496, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9932743402124576, 'C-Index-IPCW_train': 0.9934791400409754}
+valid epoch_19 : {'loss_total_loss_valid': 1.860315126451579, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.860315126451579, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.604044357469015, 'C-Index-IPCW_valid': 0.5655412941435362}
+test epoch_19 : {'loss_total_loss_test': 2.4116131067276, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4116131067276, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6726835138387485, 'C-Index-IPCW_test': 0.6296382800892317}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_20 : {'loss_total_loss_train': 1.3013197291981091, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3013197291981091, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9930607936426552, 'C-Index-IPCW_train': 0.9940853334798911}
+valid epoch_20 : {'loss_total_loss_valid': 1.8249258304184133, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.8249258304184133, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6066536203522505, 'C-Index-IPCW_valid': 0.5793677731473631}
+test epoch_20 : {'loss_total_loss_test': 2.174728175455874, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.174728175455874, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.6329383809453127}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_21 : {'loss_total_loss_train': 1.2888367636637255, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2888367636637255, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9932109105382589, 'C-Index-IPCW_train': 0.9938067295486708}
+valid epoch_21 : {'loss_total_loss_valid': 1.4991640868512066, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4991640868512066, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6112198303979126, 'C-Index-IPCW_valid': 0.5864500056335434}
+test epoch_21 : {'loss_total_loss_test': 1.906611483882774, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.906611483882774, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6793020457280385, 'C-Index-IPCW_test': 0.6247917378976097}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_22 : {'loss_total_loss_train': 1.3114723807031459, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3114723807031459, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9928683902975856, 'C-Index-IPCW_train': 0.9935194181737989}
+valid epoch_22 : {'loss_total_loss_valid': 1.4661525095050985, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4661525095050985, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6210045662100456, 'C-Index-IPCW_valid': 0.5902229189676974}
+test epoch_22 : {'loss_total_loss_test': 1.7830993194471707, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7830993194471707, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.6434543101984299}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_23 : {'loss_total_loss_train': 1.2877157330513, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2877157330513, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9935862027772683, 'C-Index-IPCW_train': 0.994300443853466}
+valid epoch_23 : {'loss_total_loss_valid': 1.823012794960629, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.823012794960629, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6118721461187214, 'C-Index-IPCW_valid': 0.5892117009472753}
+test epoch_23 : {'loss_total_loss_test': 2.129763838919726, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.129763838919726, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6853188929001204, 'C-Index-IPCW_test': 0.6468041479554391}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_24 : {'loss_total_loss_train': 1.29104791988026, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.29104791988026, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9933499272408779, 'C-Index-IPCW_train': 0.9944361447366675}
+valid epoch_24 : {'loss_total_loss_valid': 1.4595339948480779, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4595339948480779, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6125244618395304, 'C-Index-IPCW_valid': 0.5638627678376917}
+test epoch_24 : {'loss_total_loss_test': 1.7035021402619102, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7035021402619102, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6799037304452467, 'C-Index-IPCW_test': 0.6160858274045451}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_25 : {'loss_total_loss_train': 1.2721953662959011, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2721953662959011, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9942093993262712, 'C-Index-IPCW_train': 0.9949007104038456}
+valid epoch_25 : {'loss_total_loss_valid': 2.1831696832721885, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1831696832721885, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.604044357469015, 'C-Index-IPCW_valid': 0.5260114777732223}
+test epoch_25 : {'loss_total_loss_test': 2.4763799380849707, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4763799380849707, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6847172081829122, 'C-Index-IPCW_test': 0.6262184067981347}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_26 : {'loss_total_loss_train': 1.351297457109798, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.351297457109798, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9864688647515486, 'C-Index-IPCW_train': 0.9840011161587603}
+valid epoch_26 : {'loss_total_loss_valid': 1.6755370220000094, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6755370220000094, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5733855185909981, 'C-Index-IPCW_valid': 0.5372812378724342}
+test epoch_26 : {'loss_total_loss_test': 1.9402244768359445, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9402244768359445, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.674488567990373, 'C-Index-IPCW_test': 0.6856177398925505}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_27 : {'loss_total_loss_train': 1.2702401984821667, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2702401984821667, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9922388507811629, 'C-Index-IPCW_train': 0.9932137315054702}
+valid epoch_27 : {'loss_total_loss_valid': 2.151554833758961, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.151554833758961, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5518590998043053, 'C-Index-IPCW_valid': 0.4936409649124309}
+test epoch_27 : {'loss_total_loss_test': 2.1734992333433847, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.1734992333433847, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6889290012033694, 'C-Index-IPCW_test': 0.6874763872457963}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_28 : {'loss_total_loss_train': 1.2540287212892012, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2540287212892012, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9953083184317647, 'C-Index-IPCW_train': 0.9963631914270468}
+valid epoch_28 : {'loss_total_loss_valid': 2.390481477433985, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.390481477433985, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5590345727332029, 'C-Index-IPCW_valid': 0.49205591771767054}
+test epoch_28 : {'loss_total_loss_test': 2.461905089291659, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.461905089291659, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6823104693140795, 'C-Index-IPCW_test': 0.6696350796354373}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_29 : {'loss_total_loss_train': 1.2694944007830187, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2694944007830187, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9952359028870544, 'C-Index-IPCW_train': 0.99558826872872}
+valid epoch_29 : {'loss_total_loss_valid': 1.6426440514624119, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6426440514624119, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5805609915198956, 'C-Index-IPCW_valid': 0.5614597683570832}
+test epoch_29 : {'loss_total_loss_test': 1.8934656788002362, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.8934656788002362, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6762936221419976, 'C-Index-IPCW_test': 0.6578131795327626}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_30 : {'loss_total_loss_train': 1.245563572103327, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.245563572103327, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995076271540321, 'C-Index-IPCW_train': 0.9960776805410175}
+valid epoch_30 : {'loss_total_loss_valid': 2.355275339700959, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.355275339700959, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5759947814742336, 'C-Index-IPCW_valid': 0.5369113643307613}
+test epoch_30 : {'loss_total_loss_test': 2.5940925614400343, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5940925614400343, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6997593261131168, 'C-Index-IPCW_test': 0.6890622429860447}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_31 : {'loss_total_loss_train': 1.2619690597057343, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2619690597057343, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9944372175727684, 'C-Index-IPCW_train': 0.9949296983525057}
+valid epoch_31 : {'loss_total_loss_valid': 2.1722756028175354, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1722756028175354, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5740378343118069, 'C-Index-IPCW_valid': 0.5302297108047495}
+test epoch_31 : {'loss_total_loss_test': 2.252442966130647, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.252442966130647, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.697352587244284, 'C-Index-IPCW_test': 0.6543959378057415}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_32 : {'loss_total_loss_train': 1.2361377748576077, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2361377748576077, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995948429560554, 'C-Index-IPCW_train': 0.9967006044905016}
+valid epoch_32 : {'loss_total_loss_valid': 2.2117974649776113, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.2117974649776113, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5772994129158513, 'C-Index-IPCW_valid': 0.5327189679502004}
+test epoch_32 : {'loss_total_loss_test': 2.073943795128302, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.073943795128302, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6807450064563587}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_33 : {'loss_total_loss_train': 1.247629929672588, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.247629929672588, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9960848033600813, 'C-Index-IPCW_train': 0.9968570809605368}
+valid epoch_33 : {'loss_total_loss_valid': 2.140598950060931, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.140598950060931, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.478929530868511}
+test epoch_33 : {'loss_total_loss_test': 2.177029027180238, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.177029027180238, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6925391095066186, 'C-Index-IPCW_test': 0.656699446783566}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_34 : {'loss_total_loss_train': 1.2487020600925793, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2487020600925793, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.994611649176815, 'C-Index-IPCW_train': 0.994878707003405}
+valid epoch_34 : {'loss_total_loss_valid': 2.132889262654565, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.132889262654565, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.5377709571099054}
+test epoch_34 : {'loss_total_loss_test': 2.0680788349021566, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.0680788349021566, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6805054151624549, 'C-Index-IPCW_test': 0.6273927177472824}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_35 : {'loss_total_loss_train': 1.2438947287472812, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2438947287472812, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9955139362922923, 'C-Index-IPCW_train': 0.9965712028441251}
+valid epoch_35 : {'loss_total_loss_valid': 2.2145289426500145, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.2145289426500145, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5714285714285714, 'C-Index-IPCW_valid': 0.5531510287593644}
+test epoch_35 : {'loss_total_loss_test': 2.2914659624749962, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.2914659624749962, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6919374247894103, 'C-Index-IPCW_test': 0.6792758487926468}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_36 : {'loss_total_loss_train': 1.236941017887809, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.236941017887809, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995586880417621, 'C-Index-IPCW_train': 0.9962470798637533}
+valid epoch_36 : {'loss_total_loss_valid': 2.38971270756288, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.38971270756288, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5629484670580561, 'C-Index-IPCW_valid': 0.4877329801182755}
+test epoch_36 : {'loss_total_loss_test': 2.528148266402158, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.528148266402158, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6913357400722022, 'C-Index-IPCW_test': 0.646697568230389}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_37 : {'loss_total_loss_train': 1.247660439122807, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.247660439122807, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995022356317252, 'C-Index-IPCW_train': 0.9961158976528605}
+valid epoch_37 : {'loss_total_loss_valid': 2.341689253395254, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.341689253395254, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5668623613829094, 'C-Index-IPCW_valid': 0.4905425628054285}
+test epoch_37 : {'loss_total_loss_test': 2.6530794975432483, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.6530794975432483, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6895306859205776, 'C-Index-IPCW_test': 0.6593759004509663}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_38 : {'loss_total_loss_train': 1.242245229807767, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.242245229807767, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9954108630717194, 'C-Index-IPCW_train': 0.996096866029061}
+valid epoch_38 : {'loss_total_loss_valid': 2.17725855383006, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.17725855383006, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5818656229615133, 'C-Index-IPCW_valid': 0.5082633731156594}
+test epoch_38 : {'loss_total_loss_test': 2.4684084721586923, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4684084721586923, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6913357400722022, 'C-Index-IPCW_test': 0.6487400369113547}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_39 : {'loss_total_loss_train': 1.2174639078703793, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2174639078703793, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9963237217995633, 'C-Index-IPCW_train': 0.996875411886313}
+valid epoch_39 : {'loss_total_loss_valid': 2.336389563300393, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.336389563300393, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5649054142204827, 'C-Index-IPCW_valid': 0.5057841784041517}
+test epoch_39 : {'loss_total_loss_test': 2.5745213492350145, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5745213492350145, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6877256317689531, 'C-Index-IPCW_test': 0.66128484512723}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_40 : {'loss_total_loss_train': 1.2418674311854623, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2418674311854623, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9963105072841052, 'C-Index-IPCW_train': 0.9970896510624577}
+valid epoch_40 : {'loss_total_loss_valid': 2.4600804150104523, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.4600804150104523, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5701239399869537, 'C-Index-IPCW_valid': 0.5125018397204381}
+test epoch_40 : {'loss_total_loss_test': 2.810959607362747, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.810959607362747, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.65655988116994}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_41 : {'loss_total_loss_train': 1.2501757605509325, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2501757605509325, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9956672246716061, 'C-Index-IPCW_train': 0.9967158702617195}
+valid epoch_41 : {'loss_total_loss_valid': 2.245683252811432, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.245683252811432, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5694716242661448, 'C-Index-IPCW_valid': 0.5582486106639384}
+test epoch_41 : {'loss_total_loss_test': 2.5565539327534763, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5565539327534763, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6871239470517448, 'C-Index-IPCW_test': 0.6758311489274754}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_42 : {'loss_total_loss_train': 1.233962514183738, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.233962514183738, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9956037949974074, 'C-Index-IPCW_train': 0.9965411411865098}
+valid epoch_42 : {'loss_total_loss_valid': 2.456143693490462, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.456143693490462, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5577299412915852, 'C-Index-IPCW_valid': 0.48639774123790536}
+test epoch_42 : {'loss_total_loss_test': 2.5989631461826237, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5989631461826237, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6544217870039193}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+train epoch_43 : {'loss_total_loss_train': 1.244234635071321, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.244234635071321, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9964569241153807, 'C-Index-IPCW_train': 0.9971945605326058}
+valid epoch_43 : {'loss_total_loss_valid': 2.1220895404165443, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1220895404165443, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.565018340651634}
+test epoch_43 : {'loss_total_loss_test': 2.36083999005231, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.36083999005231, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6839262056401529}
+Best Score : 0.639921722113503
+Best Metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+settings : Namespace(ckpt_path='../Checkpoints/', log_path='../Results', load_pth_path=None, points_save_path=None, view_groups_attention_path=None, dataset='tcga_brca', modalities='genomics-genomics,image-pathology', debug_mode=False, fold=2, do_mixup=False, knowledge_source='kimi', use_medical_knowledge=True, model_task='tcga_brca', decode_task='surv_pred', image_aggregater='panther', fusion_type='medkgat_fusion', with_multimodal_align=False, with_multimodal_vib=False, num_layers=3, kl_loss_weight=7, runs_id='tcga_brca_run004-new-knowledge-kimi', acc_step=1, gpu_id='1', seed=109, learning_rate=5e-05, weight_decay=0.0001, num_epochs=60, batch_size=64, optimizer='AdamW', scheduler='CosineAnnealingLR', use_amp=False, use_ddp=False, freezed_backbone=False, finetune=False, continue_training=False, draw_kaplan_meier=False)
+valid epoch_0 : {'loss_total_loss_valid': 0.5428028093142943, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5428028093142943, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5068493150684932, 'C-Index-IPCW_valid': 0.4937689156083728}
+test epoch_0 : {'loss_total_loss_test': 0.6768702921796251, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.6768702921796251, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.4584837545126354, 'C-Index-IPCW_test': 0.4189952395476529}
+Best Score : 0
+Best Metrics : {}
+train epoch_1 : {'loss_total_loss_train': 3.0948519815098154, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 3.0948519815098154, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.6791092782284515, 'C-Index-IPCW_train': 0.6688717665645659}
+valid epoch_1 : {'loss_total_loss_valid': 0.5423791435631838, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5423791435631838, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5120678408349641, 'C-Index-IPCW_valid': 0.4908052174405748}
+test epoch_1 : {'loss_total_loss_test': 0.7118594510988756, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.7118594510988756, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6504211793020457, 'C-Index-IPCW_test': 0.5576495746192625}
+Best Score : 0
+Best Metrics : {}
+train epoch_2 : {'loss_total_loss_train': 2.151507954705845, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 2.151507954705845, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9073879184442393, 'C-Index-IPCW_train': 0.898568613468697}
+valid epoch_2 : {'loss_total_loss_valid': 0.6472550271586939, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.6472550271586939, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6053489889106327, 'C-Index-IPCW_valid': 0.5518491991640287}
+test epoch_2 : {'loss_total_loss_test': 0.8155980516563762, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8155980516563762, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6492178098676293, 'C-Index-IPCW_test': 0.5122233896013463}
+Best Score : 0
+Best Metrics : {}
+train epoch_3 : {'loss_total_loss_train': 1.7824303805828094, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.7824303805828094, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9527517642699588, 'C-Index-IPCW_train': 0.9455555393418663}
+valid epoch_3 : {'loss_total_loss_valid': 0.5508120859211142, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.5508120859211142, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6353555120678408, 'C-Index-IPCW_valid': 0.5886919647500817}
+test epoch_3 : {'loss_total_loss_test': 0.8965310793031346, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8965310793031346, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6985559566787004, 'C-Index-IPCW_test': 0.5439128759346306}
+Best Score : 0
+Best Metrics : {}
+train epoch_4 : {'loss_total_loss_train': 1.619716839356856, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.619716839356856, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9722870467619416, 'C-Index-IPCW_train': 0.9706145943346196}
+valid epoch_4 : {'loss_total_loss_valid': 0.6866336261684244, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.6866336261684244, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6621004566210046, 'C-Index-IPCW_valid': 0.5842554811000933}
+test epoch_4 : {'loss_total_loss_test': 0.8252023675224998, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8252023675224998, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.703971119133574, 'C-Index-IPCW_test': 0.6821595983756581}
+Best Score : 0
+Best Metrics : {}
+train epoch_5 : {'loss_total_loss_train': 1.529841360720721, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.529841360720721, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.976642022476305, 'C-Index-IPCW_train': 0.9734532871083699}
+valid epoch_5 : {'loss_total_loss_valid': 0.7673061706803062, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.7673061706803062, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6777560339204175, 'C-Index-IPCW_valid': 0.5892324400776494}
+test epoch_5 : {'loss_total_loss_test': 0.8097796521403573, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.8097796521403573, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7274368231046932, 'C-Index-IPCW_test': 0.6657836994038413}
+Best Score : 0
+Best Metrics : {}
+train epoch_6 : {'loss_total_loss_train': 1.525802883234891, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.525802883234891, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9700495650045802, 'C-Index-IPCW_train': 0.952261820276385}
+valid epoch_6 : {'loss_total_loss_valid': 0.7843655835498463, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.7843655835498463, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6679712981082844, 'C-Index-IPCW_valid': 0.5930648685508106}
+test epoch_6 : {'loss_total_loss_test': 1.0819029835137455, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.0819029835137455, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6835138387484958, 'C-Index-IPCW_test': 0.5890938040274399}
+Best Score : 0
+Best Metrics : {}
+train epoch_7 : {'loss_total_loss_train': 1.4379471432078967, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4379471432078967, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9749479215945798, 'C-Index-IPCW_train': 0.973578540053392}
+valid epoch_7 : {'loss_total_loss_valid': 0.703183575110002, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.703183575110002, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.7018917155903457, 'C-Index-IPCW_valid': 0.6107360445617033}
+test epoch_7 : {'loss_total_loss_test': 0.9424014552073046, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 0.9424014552073046, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7454873646209387, 'C-Index-IPCW_test': 0.7116343152575774}
+Best Score : 0
+Best Metrics : {}
+train epoch_8 : {'loss_total_loss_train': 1.4058320170099086, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.4058320170099086, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9817840547313516, 'C-Index-IPCW_train': 0.9825942794902867}
+valid epoch_8 : {'loss_total_loss_valid': 1.0940078036351637, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0940078036351637, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6692759295499021, 'C-Index-IPCW_valid': 0.61188838598347}
+test epoch_8 : {'loss_total_loss_test': 1.3498859351331538, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.3498859351331538, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6690734055354994, 'C-Index-IPCW_test': 0.6135662517450007}
+Best Score : 0.6692759295499021
+Best Metrics : {'C-Index_valid': 0.6692759295499021, 'C-Index-IPCW_valid': 0.61188838598347}
+train epoch_9 : {'loss_total_loss_train': 1.3989086828448556, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3989086828448556, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9848418936083503, 'C-Index-IPCW_train': 0.9853803700697704}
+valid epoch_9 : {'loss_total_loss_valid': 0.8112782686948776, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.8112782686948776, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+test epoch_9 : {'loss_total_loss_test': 1.2241119200533086, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2241119200533086, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7214199759326113, 'C-Index-IPCW_test': 0.6886605778755349}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_10 : {'loss_total_loss_train': 1.3874835751273416, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3874835751273416, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9893369431865694, 'C-Index-IPCW_train': 0.9902485126064692}
+valid epoch_10 : {'loss_total_loss_valid': 0.9131316122683611, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.9131316122683611, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6790606653620352, 'C-Index-IPCW_valid': 0.6246164878954171}
+test epoch_10 : {'loss_total_loss_test': 1.2278873974626714, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.2278873974626714, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7057761732851986, 'C-Index-IPCW_test': 0.697342757922548}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_11 : {'loss_total_loss_train': 1.3883446942676196, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3883446942676196, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9879541762890364, 'C-Index-IPCW_train': 0.9878684917715375}
+valid epoch_11 : {'loss_total_loss_valid': 0.8436326872218739, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 0.8436326872218739, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6797129810828441, 'C-Index-IPCW_valid': 0.5891846341875308}
+test epoch_11 : {'loss_total_loss_test': 1.173524336381392, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.173524336381392, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7256317689530686, 'C-Index-IPCW_test': 0.6520137511732126}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_12 : {'loss_total_loss_train': 1.3879343704743818, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3879343704743818, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9911922611568833, 'C-Index-IPCW_train': 0.9921516452148501}
+valid epoch_12 : {'loss_total_loss_valid': 1.0451843413439663, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0451843413439663, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6666666666666666, 'C-Index-IPCW_valid': 0.6175754067785312}
+test epoch_12 : {'loss_total_loss_test': 1.5163188630884343, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.5163188630884343, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6780986762936222, 'C-Index-IPCW_test': 0.6496704539934625}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_13 : {'loss_total_loss_train': 1.3731670542196794, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3731670542196794, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9851743708172755, 'C-Index-IPCW_train': 0.9833467426307495}
+valid epoch_13 : {'loss_total_loss_valid': 1.4197527441111477, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4197527441111477, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6288323548597521, 'C-Index-IPCW_valid': 0.6129400089780246}
+test epoch_13 : {'loss_total_loss_test': 1.7169246971607208, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7169246971607208, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.697352587244284, 'C-Index-IPCW_test': 0.6458249687659136}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_14 : {'loss_total_loss_train': 1.3544200306588954, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3544200306588954, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9854899334464143, 'C-Index-IPCW_train': 0.9822331316119713}
+valid epoch_14 : {'loss_total_loss_valid': 1.0599929826461116, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.0599929826461116, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5709575357520972}
+test epoch_14 : {'loss_total_loss_test': 1.32020057331432, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.32020057331432, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.7099879663056559, 'C-Index-IPCW_test': 0.6603697417908668}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_15 : {'loss_total_loss_train': 1.3241048211401159, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3241048211401159, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.991532138494465, 'C-Index-IPCW_train': 0.9917654182961472}
+valid epoch_15 : {'loss_total_loss_valid': 1.326446529139172, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.326446529139172, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6288323548597521, 'C-Index-IPCW_valid': 0.5749015691591782}
+test epoch_15 : {'loss_total_loss_test': 1.500498361208222, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.500498361208222, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6925391095066186, 'C-Index-IPCW_test': 0.6572110144442643}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_16 : {'loss_total_loss_train': 1.3033614673397758, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3033614673397758, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9919798462781846, 'C-Index-IPCW_train': 0.9925037670035892}
+valid epoch_16 : {'loss_total_loss_valid': 1.3551482226360927, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3551482226360927, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6327462491846053, 'C-Index-IPCW_valid': 0.6084914478600462}
+test epoch_16 : {'loss_total_loss_test': 1.561347479170019, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.561347479170019, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6793020457280385, 'C-Index-IPCW_test': 0.6405920324187119}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_17 : {'loss_total_loss_train': 1.3008618625727566, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3008618625727566, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9902128012711306, 'C-Index-IPCW_train': 0.9907419823246512}
+valid epoch_17 : {'loss_total_loss_valid': 1.3218948204408993, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.3218948204408993, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.639921722113503, 'C-Index-IPCW_valid': 0.5980912690257768}
+test epoch_17 : {'loss_total_loss_test': 1.9701771885156631, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9701771885156631, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6576413959085439, 'C-Index-IPCW_test': 0.6426884636968097}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_18 : {'loss_total_loss_train': 1.2989829751578243, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2989829751578243, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9933049978883204, 'C-Index-IPCW_train': 0.9934809833664939}
+valid epoch_18 : {'loss_total_loss_valid': 1.1129704287106341, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.1129704287106341, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6340508806262231, 'C-Index-IPCW_valid': 0.596533130120386}
+test epoch_18 : {'loss_total_loss_test': 1.7392587262121113, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7392587262121113, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6714801444043321, 'C-Index-IPCW_test': 0.6422685164272759}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_19 : {'loss_total_loss_train': 1.297389867630872, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.297389867630872, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9932743402124576, 'C-Index-IPCW_train': 0.9934791400409754}
+valid epoch_19 : {'loss_total_loss_valid': 1.86030443825505, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.86030443825505, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.604044357469015, 'C-Index-IPCW_valid': 0.5655412941435362}
+test epoch_19 : {'loss_total_loss_test': 2.4116125093265013, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4116125093265013, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6726835138387485, 'C-Index-IPCW_test': 0.6296382800892317}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_20 : {'loss_total_loss_train': 1.3013198402794925, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3013198402794925, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9930607936426552, 'C-Index-IPCW_train': 0.9940853334798911}
+valid epoch_20 : {'loss_total_loss_valid': 1.8249190219423987, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.8249190219423987, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6066536203522505, 'C-Index-IPCW_valid': 0.5793677731473631}
+test epoch_20 : {'loss_total_loss_test': 2.1747251518748025, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.1747251518748025, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.6329383809453127}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_21 : {'loss_total_loss_train': 1.2888367094776847, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2888367094776847, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9932114391188772, 'C-Index-IPCW_train': 0.9938071922479136}
+valid epoch_21 : {'loss_total_loss_valid': 1.4991479231552645, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.4991479231552645, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6112198303979126, 'C-Index-IPCW_valid': 0.5864500056335434}
+test epoch_21 : {'loss_total_loss_test': 1.9066025028851898, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9066025028851898, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6793020457280385, 'C-Index-IPCW_test': 0.6247917378976097}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_22 : {'loss_total_loss_train': 1.3114725242961536, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3114725242961536, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9928683902975856, 'C-Index-IPCW_train': 0.9935194181737989}
+valid epoch_22 : {'loss_total_loss_valid': 1.46619159525091, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.46619159525091, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6210045662100456, 'C-Index-IPCW_valid': 0.5902229189676974}
+test epoch_22 : {'loss_total_loss_test': 1.7831162674860521, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7831162674860521, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.6434543101984299}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_23 : {'loss_total_loss_train': 1.2877154106443578, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2877154106443578, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9935867313578866, 'C-Index-IPCW_train': 0.9943008744663503}
+valid epoch_23 : {'loss_total_loss_valid': 1.8230111531235955, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.8230111531235955, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6118721461187214, 'C-Index-IPCW_valid': 0.5892117009472753}
+test epoch_23 : {'loss_total_loss_test': 2.129751346328042, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.129751346328042, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6853188929001204, 'C-Index-IPCW_test': 0.6468041479554391}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_24 : {'loss_total_loss_train': 1.2910478873686357, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2910478873686357, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9933499272408779, 'C-Index-IPCW_train': 0.9944361447366675}
+valid epoch_24 : {'loss_total_loss_valid': 1.459546304561875, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.459546304561875, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.6125244618395304, 'C-Index-IPCW_valid': 0.5638627678376917}
+test epoch_24 : {'loss_total_loss_test': 1.7035149769349531, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.7035149769349531, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6799037304452467, 'C-Index-IPCW_test': 0.6160858274045451}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_25 : {'loss_total_loss_train': 1.2721955613656477, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2721955613656477, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9942088707456528, 'C-Index-IPCW_train': 0.9949003320864679}
+valid epoch_25 : {'loss_total_loss_valid': 2.183169012719935, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.183169012719935, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.604044357469015, 'C-Index-IPCW_valid': 0.5260114777732223}
+test epoch_25 : {'loss_total_loss_test': 2.4763660593466326, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4763660593466326, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6847172081829122, 'C-Index-IPCW_test': 0.6262184067981347}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_26 : {'loss_total_loss_train': 1.3512975736097856, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.3512975736097856, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9864693933321669, 'C-Index-IPCW_train': 0.9840014501234513}
+valid epoch_26 : {'loss_total_loss_valid': 1.6755464151501656, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6755464151501656, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5733855185909981, 'C-Index-IPCW_valid': 0.5372812378724342}
+test epoch_26 : {'loss_total_loss_test': 1.9402279935099862, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.9402279935099862, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.674488567990373, 'C-Index-IPCW_test': 0.6856177398925505}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_27 : {'loss_total_loss_train': 1.2702400846914812, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2702400846914812, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9922385864908537, 'C-Index-IPCW_train': 0.9932122622359284}
+valid epoch_27 : {'loss_total_loss_valid': 2.151571025902575, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.151571025902575, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5518590998043053, 'C-Index-IPCW_valid': 0.4936409649124309}
+test epoch_27 : {'loss_total_loss_test': 2.1734867041761223, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.1734867041761223, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6889290012033694, 'C-Index-IPCW_test': 0.6874763872457963}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_28 : {'loss_total_loss_train': 1.2540285858240994, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2540285858240994, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9953077898511464, 'C-Index-IPCW_train': 0.9963602528879631}
+valid epoch_28 : {'loss_total_loss_valid': 2.390493319793181, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.390493319793181, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5590345727332029, 'C-Index-IPCW_valid': 0.49205591771767054}
+test epoch_28 : {'loss_total_loss_test': 2.461885243654251, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.461885243654251, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6823104693140795, 'C-Index-IPCW_test': 0.6696350796354373}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_29 : {'loss_total_loss_train': 1.2694942815737291, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2694942815737291, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9952359028870544, 'C-Index-IPCW_train': 0.99558826872872}
+valid epoch_29 : {'loss_total_loss_valid': 1.6426646055823022, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 1.6426646055823022, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5805609915198956, 'C-Index-IPCW_valid': 0.5614597683570832}
+test epoch_29 : {'loss_total_loss_test': 1.893471598625183, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 1.893471598625183, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6762936221419976, 'C-Index-IPCW_test': 0.6578131795327626}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_30 : {'loss_total_loss_train': 1.245563330975446, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.245563330975446, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995076271540321, 'C-Index-IPCW_train': 0.9960776805410175}
+valid epoch_30 : {'loss_total_loss_valid': 2.3552750281312247, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.3552750281312247, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5759947814742336, 'C-Index-IPCW_valid': 0.5369113643307613}
+test epoch_30 : {'loss_total_loss_test': 2.5940846502780914, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5940846502780914, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6997593261131168, 'C-Index-IPCW_test': 0.6890622429860447}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_31 : {'loss_total_loss_train': 1.261969206008044, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.261969206008044, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9944372175727684, 'C-Index-IPCW_train': 0.9949296983525057}
+valid epoch_31 : {'loss_total_loss_valid': 2.172276947985996, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.172276947985996, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5740378343118069, 'C-Index-IPCW_valid': 0.5302297108047495}
+test epoch_31 : {'loss_total_loss_test': 2.2524339617653326, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.2524339617653326, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.697352587244284, 'C-Index-IPCW_test': 0.6543959378057415}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_32 : {'loss_total_loss_train': 1.236137880520387, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.236137880520387, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995948429560554, 'C-Index-IPCW_train': 0.9967006044905016}
+valid epoch_32 : {'loss_total_loss_valid': 2.2117932967164298, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.2117932967164298, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5772994129158513, 'C-Index-IPCW_valid': 0.5327189679502004}
+test epoch_32 : {'loss_total_loss_test': 2.0739286975427107, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.0739286975427107, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6807450064563587}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_33 : {'loss_total_loss_train': 1.2476300543004817, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2476300543004817, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9960848033600813, 'C-Index-IPCW_train': 0.9968570809605368}
+valid epoch_33 : {'loss_total_loss_valid': 2.1405966579914093, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1405966579914093, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.478929530868511}
+test epoch_33 : {'loss_total_loss_test': 2.1770154373212294, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.1770154373212294, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6925391095066186, 'C-Index-IPCW_test': 0.656699446783566}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_34 : {'loss_total_loss_train': 1.2487020248716527, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2487020248716527, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.994611649176815, 'C-Index-IPCW_train': 0.994878707003405}
+valid epoch_34 : {'loss_total_loss_valid': 2.1328915520147844, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1328915520147844, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.5377709571099054}
+test epoch_34 : {'loss_total_loss_test': 2.0680795068090614, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.0680795068090614, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6805054151624549, 'C-Index-IPCW_test': 0.6273927177472824}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_35 : {'loss_total_loss_train': 1.243894650177522, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.243894650177522, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9955139362922923, 'C-Index-IPCW_train': 0.9965712028441251}
+valid epoch_35 : {'loss_total_loss_valid': 2.2145263606851753, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.2145263606851753, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5714285714285714, 'C-Index-IPCW_valid': 0.5531510287593644}
+test epoch_35 : {'loss_total_loss_test': 2.291452418674122, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.291452418674122, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6919374247894103, 'C-Index-IPCW_test': 0.6792758487926468}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_36 : {'loss_total_loss_train': 1.2369407957250422, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2369407957250422, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995586880417621, 'C-Index-IPCW_train': 0.9962470798637533}
+valid epoch_36 : {'loss_total_loss_valid': 2.3897186626087534, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.3897186626087534, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5629484670580561, 'C-Index-IPCW_valid': 0.4877329801182755}
+test epoch_36 : {'loss_total_loss_test': 2.528136429461566, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.528136429461566, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6913357400722022, 'C-Index-IPCW_test': 0.646697568230389}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_37 : {'loss_total_loss_train': 1.2476607127623125, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2476607127623125, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.995022356317252, 'C-Index-IPCW_train': 0.9961158976528605}
+valid epoch_37 : {'loss_total_loss_valid': 2.3416969870979134, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.3416969870979134, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5668623613829094, 'C-Index-IPCW_valid': 0.4905425628054285}
+test epoch_37 : {'loss_total_loss_test': 2.653069185939702, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.653069185939702, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6895306859205776, 'C-Index-IPCW_test': 0.6593759004509663}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_38 : {'loss_total_loss_train': 1.2422455576333133, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2422455576333133, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9954108630717194, 'C-Index-IPCW_train': 0.996096866029061}
+valid epoch_38 : {'loss_total_loss_valid': 2.1772580322894184, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.1772580322894184, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5818656229615133, 'C-Index-IPCW_valid': 0.5082633731156594}
+test epoch_38 : {'loss_total_loss_test': 2.468386646021496, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.468386646021496, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6913357400722022, 'C-Index-IPCW_test': 0.6487400369113547}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_39 : {'loss_total_loss_train': 1.2174638238820163, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2174638238820163, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9963237217995633, 'C-Index-IPCW_train': 0.9968751280868037}
+valid epoch_39 : {'loss_total_loss_valid': 2.336387599056417, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.336387599056417, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5649054142204827, 'C-Index-IPCW_valid': 0.5057841784041517}
+test epoch_39 : {'loss_total_loss_test': 2.5745035166090187, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.5745035166090187, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6877256317689531, 'C-Index-IPCW_test': 0.66128484512723}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_40 : {'loss_total_loss_train': 1.2418675612319598, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2418675612319598, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9963105072841052, 'C-Index-IPCW_train': 0.9970896510624577}
+valid epoch_40 : {'loss_total_loss_valid': 2.460092780264941, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.460092780264941, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5701239399869537, 'C-Index-IPCW_valid': 0.5125018397204381}
+test epoch_40 : {'loss_total_loss_test': 2.8109297901391983, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.8109297901391983, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.677496991576414, 'C-Index-IPCW_test': 0.65655988116994}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_41 : {'loss_total_loss_train': 1.2501757361672141, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2501757361672141, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9956672246716061, 'C-Index-IPCW_train': 0.9967158702617195}
+valid epoch_41 : {'loss_total_loss_valid': 2.2456855313344435, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.2456855313344435, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5694716242661448, 'C-Index-IPCW_valid': 0.5582486106639384}
+test epoch_41 : {'loss_total_loss_test': 2.556532797488299, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.556532797488299, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6871239470517448, 'C-Index-IPCW_test': 0.6758311489274754}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_42 : {'loss_total_loss_train': 1.2339623191139915, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2339623191139915, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9956037949974074, 'C-Index-IPCW_train': 0.9965411411865098}
+valid epoch_42 : {'loss_total_loss_valid': 2.4561504504897376, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.4561504504897376, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5577299412915852, 'C-Index-IPCW_valid': 0.48639774123790536}
+test epoch_42 : {'loss_total_loss_test': 2.598953701217066, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.598953701217066, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6544217870039193}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_43 : {'loss_total_loss_train': 1.2442347488620065, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2442347488620065, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9964574526959991, 'C-Index-IPCW_train': 0.9971949109980836}
+valid epoch_43 : {'loss_total_loss_valid': 2.122093520381234, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.122093520381234, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5753424657534246, 'C-Index-IPCW_valid': 0.565018340651634}
+test epoch_43 : {'loss_total_loss_test': 2.360822143879804, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.360822143879804, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.690734055354994, 'C-Index-IPCW_test': 0.6839262056401529}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_44 : {'loss_total_loss_train': 1.2367752573706887, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2367752573706887, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9964970962423733, 'C-Index-IPCW_train': 0.9971579832053536}
+valid epoch_44 : {'loss_total_loss_valid': 2.448198210109364, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.448198210109364, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5649054142204827, 'C-Index-IPCW_valid': 0.5312827835493875}
+test epoch_44 : {'loss_total_loss_test': 2.86095956442031, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.86095956442031, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6889290012033694, 'C-Index-IPCW_test': 0.6743184908861498}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_45 : {'loss_total_loss_train': 1.2456456531177869, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2456456531177869, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9958828855638818, 'C-Index-IPCW_train': 0.9965659553999908}
+valid epoch_45 : {'loss_total_loss_valid': 2.3768207999792965, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.3768207999792965, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5551206784083497, 'C-Index-IPCW_valid': 0.49167983924659114}
+test epoch_45 : {'loss_total_loss_test': 2.4704737581989984, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.4704737581989984, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6871239470517448, 'C-Index-IPCW_test': 0.6648602841762201}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_46 : {'loss_total_loss_train': 1.2323388186368076, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2323388186368076, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9969611900252608, 'C-Index-IPCW_train': 0.9977171625309512}
+valid epoch_46 : {'loss_total_loss_valid': 2.6895750869404185, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.6895750869404185, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5609915198956295, 'C-Index-IPCW_valid': 0.4825442202514862}
+test epoch_46 : {'loss_total_loss_test': 2.8485257517207754, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.8485257517207754, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6901323706377858, 'C-Index-IPCW_test': 0.6497462551406931}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_47 : {'loss_total_loss_train': 1.213426413861188, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.213426413861188, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9971002067278798, 'C-Index-IPCW_train': 0.9979296862641391}
+valid epoch_47 : {'loss_total_loss_valid': 2.8288458829576317, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.8288458829576317, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5492498369210698, 'C-Index-IPCW_valid': 0.4989637964176536}
+test epoch_47 : {'loss_total_loss_test': 2.868773104114966, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.868773104114966, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6859205776173285, 'C-Index-IPCW_test': 0.6335461868097629}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+train epoch_48 : {'loss_total_loss_train': 1.2054250619628213, 'loss_fusion_loss_train': 0.0, 'loss_task_loss_train': 1.2054250619628213, 'loss_fusion_temperature_train': 33.333335876464844, 'loss_fusion_target_probs_train': 1.0}
+metrics : {'C-Index_train': 0.9970679633101621, 'C-Index-IPCW_train': 0.9979314321545858}
+valid epoch_48 : {'loss_total_loss_valid': 2.4978092272173273, 'loss_fusion_loss_valid': 0.0, 'loss_task_loss_valid': 2.4978092272173273, 'loss_fusion_temperature_valid': 33.333335876464844, 'loss_fusion_target_probs_valid': 1.0}
+metrics : {'C-Index_valid': 0.5414220482713633, 'C-Index-IPCW_valid': 0.4832984308673494}
+test epoch_48 : {'loss_total_loss_test': 2.8072231777689676, 'loss_fusion_loss_test': 0.0, 'loss_task_loss_test': 2.8072231777689676, 'loss_fusion_temperature_test': 33.333335876464844, 'loss_fusion_target_probs_test': 1.0}
+metrics : {'C-Index_test': 0.6859205776173285, 'C-Index-IPCW_test': 0.6475369078497198}
+Best Score : 0.715590345727332
+Best Metrics : {'C-Index_valid': 0.715590345727332, 'C-Index-IPCW_valid': 0.6203398520800784}
+Early stopping!!! on epoch 49

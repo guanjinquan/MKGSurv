@@ -41,8 +41,6 @@ Data/TCGA-BRCA/*
 Data/*TCGA*/*
 Data/HANCOCK/*
 Data/Multi-OSCCPI-Dataset/*
-Results/*
-Results*/*
 PretrainedWeights/*
 *swanlog*
 

@@ -7,7 +7,11 @@ import numpy as np
 import random
 from modules.trainer import Trainer
 from modules.tester import Tester
-import swanlab
+
+try:
+    import swanlab
+except ImportError:
+    swanlab = None
 
 
 if __name__ == '__main__':
@@ -63,6 +67,5 @@ if __name__ == '__main__':
     for key, value in summary_of_folds_test.items():
         print(f"{key}: {np.mean(value):.4f} ± {np.std(value):.4f}")
         print(f" - List = {value}")
-
 
 

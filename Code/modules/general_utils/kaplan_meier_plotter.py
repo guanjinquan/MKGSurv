@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from lifelines import KaplanMeierFitter
-from lifelines.statistics import logrank_test
 
 def convert_logits_to_risk_scores(logits_list: list) -> np.ndarray:
     """
@@ -45,7 +43,12 @@ def plot_risk_stratified_km(
         original_events_observed (list): 每个患者的 *真实* 事件状态 (1=发生事件, 0=删失)。
         output_path (str): 图像的完整保存路径 (e.g., ".../Kaplan_Meier_Plot.png")。
     """
-    
+    try:
+        from lifelines import KaplanMeierFitter
+        from lifelines.statistics import logrank_test
+    except ImportError as exc:
+        raise ImportError("Kaplan-Meier plotting requires the optional lifelines package.") from exc
+
     print("  [KM Plotter] 开始生成KM图...")
     
     # --- 1. 数据准备 ---

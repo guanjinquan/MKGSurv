@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import time
 import tqdm
 import numpy as np
 import torch
@@ -15,6 +15,9 @@ from modules.general_utils.optims import GetOptimizer, GetScheduler
 from modules.general_utils import Logger, save_trainer, save_model, load_model, load_trainer
 from typing import Dict, List, Any
 import random
+from collections import defaultdict
+import json
+
 
 try:
     import swanlab
@@ -39,7 +42,6 @@ class Trainer:
         assert args is not None, 'Please input args!!!'
         self.args = args
 
-            
         # 固定种子
         seed = int(args.seed)
         torch.manual_seed(seed)
@@ -49,7 +51,6 @@ class Trainer:
         np.random.seed(seed)
         random.seed(seed)
     
-
         # --- DDP ADDITION: 初始化分布式环境 ---
         self.local_rank = 0
         if self.args.use_ddp:
@@ -162,7 +163,6 @@ class Trainer:
                 self.train_epoch(self.train_loader)
                 self.scheduler.step()
 
-            # # DDP CHANGE: 评估需要在所有进程上运行
             if self.val_loader is not None:
                 self.eval_epoch(self.val_loader, 'valid')
             if self.test_loader is not None:
@@ -180,11 +180,14 @@ class Trainer:
                 break
 
     def train_epoch(self, train_loader):
+        # 计时 (仅主进程需要)
+        start_time = time.time() if self.local_rank == 0 else None
+
         self.model.train()
         if self.args.use_ddp:
             train_loader.sampler.set_epoch(self.epoch)
         
-        # --- 主要改动 1: 初始化列表，用于收集训练过程中的结果 ---
+        # 收集训练过程中的结果
         local_outs, local_true, local_loss = [], [], {}
 
         assert len(train_loader) > 0, f"train_loader is empty!!!"
@@ -194,7 +197,6 @@ class Trainer:
         for i, batch_data in enumerate(train_loader, 1):
             batch_size = len(batch_data['pid'])
 
-            # --- 训练步骤 (与之前相同) ---
             if self.args.use_amp:
                 with autocast():
                     out = self.model(batch_size, batch_data)
@@ -215,13 +217,10 @@ class Trainer:
                     self.optimizer.step()
                 self.optimizer.zero_grad()
             
-            # --- 主要改动 2: 收集当前批次的结果 ---
-            # .detach() 用于切断反向传播的计算图
-            # .cpu() 将数据移至CPU，避免占用过多显存
+            # 收集当前批次的结果
             local_outs.extend(out['logits'].detach().cpu().numpy().tolist())
             local_true.extend(batch_data['labels'])
             for k, v in out['losses'].items():
-                # OPTIMIZATION: 使用 setdefault 和 append
                 if isinstance(v, torch.Tensor):
                     if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
                         local_loss.setdefault(k, []).append(v.item())
@@ -230,8 +229,7 @@ class Trainer:
                 elif isinstance(v, float):
                     local_loss.setdefault(k, []).append(v)
 
-        # --- 主要改动 3: 训练结束后，像验证集一样，收集并计算指标 ---
-        # DDP 模式下，收集所有进程的结果到主进程
+        # 收集 DDP 结果到主进程
         if self.args.use_ddp:
             for k in local_loss:
                 loss_tensor = torch.tensor(np.mean(local_loss[k]), device=self.device)
@@ -244,7 +242,7 @@ class Trainer:
             dist.gather_object(local_outs, gathered_outs if self.local_rank == 0 else None, dst=0)
             dist.gather_object(local_true, gathered_true if self.local_rank == 0 else None, dst=0)
 
-        # 只有主进程计算和记录指标
+        # 只有主进程计算指标并记录时间
         if self.local_rank == 0:
             if self.args.use_ddp:
                 final_outs = [item for sublist in gathered_outs for item in sublist]
@@ -255,12 +253,25 @@ class Trainer:
                 final_true = local_true
                 final_loss = local_loss
             
-            # 调用 on_loader_exit 来处理训练集的结果
+            # 原有的指标记录
             self.on_loader_exit('train', final_loss, final_outs, final_true)
 
+            # 计算并输出训练时间
+            elapsed = time.time() - start_time
+            num_samples = len(final_outs)          # 实际处理的样本总数
+            avg_time_ms = (elapsed / num_samples) * 1000
+            time_info = (f"Train time: {elapsed:.2f}s, samples: {num_samples}, "
+                         f"avg: {avg_time_ms:.2f}ms/sample")
+            self.log.write(time_info)
+            print(time_info, flush=True)
+
     def eval_epoch(self, val_loader, mode='valid'):
+        # 计时 (仅主进程需要)
+        start_time = time.time() if self.local_rank == 0 else None
+
         self.model.eval()
         local_outs, local_true, local_loss = [], [], {}
+        other_info_dict = defaultdict(list)
         
         with torch.no_grad():
             for batch_data in val_loader:
@@ -270,7 +281,6 @@ class Trainer:
                 local_outs.extend(out['logits'].detach().cpu().numpy().tolist())
                 local_true.extend(batch_data['labels'])
                 for k, v in out['losses'].items():
-                    # OPTIMIZATION: 使用 setdefault 和 append
                     if isinstance(v, torch.Tensor):
                         if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
                             local_loss.setdefault(k, []).append(v.item())
@@ -279,22 +289,45 @@ class Trainer:
                     elif isinstance(v, float):
                         local_loss.setdefault(k, []).append(v)
 
-        # DDP ADDITION: 收集所有进程的评估结果到主进程
+                if 'other_info' in out:
+                    for k, v in out['other_info'].items():
+                        if isinstance(v, torch.Tensor):
+                            if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
+                                other_info_dict[k].append(v.item())
+                            else:
+                                other_info_dict[k].append(v.cpu().numpy().tolist())
+                        else:
+                            other_info_dict[k].append(v)
+
+        # DDP 汇总
         if self.args.use_ddp:
-            # 收集 loss，并计算所有卡的平均值
+            # 汇总 Loss
             for k in local_loss:
                 loss_tensor = torch.tensor(np.mean(local_loss[k]), device=self.device)
                 dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
                 if self.local_rank == 0:
                     local_loss[k] = [loss_tensor.item()]
 
-            # 收集 outs 和 true
+            # 汇总 other_info_dict
+            for k in list(other_info_dict.keys()): # Use list to avoid runtime error if we modify dict
+                # Try to mean the local values first
+                try:
+                     local_mean = np.mean(other_info_dict[k])
+                except Exception:
+                     # If it can't be meaned (e.g. string), we don't reduce it
+                     continue
+                
+                info_tensor = torch.tensor(local_mean, device=self.device, dtype=torch.float32)
+                dist.all_reduce(info_tensor, op=dist.ReduceOp.AVG)
+                if self.local_rank == 0:
+                    other_info_dict[k] = [info_tensor.item()] # Wrap in list to keep structure consistent
+
             gathered_outs = [None] * dist.get_world_size()
             gathered_true = [None] * dist.get_world_size()
             dist.gather_object(local_outs, gathered_outs if self.local_rank == 0 else None, dst=0)
             dist.gather_object(local_true, gathered_true if self.local_rank == 0 else None, dst=0)
         
-        # 只有主进程计算和记录指标
+        # 主进程处理
         if self.local_rank == 0:
             if self.args.use_ddp:
                 final_outs = [item for sublist in gathered_outs for item in sublist]
@@ -304,15 +337,39 @@ class Trainer:
                 final_outs = local_outs
                 final_true = local_true
                 final_loss = local_loss
-            self.on_loader_exit(mode, final_loss, final_outs, final_true) 
+
+            self.on_loader_exit(mode, final_loss, final_outs, final_true)
+
+            # 计算并输出评估时间
+            elapsed = time.time() - start_time
+            num_samples = len(final_outs)
+            avg_time_ms = (elapsed / num_samples) * 1000
+            time_info = (f"{mode.capitalize()} time: {elapsed:.2f}s, samples: {num_samples}, "
+                         f"avg: {avg_time_ms:.2f}ms/sample")
+            self.log.write(time_info)
+            print(time_info, flush=True)
+
+            # 处理并打印 other_info_dict
+            if dict(other_info_dict):
+                averaged_other_info = {}
+                for k, v in other_info_dict.items():
+                    try:
+                        if isinstance(v[0], list):
+                            avg_v = [np.mean([vv[pos] for vv in v]) for pos in range(len(v[0]))]
+                            averaged_other_info[k] = avg_v
+                        else:
+                            averaged_other_info[k] = np.mean(v)
+                    except Exception as e:
+                         # Fallback if the data cannot be easily averaged
+                         averaged_other_info[k] = "Could not average data."
+                         print(f"Warning: Could not average other_info key '{k}': {e}")
+                
+                print(f"\nOther Info ({mode}):", flush=True)
+                print(json.dumps(averaged_other_info, indent=4), flush=True)
+                self.log.write(f"Other Info ({mode}): " + str(averaged_other_info))
 
     def on_epoch_end(self):
-        # # 这个函数只在主进程被调用
-        # if self.epoch >= self.save_epoch_limit:
-        #     # save_trainer(self, os.path.join(self.ckpt_path, 'Final_Trainer.pkl'))
-        #     save_model(self.model, self.epoch, os.path.join(self.ckpt_path, f'Final.pth'))
-        
-        # torch.cuda.empty_cache()
+        # 这个函数只在主进程被调用
         self.log.write(f"Best Score : {self.best_score}")
         self.log.write(f"Best Metrics : {self.best_metrics}")
         self.epoch += 1
@@ -358,9 +415,6 @@ class Trainer:
                 self.save_best_model(metrics_dict)
             else:
                 print(f"Current epoch is {self.epoch}, only save best when greater than {self.save_epoch_limit}")
+
     def get_metrics(self, logits: List[Any], labels: List[Any]):
-
-        # print 5: examples
-        # for 
-
-        return self.model.task_head.METRICS_FN(logits, labels)  # 调用模型中的 METRICS_FN
+        return self.model.task_head.METRICS_FN(logits, labels)

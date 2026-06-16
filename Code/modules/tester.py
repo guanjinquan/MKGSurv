@@ -75,8 +75,9 @@ class Tester:
     def _test_(self, dataloader, title, save_results=True):
         self.model.eval()
         
-        all_pids, all_logits, all_labels, all_labels = [], [], [], []
+        all_pids, all_logits, all_labels = [], [], []
         all_losses = {}
+        other_info_dict = defaultdict(list)
 
         with torch.no_grad():
             pbar = tqdm.tqdm(total=len(dataloader), desc=title)
@@ -89,8 +90,6 @@ class Tester:
                 all_logits.extend(out['logits'].detach().cpu().numpy().tolist())
                 all_labels.extend(batch_data['labels']) 
                 
-                # for key, value in out['losses'].items():
-                #     all_losses.setdefault(key, []).append(value.item())
                 for k, v in out['losses'].items():
                     if isinstance(v, torch.Tensor):
                         if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
@@ -99,6 +98,20 @@ class Tester:
                             all_losses.setdefault(k, []).append(v.cpu().numpy().tolist())
                     elif isinstance(v, float):
                         all_losses.setdefault(k, []).append(v)
+                        
+                # --- Debug: 强制检查是否包含 other_info ---
+                if 'other_info' in out:
+                    for k, v in out['other_info'].items():
+                        if isinstance(v, torch.Tensor):
+                            if v.dim() == 0 or (v.dim() == 1 and v.shape[0] == 1):
+                                other_info_dict[k].append(v.item())
+                            else:
+                                other_info_dict[k].append(v.cpu().numpy().tolist())
+                        else:
+                            other_info_dict[k].append(v)
+                else:
+                    # 如果只需要打印一次警告，可以使用标志位或者只在第一个batch打印
+                    pass
 
                 pbar.update(1)
             pbar.close()
@@ -114,7 +127,8 @@ class Tester:
             all_pids, 
             all_losses, 
             all_logits, 
-            all_labels, 
+            all_labels,
+            other_info_dict,
             title=title,
             save_results=save_results
         )
@@ -124,10 +138,10 @@ class Tester:
         losses, 
         logits, 
         labels, 
+        other_info_dict,
         title, 
         save_results=False
     ):
-        
         loss_dict, metrics_dict = {}, {}
         ret_metrics_dict = {}
         
@@ -153,9 +167,31 @@ class Tester:
         print(json.dumps(metrics_dict, indent=4), flush=True)
         print("--------------------------------", flush=True)
 
-        self.log.write("\n--- Test Results (Survival) ---")
+        self.log.write(f"\n--- {title} Results (Survival) ---")
         self.log.write("Losses: " + str(loss_dict))
         self.log.write("Metrics: " + str(metrics_dict))
+        
+        # --- Process Other Info (Averaging) ---
+        if dict(other_info_dict):
+            averaged_other_info = {}
+            for k, v in other_info_dict.items():
+                try:
+                    if isinstance(v[0], list):
+                        avg_v = [np.mean([vv[pos] for vv in v]) for pos in range(len(v[0]))]
+                        averaged_other_info[k] = avg_v
+                    else:
+                        averaged_other_info[k] = np.mean(v)
+                except Exception as e:
+                     # Fallback if the data cannot be easily averaged
+                     averaged_other_info[k] = "Could not average data."
+                     print(f"Warning: Could not average other_info key '{k}': {e}")
+            
+            print("\nOther Info (Averaged):", flush=True)
+            print(json.dumps(averaged_other_info, indent=4), flush=True)
+            self.log.write("Other Info: " + str(averaged_other_info))
+        else:
+            print("\nWarning: No 'other_info' found in model output during testing.", flush=True)
+
 
         if save_results:
             with open(os.path.join(self.log_path, 'test_metrics.json'), 'w') as f:

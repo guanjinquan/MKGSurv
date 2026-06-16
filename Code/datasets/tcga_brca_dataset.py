@@ -62,8 +62,8 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
         for pid in keys_to_remove:
             del data[pid]
 
-        print(f"After filtering, data length = {len(data)} patients size = {len(self.patient_ids)}")
         if len(data) + 10 < len(self.patient_ids):
+            print(f"After filtering, data length = {len(data)} patients size = {len(self.patient_ids)}")
             print(f"Warning: After filtering, data is too small.")
 
         return data
@@ -268,6 +268,7 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
                 pid_seed = int(pid_hash, 16) % (2**32)
 
             # 2. Create local generators
+            epsilon = 5e-3  # 1e-4 toolow
             rng = random.Random(pid_seed) # For python floats
             g = torch.Generator()         # For torch tensors
             g.manual_seed(pid_seed)
@@ -275,15 +276,12 @@ class TCGA_BRCA_Dataset(MultiModalDataset):
             for k, v in kdata.items():
                 # Determine score: if train, generate a random score seeded by PID
                 # otherwise use the existing score.
-                if self.mode != 'train':
-                    score_val = v['score']
-                else:
-                    score_val = rng.random() # Deterministic random value for this PID
+                score_val = v['score']
 
                 output_dict["medical-knowledge"][k] = {
                     "score": score_val,
                     # Use the generator 'g' for torch operations
-                    "knowledge": torch.randn((1, 768), generator=g) 
+                    "knowledge": epsilon * torch.randn((1, 768), generator=g) 
                 }
 
         # --- 2. Load Modalities ---

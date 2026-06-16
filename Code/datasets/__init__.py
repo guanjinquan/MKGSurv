@@ -3,8 +3,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 
-from datasets.hancock_dataset import HANCOCKDataset
-from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
+# from datasets.hancock_dataset import HANCOCKDataset
+# from datasets.oscc_surv_inhouse_dataset import OSCCSurvInHouseDataset
 from datasets.tcga_luad_dataset import TCGA_LUAD_Dataset
 from datasets.tcga_lusc_dataset import TCGA_LUSC_Dataset
 from datasets.tcga_brca_dataset import TCGA_BRCA_Dataset
@@ -34,17 +34,9 @@ def custom_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     keys = batch[0].keys()
     collated_batch = {}
 
-    # print do_mixup sum
-    # do_mixup_sum = 0
-
     for key in keys:
         collated_batch[key] = [item[key] for item in batch]
 
-    #     if "labels" in key and "do_mixup" in collated_batch[key][0]:
-    #         do_mixup_sum += sum([item["do_mixup"] for item in collated_batch[key]])
-
-    # print(f"Do mixup sum: {do_mixup_sum}")
-            
     return collated_batch
 
 
@@ -72,11 +64,13 @@ def GetDataLoader(args):
 
 def GetDataset(mode, args):
     dataset = args.dataset
-    if dataset == "hancock":
-        return HANCOCKDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
-    elif dataset == "oscc_inhouse":
-        return OSCCSurvInHouseDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
-    elif dataset == "tcga_luad":
+
+    # if dataset == "hancock":
+    #     return HANCOCKDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
+    # elif dataset == "oscc_inhouse":
+    #     return OSCCSurvInHouseDataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
+
+    if dataset == "tcga_luad":
         return TCGA_LUAD_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)
     elif dataset == 'tcga_lusc':
         return TCGA_LUSC_Dataset(args=args, mode=mode, modalities=args.modalities, fold=args.fold)

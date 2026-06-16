@@ -1,5 +1,8 @@
 from modules.base_modules.panther_module import StructuredPANTHER
-from modules.base_modules.trans_mil_module import AggregatingTransMIL
+try:
+    from modules.base_modules.trans_mil_module import AggregatingTransMIL
+except ModuleNotFoundError:
+    AggregatingTransMIL = None
 
 
 
@@ -7,6 +10,8 @@ from modules.base_modules.trans_mil_module import AggregatingTransMIL
 def GetImageAggregater(image_aggregater, InputDim, OutputDim, OutputTokenNum, PrototypesData=None):
 
     if image_aggregater == 'transmil':
+        if AggregatingTransMIL is None:
+            raise ImportError("AggregatingTransMIL requires the optional nystrom_attention package.")
         return AggregatingTransMIL(
             input_dim=InputDim,
             embed_dim=OutputDim,
@@ -24,5 +29,4 @@ def GetImageAggregater(image_aggregater, InputDim, OutputDim, OutputTokenNum, Pr
 
 
     raise ValueError(f"Not Support Model: {image_aggregater}")
-
 
