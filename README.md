@@ -17,6 +17,11 @@ bash TrainScripts/tcga_lusc/run001_mkgsurv_kimi_pg.sh
 bash TrainScripts/tcga_lusc/run002_mkgsurv_kimi_pgct.sh
 ```
 
+## Checkpoints and Data Download
+
+Model weights and processed data can be downloaded from https://drive.google.com/drive/folders/1IVZR23E7y1EdUq10fJl8A-mAUlf1WFsJ?usp=drive_link
+
+
 ## Data Organization
 
 All data should be placed under `Data/`. Each cohort uses one folder:
