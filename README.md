@@ -19,7 +19,7 @@ bash TrainScripts/tcga_lusc/run002_mkgsurv_kimi_pgct.sh
 
 ## Checkpoints and Data Download
 
-Model weights and processed data can be downloaded from https://drive.google.com/drive/folders/1IVZR23E7y1EdUq10fJl8A-mAUlf1WFsJ?usp=drive_link
+Model weights and processed data can be downloaded from: https://pan.baidu.com/s/1QyJyzUAVcl10dt1iEEFhvw?pwd=mkgs  
 
 
 ## Data Organization
