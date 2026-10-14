@@ -1,4 +1,4 @@
-# Medical Knowledge-Guided Fusion of Holistic Hospital Data for Tumor Survival Analysis
+# Medical Knowledge-Guided Fusion of Holistic Hospital Data for Tumor Survival Analysis (MICCAI 2026)
 
 This repository provides the implementation of MKGSurv for multimodal tumor survival analysis. The code is organized for TCGA cohorts and currently supports `tcga_luad`, `tcga_lusc`, `tcga_brca`, and `tcga_kirc`. The model combines clinical, genomic, pathology image, pathology text, treatment-related, and medical-knowledge features, depending on the selected run script.
 
